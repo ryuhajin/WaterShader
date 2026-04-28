@@ -1,0 +1,8 @@
+{
+  "name": "water-shader-portfolio",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "directxtk",
+    "imgui"
+  ]
+}

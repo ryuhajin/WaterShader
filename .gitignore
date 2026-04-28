@@ -1,5 +1,21 @@
-# 비공개 포트폴리오 작업 메모
-docs/PLAN*.md
-docs/portfolio/daily/
-docs/portfolio/notes/
-docs/portfolio/*.private.md
+# 프로젝트 완성 전까지 모든 Markdown 문서는 공개 추적하지 않습니다.
+*.md
+docs/
+
+# 빌드/IDE 산출물
+build/
+out/
+.vs/
+.vscode/
+CMakeUserPresets.json
+
+# Visual Studio 산출물
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+x64/
+Debug/
+Release/
+RelWithDebInfo/
+MinSizeRel/
