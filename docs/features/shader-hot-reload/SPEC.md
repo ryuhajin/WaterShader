@@ -1,6 +1,6 @@
 # shader-hot-reload
 
-> Branch: `feature/shader-hot-reload` · Status: draft · Updated: 2026-04-29
+> Branch: `feature/shader-hot-reload` · Status: done · Updated: 2026-04-29
 
 ## 1. Goal / Visual Target
 
