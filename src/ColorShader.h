@@ -17,8 +17,13 @@ public:
     bool Render(
         ID3D11DeviceContext* deviceContext,
         int indexCount,
-        const DirectX::XMMATRIX& mvp,
-        const DirectX::XMFLOAT4& tintColor);
+        const DirectX::XMMATRIX& world,
+        const DirectX::XMMATRIX& view,
+        const DirectX::XMMATRIX& projection,
+        const DirectX::XMFLOAT4& lightDirection,
+        const DirectX::XMFLOAT4& lightColor,
+        const DirectX::XMFLOAT4& tintColor,
+        float time);
 
     const std::string& GetLastError() const { return lastError_; }
     const std::string& GetLastReloadStamp() const { return lastReloadStamp_; }
@@ -30,8 +35,13 @@ private:
     void RenderShader(
         ID3D11DeviceContext* deviceContext,
         int indexCount,
-        const DirectX::XMMATRIX& mvp,
-        const DirectX::XMFLOAT4& tintColor);
+        const DirectX::XMMATRIX& world,
+        const DirectX::XMMATRIX& view,
+        const DirectX::XMMATRIX& projection,
+        const DirectX::XMFLOAT4& lightDirection,
+        const DirectX::XMFLOAT4& lightColor,
+        const DirectX::XMFLOAT4& tintColor,
+        float time);
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader_;

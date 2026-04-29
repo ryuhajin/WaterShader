@@ -105,6 +105,7 @@ void Graphics::Shutdown()
 
 bool Graphics::Frame(float deltaTime, const Input& input)
 {
+    elapsedTime_ += deltaTime;
     UpdateCamera(deltaTime, input);
     return Render(deltaTime);
 }
@@ -173,7 +174,12 @@ bool Graphics::Render(float deltaTime)
         aspect,
         SCREEN_NEAR,
         SCREEN_DEPTH);
-    const XMMATRIX mvp = world * view * projection;
+
+    const float lightYawRad = XMConvertToRadians(lightYawDeg_);
+    const float lightPitchRad = XMConvertToRadians(lightPitchDeg_);
+    const float cosPitch = cosf(lightPitchRad);
+    const XMFLOAT4 lightDir(sinf(lightYawRad) * cosPitch, -sinf(lightPitchRad), cosf(lightYawRad) * cosPitch, 0.0f);
+    const XMFLOAT4 lightColorPacked(lightColor_.x, lightColor_.y, lightColor_.z, lightIntensity_);
 
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
@@ -181,7 +187,7 @@ bool Graphics::Render(float deltaTime)
 
     d3d_->BeginScene(0.02f, 0.08f, 0.11f, 1.0f);
     model_->Render(d3d_->GetDeviceContext());
-    colorShader_->Render(d3d_->GetDeviceContext(), model_->GetIndexCount(), mvp, tintColor_);
+    colorShader_->Render(d3d_->GetDeviceContext(), model_->GetIndexCount(), world, view, projection, lightDir, lightColorPacked, tintColor_, elapsedTime_);
 
     DrawImGuiPanel();
 
@@ -240,5 +246,25 @@ void Graphics::DrawImGuiPanel()
         cameraMoveSpeed_ = 2.0f;
         cameraTurnSpeed_ = 90.0f;
     }
+
+    ImGui::SeparatorText("Lighting");
+    ImGui::SliderFloat("Light Yaw (deg)", &lightYawDeg_, 0.0f, 360.0f);
+    ImGui::SliderFloat("Light Pitch (deg)", &lightPitchDeg_, -90.0f, 90.0f);
+    int lightR = static_cast<int>(lightColor_.x * 255.0f + 0.5f);
+    int lightG = static_cast<int>(lightColor_.y * 255.0f + 0.5f);
+    int lightB = static_cast<int>(lightColor_.z * 255.0f + 0.5f);
+    if (ImGui::SliderInt("R##light", &lightR, 0, 255)) { lightColor_.x = lightR / 255.0f; }
+    if (ImGui::SliderInt("G##light", &lightG, 0, 255)) { lightColor_.y = lightG / 255.0f; }
+    if (ImGui::SliderInt("B##light", &lightB, 0, 255)) { lightColor_.z = lightB / 255.0f; }
+    ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 3.0f);
+    ImGui::Text("Time: %.2fs", elapsedTime_);
+    if (ImGui::Button("Reset Light"))
+    {
+        lightYawDeg_ = 45.0f;
+        lightPitchDeg_ = -45.0f;
+        lightColor_ = {1.0f, 1.0f, 1.0f};
+        lightIntensity_ = 1.0f;
+    }
+
     ImGui::End();
 }

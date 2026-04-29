@@ -44,4 +44,9 @@ private:
     float cameraMoveSpeed_ = 2.0f;
     float cameraTurnSpeed_ = 90.0f;
     DirectX::XMFLOAT4 tintColor_ = {1.0f, 1.0f, 1.0f, 1.0f};
+    float lightYawDeg_ = 45.0f;
+    float lightPitchDeg_ = -45.0f;
+    DirectX::XMFLOAT3 lightColor_ = {1.0f, 1.0f, 1.0f};
+    float lightIntensity_ = 1.0f;
+    float elapsedTime_ = 0.0f;
 };
