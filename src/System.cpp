@@ -4,7 +4,12 @@
 #include "Input.h"
 #include "Timer.h"
 
+#include <imgui.h>
+#include <imgui_impl_win32.h>
+
 #include <stdexcept>
+
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace
 {
@@ -32,6 +37,19 @@ bool System::Initialize(HINSTANCE instance)
         {
             return false;
         }
+
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        imguiContextCreated_ = true;
+        ImGuiIO& io = ImGui::GetIO();
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        ImGui::StyleColorsDark();
+
+        if (!ImGui_ImplWin32_Init(hwnd_))
+        {
+            return false;
+        }
+        imguiWin32Initialized_ = true;
 
         input_ = std::make_unique<Input>();
         input_->Initialize();
@@ -89,21 +107,31 @@ void System::Shutdown()
 
     timer_.reset();
     input_.reset();
+
+    ShutdownImGui();
     ShutdownWindow();
 }
 
 LRESULT System::MessageHandler(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    if (imguiContextCreated_ && ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam))
+    {
+        return 1;
+    }
+
+    const ImGuiIO* io = imguiContextCreated_ ? &ImGui::GetIO() : nullptr;
+    const bool imguiWantsKeyboard = io && io->WantCaptureKeyboard;
+
     switch (message)
     {
     case WM_KEYDOWN:
-        if (input_)
+        if (input_ && !imguiWantsKeyboard)
         {
             input_->KeyDown(static_cast<unsigned int>(wParam));
         }
         return 0;
     case WM_KEYUP:
-        if (input_)
+        if (input_ && !imguiWantsKeyboard)
         {
             input_->KeyUp(static_cast<unsigned int>(wParam));
         }
@@ -214,4 +242,19 @@ void System::ShutdownWindow()
     }
 
     gSystem = nullptr;
+}
+
+void System::ShutdownImGui()
+{
+    if (imguiWin32Initialized_)
+    {
+        ImGui_ImplWin32_Shutdown();
+        imguiWin32Initialized_ = false;
+    }
+
+    if (imguiContextCreated_)
+    {
+        ImGui::DestroyContext();
+        imguiContextCreated_ = false;
+    }
 }

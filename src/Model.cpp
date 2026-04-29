@@ -28,9 +28,9 @@ void Model::Render(ID3D11DeviceContext* deviceContext)
 bool Model::InitializeBuffers(ID3D11Device* device)
 {
     const std::array<VertexType, 3> vertices = {{
-        {{0.0f, 0.55f, 0.0f}, {0.28f, 0.85f, 1.0f}},
-        {{0.55f, -0.45f, 0.0f}, {0.08f, 0.35f, 0.62f}},
-        {{-0.55f, -0.45f, 0.0f}, {0.68f, 0.96f, 0.93f}},
+        {{0.0f, 0.55f, 0.0f}},
+        {{0.55f, -0.45f, 0.0f}},
+        {{-0.55f, -0.45f, 0.0f}},
     }};
 
     const std::array<unsigned long, 3> indices = {{0, 1, 2}};
