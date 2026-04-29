@@ -61,12 +61,12 @@
 
 ---
 
-## Day 6 — 안정화 + 핫리로드 → `feature/hlsl-hot-reload`
+## Day 6 — 안정화 + 핫리로드 → `feature/shader-hot-reload`
 
 - [ ] 렌더링 문제 수정
 - [ ] 텍스처 경로 검증
-- [ ] shader compile 에러 처리 개선
-- [ ] **core shader가 안정적일 때만** HLSL hot reload 추가 (선택적)
+- [x] shader compile 에러 처리 개선 (ImGui에 D3DCompiler 에러 표시, outError 파이프)
+- [x] HLSL hot reload 추가 (Day 1 직후로 앞당겨 진행, `feature/shader-hot-reload`)
 
 **완료 기준:** 데모가 안정적으로 실행됨.
 
