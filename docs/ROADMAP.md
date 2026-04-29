@@ -21,13 +21,13 @@
 
 ---
 
-## Day 2 — 2026-04-30 목 — 라이팅 + 시간 cbuffer → `feature/scene-lighting`
+## Day 2 — 2026-04-30 목 — 라이팅 + 시간 cbuffer → `feature/scene-lighting` ✓
 
-- [ ] cbuffer 분리: `g_World` / `g_View` / `g_Projection` (현재는 `g_MVP` 한 개) — normal 변환과 world-space 라이팅 가능하게
-- [ ] 방향광 cbuffer 추가: `g_LightDirection`, `g_LightColor`(rgb), `intensity`(g_LightColor.a 또는 별도)
-- [ ] 시간 cbuffer 추가: `g_Time` (float, 누적)
-- [ ] 단순 Lambert 라이팅으로 검증 (`saturate(dot(N, L))`)
-- [ ] ImGui: Light Direction 카테고리 (Yaw 0~360, Pitch -90~90), Light Color R/G/B 0~255 SliderInt, Intensity 0~3 SliderFloat, Reset Light
+- [x] cbuffer 분리: `g_World` / `g_View` / `g_Projection` (`g_MVP` 분해) — normal 변환과 world-space 라이팅 가능
+- [x] 방향광 cbuffer: `g_LightDirection`, `g_LightColor`(rgb + intensity in .a)
+- [x] 시간 cbuffer: `g_Time` (float, 누적)
+- [x] 단순 Lambert 라이팅 (`saturate(dot(N, L))`)
+- [x] ImGui Lighting 섹션 (Yaw 0~360, Pitch -90~90, Color R/G/B 0~255, Intensity 0~3, Reset Light, Time 표시)
 
 **완료 기준:** plane을 회전시키면 자세에 따라 명암 변화. Light Direction 슬라이더 즉시 반영. `g_Time`이 흐름 (ImGui Text로 표시).
 
