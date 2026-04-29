@@ -9,11 +9,11 @@
 
 ## Day 1 — DirectX11 세팅 → `feature/dx11-setup`
 
-- [ ] DirectX11 프로젝트 초기화
-- [ ] vcpkg manifest mode 의존성 셋업
-- [ ] DirectXTK 연결, ImGui 연동 준비
-- [ ] clear color 또는 간단한 plane 렌더
-- [ ] HLSL shader compile 경로 확인
+- [x] DirectX11 프로젝트 초기화
+- [x] vcpkg manifest mode 의존성 셋업
+- [x] DirectXTK 연결, ImGui 연동 준비
+- [x] clear color 또는 간단한 plane 렌더
+- [x] HLSL shader compile 경로 확인
 
 **완료 기준:** 창이 뜨고 간단한 shader 기반 렌더링이 보임.
 
