@@ -1,5 +1,6 @@
 #include "Graphics.h"
 
+#include "Input.h"
 #include "SystemConfig.h"
 
 #include <imgui.h>
@@ -8,6 +9,26 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
+#include <string>
+
+namespace
+{
+std::wstring GetAssetPath(const wchar_t* relativePath)
+{
+#ifdef WATERSHADER_ASSETS_DIR
+    std::filesystem::path path = WATERSHADER_ASSETS_DIR;
+    path /= relativePath;
+    return path.wstring();
+#else
+    wchar_t modulePath[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, modulePath, MAX_PATH);
+    std::filesystem::path path(modulePath);
+    path = path.parent_path() / L"assets" / relativePath;
+    return path.wstring();
+#endif
+}
+} // namespace
 
 bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
 {
@@ -21,7 +42,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     }
 
     camera_ = std::make_unique<Camera>();
-    camera_->SetPosition(0.0f, 0.0f, -2.5f);
+    camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
+    camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
 
     light_ = std::make_unique<Light>();
     light_->SetDirection(0.0f, -1.0f, 1.0f);
@@ -30,7 +52,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     texture_ = std::make_unique<Texture>();
 
     model_ = std::make_unique<Model>();
-    if (!model_->Initialize(d3d_->GetDevice()))
+    if (!model_->Initialize(d3d_->GetDevice(), GetAssetPath(L"models/32x32Plane.obj")))
     {
         return false;
     }
@@ -81,9 +103,41 @@ void Graphics::Shutdown()
     }
 }
 
-bool Graphics::Frame(float deltaTime)
+bool Graphics::Frame(float deltaTime, const Input& input)
 {
+    UpdateCamera(deltaTime, input);
     return Render(deltaTime);
+}
+
+void Graphics::UpdateCamera(float deltaTime, const Input& input)
+{
+    using namespace DirectX;
+
+    const float turn = cameraTurnSpeed_ * deltaTime;
+    if (input.IsKeyDown(VK_LEFT))  { cameraRotation_.y -= turn; }
+    if (input.IsKeyDown(VK_RIGHT)) { cameraRotation_.y += turn; }
+    if (input.IsKeyDown(VK_UP))    { cameraRotation_.x -= turn; }
+    if (input.IsKeyDown(VK_DOWN))  { cameraRotation_.x += turn; }
+
+    const float yawRad = XMConvertToRadians(cameraRotation_.y);
+    const float pitchRad = XMConvertToRadians(cameraRotation_.x);
+    const float cosPitch = cosf(pitchRad);
+    const XMVECTOR forward = XMVectorSet(sinf(yawRad) * cosPitch, -sinf(pitchRad), cosf(yawRad) * cosPitch, 0.0f);
+    const XMVECTOR right   = XMVectorSet(cosf(yawRad), 0.0f, -sinf(yawRad), 0.0f);
+    const XMVECTOR worldUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+    XMVECTOR position = XMLoadFloat3(&cameraPosition_);
+    const float move = cameraMoveSpeed_ * deltaTime;
+    if (input.IsKeyDown('W')) { position = XMVectorAdd(position, XMVectorScale(forward, move)); }
+    if (input.IsKeyDown('S')) { position = XMVectorSubtract(position, XMVectorScale(forward, move)); }
+    if (input.IsKeyDown('D')) { position = XMVectorAdd(position, XMVectorScale(right, move)); }
+    if (input.IsKeyDown('A')) { position = XMVectorSubtract(position, XMVectorScale(right, move)); }
+    if (input.IsKeyDown('E')) { position = XMVectorAdd(position, XMVectorScale(worldUp, move)); }
+    if (input.IsKeyDown('Q')) { position = XMVectorSubtract(position, XMVectorScale(worldUp, move)); }
+    XMStoreFloat3(&cameraPosition_, position);
+
+    camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
+    camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
 }
 
 void Graphics::Resize(unsigned int width, unsigned int height)
@@ -109,10 +163,13 @@ bool Graphics::Render(float deltaTime)
         ? static_cast<float>(screenWidth_) / static_cast<float>(screenHeight_)
         : 1.0f;
 
-    const XMMATRIX world = XMMatrixRotationY(XMConvertToRadians(yRotationDegrees_));
+    const XMMATRIX world =
+        XMMatrixRotationX(XMConvertToRadians(modelRotation_.x)) *
+        XMMatrixRotationY(XMConvertToRadians(modelRotation_.y)) *
+        XMMatrixRotationZ(XMConvertToRadians(modelRotation_.z));
     const XMMATRIX view = camera_->GetViewMatrix();
     const XMMATRIX projection = XMMatrixPerspectiveFovLH(
-        XMConvertToRadians(60.0f),
+        XMConvertToRadians(cameraFovDeg_),
         aspect,
         SCREEN_NEAR,
         SCREEN_DEPTH);
@@ -153,7 +210,7 @@ void Graphics::DrawImGuiPanel()
     }
     ImGui::Separator();
 
-    ImGui::Text("Tint Color");
+    ImGui::SeparatorText("Tint Color");
     int tintR = static_cast<int>(tintColor_.x * 255.0f + 0.5f);
     int tintG = static_cast<int>(tintColor_.y * 255.0f + 0.5f);
     int tintB = static_cast<int>(tintColor_.z * 255.0f + 0.5f);
@@ -161,10 +218,27 @@ void Graphics::DrawImGuiPanel()
     if (ImGui::SliderInt("G", &tintG, 0, 255)) { tintColor_.y = tintG / 255.0f; }
     if (ImGui::SliderInt("B", &tintB, 0, 255)) { tintColor_.z = tintB / 255.0f; }
 
-    ImGui::SliderFloat("Y Rotation (deg)", &yRotationDegrees_, 0.0f, 360.0f);
-    if (ImGui::Button("Reset Rotation"))
+    ImGui::SeparatorText("Model Rotation");
+    ImGui::SliderFloat("X##model", &modelRotation_.x, 0.0f, 360.0f);
+    ImGui::SliderFloat("Y##model", &modelRotation_.y, 0.0f, 360.0f);
+    ImGui::SliderFloat("Z##model", &modelRotation_.z, 0.0f, 360.0f);
+    if (ImGui::Button("Reset Model Rotation"))
     {
-        yRotationDegrees_ = 0.0f;
+        modelRotation_ = {0.0f, 0.0f, 0.0f};
+    }
+
+    ImGui::SeparatorText("Camera");
+    ImGui::SliderFloat("FOV (deg)", &cameraFovDeg_, 30.0f, 120.0f);
+    ImGui::SliderFloat("Move Speed", &cameraMoveSpeed_, 0.1f, 10.0f);
+    ImGui::SliderFloat("Turn Speed (deg/sec)", &cameraTurnSpeed_, 30.0f, 360.0f);
+    ImGui::Text("WASD: move, Q/E: down/up, Arrows: rotate");
+    if (ImGui::Button("Reset Camera"))
+    {
+        cameraPosition_ = {0.0f, 0.0f, -2.5f};
+        cameraRotation_ = {0.0f, 0.0f, 0.0f};
+        cameraFovDeg_ = 60.0f;
+        cameraMoveSpeed_ = 2.0f;
+        cameraTurnSpeed_ = 90.0f;
     }
     ImGui::End();
 }

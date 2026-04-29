@@ -23,6 +23,8 @@ public:
 private:
     bool CreateDeviceAndSwapChain(int screenWidth, int screenHeight, HWND hwnd, bool fullscreen);
     bool CreateRenderTarget();
+    bool CreateDepthStencil();
+    bool CreateRasterizerState();
     void ReleaseRenderTarget();
 
     bool vsyncEnabled_ = true;
@@ -35,4 +37,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Device> device_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> deviceContext_;
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> renderTargetView_;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> depthTexture_;
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView_;
+    Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState_;
 };

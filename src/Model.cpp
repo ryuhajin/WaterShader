@@ -1,18 +1,74 @@
 #include "Model.h"
 
-#include <array>
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
 
-namespace
+#include <filesystem>
+#include <vector>
+
+bool Model::LoadObj(const std::wstring& path, std::vector<VertexType>& outVertices, std::vector<unsigned long>& outIndices)
 {
-bool Failed(HRESULT result)
-{
-    return FAILED(result);
+    tinyobj::ObjReaderConfig config;
+    config.triangulate = true;
+
+    tinyobj::ObjReader reader;
+    const std::filesystem::path objPath(path);
+    if (!reader.ParseFromFile(objPath.string(), config))
+    {
+        return false;
+    }
+
+    const auto& attrib = reader.GetAttrib();
+    const auto& shapes = reader.GetShapes();
+
+    outVertices.clear();
+    outIndices.clear();
+
+    for (const auto& shape : shapes)
+    {
+        for (const auto& index : shape.mesh.indices)
+        {
+            Model::VertexType vertex{};
+
+            vertex.position[0] = attrib.vertices[3 * index.vertex_index + 0];
+            vertex.position[1] = attrib.vertices[3 * index.vertex_index + 1];
+            vertex.position[2] = attrib.vertices[3 * index.vertex_index + 2];
+
+            if (index.normal_index >= 0)
+            {
+                vertex.normal[0] = attrib.normals[3 * index.normal_index + 0];
+                vertex.normal[1] = attrib.normals[3 * index.normal_index + 1];
+                vertex.normal[2] = attrib.normals[3 * index.normal_index + 2];
+            }
+            else
+            {
+                vertex.normal[0] = 0.0f;
+                vertex.normal[1] = 1.0f;
+                vertex.normal[2] = 0.0f;
+            }
+
+            if (index.texcoord_index >= 0)
+            {
+                vertex.uv[0] = attrib.texcoords[2 * index.texcoord_index + 0];
+                vertex.uv[1] = 1.0f - attrib.texcoords[2 * index.texcoord_index + 1];
+            }
+            else
+            {
+                vertex.uv[0] = 0.0f;
+                vertex.uv[1] = 0.0f;
+            }
+
+            outVertices.push_back(vertex);
+            outIndices.push_back(static_cast<unsigned long>(outIndices.size()));
+        }
+    }
+
+    return !outVertices.empty();
 }
-} // namespace
 
-bool Model::Initialize(ID3D11Device* device)
+bool Model::Initialize(ID3D11Device* device, const std::wstring& objPath)
 {
-    return InitializeBuffers(device);
+    return InitializeBuffers(device, objPath);
 }
 
 void Model::Shutdown()
@@ -25,15 +81,14 @@ void Model::Render(ID3D11DeviceContext* deviceContext)
     RenderBuffers(deviceContext);
 }
 
-bool Model::InitializeBuffers(ID3D11Device* device)
+bool Model::InitializeBuffers(ID3D11Device* device, const std::wstring& objPath)
 {
-    const std::array<VertexType, 3> vertices = {{
-        {{0.0f, 0.55f, 0.0f}},
-        {{0.55f, -0.45f, 0.0f}},
-        {{-0.55f, -0.45f, 0.0f}},
-    }};
-
-    const std::array<unsigned long, 3> indices = {{0, 1, 2}};
+    std::vector<VertexType> vertices;
+    std::vector<unsigned long> indices;
+    if (!LoadObj(objPath, vertices, indices))
+    {
+        return false;
+    }
 
     vertexCount_ = static_cast<int>(vertices.size());
     indexCount_ = static_cast<int>(indices.size());
@@ -46,7 +101,7 @@ bool Model::InitializeBuffers(ID3D11Device* device)
     D3D11_SUBRESOURCE_DATA vertexData = {};
     vertexData.pSysMem = vertices.data();
 
-    if (Failed(device->CreateBuffer(&vertexBufferDesc, &vertexData, &vertexBuffer_)))
+    if (FAILED(device->CreateBuffer(&vertexBufferDesc, &vertexData, &vertexBuffer_)))
     {
         return false;
     }
@@ -59,7 +114,7 @@ bool Model::InitializeBuffers(ID3D11Device* device)
     D3D11_SUBRESOURCE_DATA indexData = {};
     indexData.pSysMem = indices.data();
 
-    if (Failed(device->CreateBuffer(&indexBufferDesc, &indexData, &indexBuffer_)))
+    if (FAILED(device->CreateBuffer(&indexBufferDesc, &indexData, &indexBuffer_)))
     {
         return false;
     }

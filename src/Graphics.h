@@ -11,17 +11,20 @@
 
 #include <memory>
 
+class Input;
+
 class Graphics
 {
 public:
     bool Initialize(HWND hwnd, int screenWidth, int screenHeight);
     void Shutdown();
-    bool Frame(float deltaTime);
+    bool Frame(float deltaTime, const Input& input);
     void Resize(unsigned int width, unsigned int height);
 
 private:
     bool Render(float deltaTime);
     void DrawImGuiPanel();
+    void UpdateCamera(float deltaTime, const Input& input);
 
     std::unique_ptr<D3DClass> d3d_;
     std::unique_ptr<Camera> camera_;
@@ -34,6 +37,11 @@ private:
     unsigned int screenWidth_ = 0;
     unsigned int screenHeight_ = 0;
 
-    float yRotationDegrees_ = 0.0f;
+    DirectX::XMFLOAT3 modelRotation_ = {0.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT3 cameraPosition_ = {0.0f, 0.0f, -2.5f};
+    DirectX::XMFLOAT3 cameraRotation_ = {0.0f, 0.0f, 0.0f};
+    float cameraFovDeg_ = 60.0f;
+    float cameraMoveSpeed_ = 2.0f;
+    float cameraTurnSpeed_ = 90.0f;
     DirectX::XMFLOAT4 tintColor_ = {1.0f, 1.0f, 1.0f, 1.0f};
 };

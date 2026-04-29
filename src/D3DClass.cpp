@@ -26,7 +26,17 @@ bool D3DClass::Initialize(int screenWidth, int screenHeight, bool vsync, HWND hw
             return false;
         }
 
-        return CreateRenderTarget();
+        if (!CreateDepthStencil())
+        {
+            return false;
+        }
+
+        if (!CreateRenderTarget())
+        {
+            return false;
+        }
+
+        return CreateRasterizerState();
     }
     catch (const std::exception& error)
     {
@@ -60,6 +70,7 @@ void D3DClass::Resize(unsigned int width, unsigned int height)
 
     ReleaseRenderTarget();
     ThrowIfFailed(swapChain_->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0), "ResizeBuffers failed.");
+    CreateDepthStencil();
     CreateRenderTarget();
 }
 
@@ -67,6 +78,10 @@ void D3DClass::BeginScene(float red, float green, float blue, float alpha)
 {
     const float color[4] = {red, green, blue, alpha};
     deviceContext_->ClearRenderTargetView(renderTargetView_.Get(), color);
+    if (depthStencilView_)
+    {
+        deviceContext_->ClearDepthStencilView(depthStencilView_.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+    }
 }
 
 void D3DClass::EndScene()
@@ -144,7 +159,7 @@ bool D3DClass::CreateRenderTarget()
     ThrowIfFailed(swapChain_->GetBuffer(0, IID_PPV_ARGS(&backBuffer)), "GetBuffer failed.");
     ThrowIfFailed(device_->CreateRenderTargetView(backBuffer.Get(), nullptr, &renderTargetView_), "CreateRenderTargetView failed.");
 
-    deviceContext_->OMSetRenderTargets(1, renderTargetView_.GetAddressOf(), nullptr);
+    deviceContext_->OMSetRenderTargets(1, renderTargetView_.GetAddressOf(), depthStencilView_.Get());
 
     D3D11_VIEWPORT viewport = {};
     viewport.Width = static_cast<float>(screenWidth_);
@@ -156,6 +171,42 @@ bool D3DClass::CreateRenderTarget()
     return true;
 }
 
+bool D3DClass::CreateRasterizerState()
+{
+    D3D11_RASTERIZER_DESC desc = {};
+    desc.FillMode = D3D11_FILL_SOLID;
+    desc.CullMode = D3D11_CULL_BACK;
+    desc.FrontCounterClockwise = TRUE;
+    desc.DepthClipEnable = TRUE;
+
+    ThrowIfFailed(device_->CreateRasterizerState(&desc, &rasterizerState_), "CreateRasterizerState failed.");
+    deviceContext_->RSSetState(rasterizerState_.Get());
+    return true;
+}
+
+bool D3DClass::CreateDepthStencil()
+{
+    D3D11_TEXTURE2D_DESC depthDesc = {};
+    depthDesc.Width = screenWidth_;
+    depthDesc.Height = screenHeight_;
+    depthDesc.MipLevels = 1;
+    depthDesc.ArraySize = 1;
+    depthDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    depthDesc.SampleDesc.Count = 1;
+    depthDesc.SampleDesc.Quality = 0;
+    depthDesc.Usage = D3D11_USAGE_DEFAULT;
+    depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+
+    ThrowIfFailed(device_->CreateTexture2D(&depthDesc, nullptr, &depthTexture_), "Depth texture creation failed.");
+
+    D3D11_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+    dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    dsvDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+    ThrowIfFailed(device_->CreateDepthStencilView(depthTexture_.Get(), &dsvDesc, &depthStencilView_), "DSV creation failed.");
+
+    return true;
+}
+
 void D3DClass::ReleaseRenderTarget()
 {
     if (deviceContext_)
@@ -163,6 +214,8 @@ void D3DClass::ReleaseRenderTarget()
         deviceContext_->OMSetRenderTargets(0, nullptr, nullptr);
     }
 
+    depthStencilView_.Reset();
+    depthTexture_.Reset();
     renderTargetView_.Reset();
 }
 
