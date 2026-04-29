@@ -29,10 +29,13 @@ private:
     bool InitializeWindow(HINSTANCE instance);
     void ShowWindowAfterInitialize();
     void ShutdownWindow();
+    void ShutdownImGui();
 
     HINSTANCE instance_ = nullptr;
     HWND hwnd_ = nullptr;
     bool shouldQuit_ = false;
+    bool imguiContextCreated_ = false;
+    bool imguiWin32Initialized_ = false;
 
     std::unique_ptr<Input> input_;
     std::unique_ptr<Timer> timer_;

@@ -1,10 +1,10 @@
 # dx11-setup
 
-> Branch: `feature/dx11-setup` · Status: draft · Updated: 2026-04-29
+> Branch: `feature/dx11-setup` · Status: done · Updated: 2026-04-29
 
 ## 1. Goal / Visual Target
 
-- **한 문장 요약:** ImGui 패널의 **Tint Color**(RGB)와 **Y축 회전 속도** 슬라이더를 움직이면 화면의 삼각형이 즉시 색이 바뀌고 회전하는, **셰이더 파라미터 파이프라인이 살아있음을 증명하는 최소 실행 데모**.
+- **한 문장 요약:** ImGui 패널의 **Tint Color**(RGB)와 **Y축 회전각(0~360도)** 슬라이더를 움직이면 화면의 삼각형이 즉시 색이 바뀌고 그 각도만큼 회전하는, **셰이더 파라미터 파이프라인이 살아있음을 증명하는 최소 실행 데모**. 자동 회전 없음 — 슬라이더가 직접 각도를 지정.
 - **시각 목표 키워드:** 즉시 반응(immediate feedback), 디버깅 가능, 작업의 출발점.
 - **참고 이미지/영상:** 없음 (이번엔 시각 완성도가 아니라 파이프라인 검증 목적).
 - **스코프 가드 — 절대로 만들지 않을 것:**
@@ -21,7 +21,8 @@
 **핵심 변경사항:**
 
 - VS는 position을 `mul(position, mvp)`로 변환해서 `SV_POSITION`으로 출력.
-- PS는 `vertex color * tintColor` 를 그대로 `SV_TARGET`에 출력.
+- PS는 `g_TintColor.rgb`를 그대로 `SV_TARGET`에 출력 (Tint Color = 모델의 base color).
+- vertex color 입력은 사용하지 않음 — InputLayout / VertexType에서 제거됨.
 
 **의사코드 (`shaders/simple.hlsl` 갱신):**
 
@@ -29,23 +30,22 @@
 cbuffer PerFrameCB : register(b0)
 {
     row_major float4x4 g_MVP;
-    float4 g_TintColor;     // rgb=tint, a=unused (16-byte align용)
+    float4 g_TintColor;     // rgb=base color, a=unused (16-byte align용)
 };
 
-struct VSInput { float3 position : POSITION; float3 color : COLOR; };
-struct PSInput { float4 position : SV_POSITION; float3 color : COLOR; };
+struct VSInput { float3 position : POSITION; };
+struct PSInput { float4 position : SV_POSITION; };
 
 PSInput VSMain(VSInput input)
 {
     PSInput o;
     o.position = mul(float4(input.position, 1.0), g_MVP);
-    o.color = input.color;
     return o;
 }
 
 float4 PSMain(PSInput i) : SV_TARGET
 {
-    return float4(i.color * g_TintColor.rgb, 1.0);
+    return float4(g_TintColor.rgb, 1.0);
 }
 ```
 
@@ -61,8 +61,8 @@ float4 PSMain(PSInput i) : SV_TARGET
 | CBuffer | g_MVP            | row_major float4x4    | b0, model*view*projection                  |
 | CBuffer | g_TintColor      | float4                | b0, rgb 0..1, a unused                     |
 | ImGui   | Tint Color       | ColorEdit3            | linear RGB, 기본 (1,1,1)                   |
-| ImGui   | Y Spin Speed     | SliderFloat           | -360..360 deg/sec, 기본 45                 |
-| ImGui   | Reset Rotation   | Button                | 누르면 누적 각도 0으로                     |
+| ImGui   | Y Rotation       | SliderFloat           | 0..360 deg (clamp), 기본 0                 |
+| ImGui   | Reset Rotation   | Button                | 누르면 회전각 0으로                        |
 | Output  | RT0              | float4                | back buffer                                |
 
 **의존하는 다른 feature:** 없음 (첫 feature).
@@ -72,8 +72,8 @@ float4 PSMain(PSInput i) : SV_TARGET
 - [ ] HLSL 컴파일 성공, 경고 0
 - [ ] 빌드 후 실행하면 윈도우와 ImGui 패널이 함께 뜸
 - [ ] ColorEdit3로 색을 바꾸면 삼각형 색이 즉시 반영됨
-- [ ] Y Spin Speed 슬라이더가 양수면 삼각형이 시계 방향(또는 일정 방향)으로 회전, 음수면 반대 방향, 0이면 정지
-- [ ] Reset Rotation 버튼이 누적 각도를 0으로 되돌림
+- [ ] Y Rotation 슬라이더로 0~360도 회전각을 직접 지정할 수 있고 자동 회전은 없음
+- [ ] Reset Rotation 버튼이 회전각을 0도로 되돌림
 - [ ] ImGui 위에서 마우스를 클릭/드래그할 때 Win32 입력이 ImGui로 정상 전달됨 (slider 동작)
 - [ ] 윈도우 리사이즈 시 백버퍼와 viewport가 함께 갱신되고 깨지지 않음
 - [ ] 종료 시 ImGui/D3D shutdown 누수 없음 (디버그 레이어 경고 0)

@@ -17,7 +17,6 @@ private:
     struct VertexType
     {
         float position[3];
-        float color[3];
     };
 
     bool InitializeBuffers(ID3D11Device* device);

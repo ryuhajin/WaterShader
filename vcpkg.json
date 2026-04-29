@@ -3,6 +3,12 @@
   "version-string": "0.1.0",
   "dependencies": [
     "directxtk",
-    "imgui"
+    {
+      "name": "imgui",
+      "features": [
+        "win32-binding",
+        "dx11-binding"
+      ]
+    }
   ]
 }

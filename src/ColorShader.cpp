@@ -10,6 +10,12 @@
 
 namespace
 {
+struct PerFrameCB
+{
+    DirectX::XMFLOAT4X4 mvp;
+    DirectX::XMFLOAT4 tintColor;
+};
+
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode)
 {
     UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
@@ -62,9 +68,13 @@ void ColorShader::Shutdown()
     ShutdownShader();
 }
 
-bool ColorShader::Render(ID3D11DeviceContext* deviceContext, int indexCount)
+bool ColorShader::Render(
+    ID3D11DeviceContext* deviceContext,
+    int indexCount,
+    const DirectX::XMMATRIX& mvp,
+    const DirectX::XMFLOAT4& tintColor)
 {
-    RenderShader(deviceContext, indexCount);
+    RenderShader(deviceContext, indexCount, mvp, tintColor);
     return true;
 }
 
@@ -95,7 +105,6 @@ bool ColorShader::InitializeShader(ID3D11Device* device, const wchar_t* shaderPa
 
     const D3D11_INPUT_ELEMENT_DESC polygonLayout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
     };
 
     if (FAILED(device->CreateInputLayout(
@@ -108,20 +117,47 @@ bool ColorShader::InitializeShader(ID3D11Device* device, const wchar_t* shaderPa
         return false;
     }
 
+    D3D11_BUFFER_DESC cbDesc = {};
+    cbDesc.ByteWidth = sizeof(PerFrameCB);
+    cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+    cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+    if (FAILED(device->CreateBuffer(&cbDesc, nullptr, &perFrameCB_)))
+    {
+        return false;
+    }
+
     return true;
 }
 
 void ColorShader::ShutdownShader()
 {
+    perFrameCB_.Reset();
     layout_.Reset();
     pixelShader_.Reset();
     vertexShader_.Reset();
 }
 
-void ColorShader::RenderShader(ID3D11DeviceContext* deviceContext, int indexCount)
+void ColorShader::RenderShader(
+    ID3D11DeviceContext* deviceContext,
+    int indexCount,
+    const DirectX::XMMATRIX& mvp,
+    const DirectX::XMFLOAT4& tintColor)
 {
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    if (SUCCEEDED(deviceContext->Map(perFrameCB_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+    {
+        auto* data = static_cast<PerFrameCB*>(mapped.pData);
+        DirectX::XMStoreFloat4x4(&data->mvp, mvp);
+        data->tintColor = tintColor;
+        deviceContext->Unmap(perFrameCB_.Get(), 0);
+    }
+
     deviceContext->IASetInputLayout(layout_.Get());
     deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
     deviceContext->PSSetShader(pixelShader_.Get(), nullptr, 0);
+    deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
+    deviceContext->PSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->DrawIndexed(indexCount, 0, 0);
 }
