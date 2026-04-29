@@ -32,11 +32,13 @@ add_executable(WaterShader WIN32
 
 find_package(directxtk CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(tinyobjloader CONFIG REQUIRED)
 
 target_compile_definitions(WaterShader PRIVATE
     UNICODE
     _UNICODE
     $<$<CONFIG:Debug>:WATERSHADER_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders">
+    $<$<CONFIG:Debug>:WATERSHADER_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets">
 )
 
 target_link_libraries(WaterShader PRIVATE
@@ -45,6 +47,7 @@ target_link_libraries(WaterShader PRIVATE
     d3dcompiler
     Microsoft::DirectXTK
     imgui::imgui
+    tinyobjloader::tinyobjloader
 )
 
 set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
@@ -55,6 +58,14 @@ add_custom_command(TARGET WaterShader POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${SHADER_SOURCE_DIR}/simple.hlsl"
         "${SHADER_OUTPUT_DIR}/simple.hlsl"
+)
+
+set(ASSETS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+set(ASSETS_OUTPUT_DIR "$<TARGET_FILE_DIR:WaterShader>/assets")
+
+add_custom_command(TARGET WaterShader POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${ASSETS_SOURCE_DIR}" "${ASSETS_OUTPUT_DIR}"
 )
 
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT WaterShader)

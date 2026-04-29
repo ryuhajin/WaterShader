@@ -166,7 +166,7 @@ bool System::Frame()
         return false;
     }
 
-    return graphics_->Frame(timer_->GetDeltaTime());
+    return graphics_->Frame(timer_->GetDeltaTime(), *input_);
 }
 
 bool System::InitializeWindow(HINSTANCE instance)

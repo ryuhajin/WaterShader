@@ -1,6 +1,6 @@
 # asset-pipeline
 
-> Branch: `feature/asset-pipeline` · Status: draft · Updated: 2026-04-29
+> Branch: `feature/asset-pipeline` · Status: done · Updated: 2026-04-29
 
 ## 1. Goal / Visual Target
 
