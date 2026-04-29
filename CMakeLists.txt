@@ -36,6 +36,7 @@ find_package(imgui CONFIG REQUIRED)
 target_compile_definitions(WaterShader PRIVATE
     UNICODE
     _UNICODE
+    $<$<CONFIG:Debug>:WATERSHADER_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders">
 )
 
 target_link_libraries(WaterShader PRIVATE

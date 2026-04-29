@@ -7,6 +7,7 @@ out/
 .vs/
 .vscode/
 CMakeUserPresets.json
+vcpkg_installed/
 
 # Visual Studio 산출물
 *.user

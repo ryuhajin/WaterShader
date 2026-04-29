@@ -7,6 +7,7 @@
 #include <imgui_impl_win32.h>
 
 #include <algorithm>
+#include <chrono>
 
 bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
 {
@@ -100,6 +101,8 @@ bool Graphics::Render(float deltaTime)
 {
     using namespace DirectX;
 
+    colorShader_->CheckHotReload(d3d_->GetDevice(), std::chrono::steady_clock::now());
+
     camera_->Render();
 
     const float aspect = (screenHeight_ > 0)
@@ -136,6 +139,19 @@ bool Graphics::Render(float deltaTime)
 void Graphics::DrawImGuiPanel()
 {
     ImGui::Begin("Shader Bench");
+
+    const std::string& shaderError = colorShader_->GetLastError();
+    if (!shaderError.empty())
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Compile error:");
+        ImGui::TextWrapped("%s", shaderError.c_str());
+    }
+    else
+    {
+        const std::string& reloadStamp = colorShader_->GetLastReloadStamp();
+        ImGui::Text("Shader: reloaded %s", reloadStamp.empty() ? "ready" : reloadStamp.c_str());
+    }
+    ImGui::Separator();
 
     ImGui::Text("Tint Color");
     int tintR = static_cast<int>(tintColor_.x * 255.0f + 0.5f);
