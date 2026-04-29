@@ -1,6 +1,6 @@
 # scene-lighting
 
-> Branch: `feature/scene-lighting` · Status: draft · Updated: 2026-04-30
+> Branch: `feature/scene-lighting` · Status: done · Updated: 2026-04-30
 
 ## 1. Goal / Visual Target
 
@@ -64,7 +64,10 @@ float4 PSMain(PSInput input) : SV_TARGET
 **Light direction 계산 (C++):** ImGui yaw/pitch (deg)에서 unit vec.
 
 ```cpp
-// yaw=0 → +Z (정북). yaw 시계방향. pitch +90 → 머리 위, pitch -90 → 발 밑.
+// 광원 위치를 yaw/pitch로 표현, lightDir은 "광원→표면" 방향(빛이 진행하는 쪽).
+// pitch=+90 → 광원이 머리 위 → 빛이 아래(-Y)로 → plane 위면이 밝음
+// pitch=-90 → 광원이 발 밑 → 빛이 위(+Y)로 → plane 위면이 어두움
+// yaw=0 → 광원이 +Z 쪽 → 빛이 -Z로
 const float yawRad = XMConvertToRadians(lightYawDeg_);
 const float pitchRad = XMConvertToRadians(lightPitchDeg_);
 const float cosPitch = cosf(pitchRad);
@@ -111,7 +114,7 @@ ImGui 패널은 `SeparatorText("Lighting")` 카테고리 추가, 그 아래 Dire
 
 - [ ] 빌드 성공, C++/HLSL 경고 0
 - [ ] plane을 Model Rotation X/Y/Z로 돌리면 자세에 따라 명암 변화 (Lambert NdotL)
-- [ ] Light Yaw/Pitch 슬라이더 → plane 명암 즉시 변화 (예: pitch=-90 머리 위에서 plane이 위에서 밝게)
+- [ ] Light Yaw/Pitch 슬라이더 → plane 명암 즉시 변화 (예: pitch=+90 머리 위에서 plane이 위에서 밝게, pitch=-90 발 밑에서 비추므로 위면이 어두움)
 - [ ] Light Color 빨강 → plane 라이트가 빨간색으로 칠해짐
 - [ ] Light Intensity 0 → 검정 (라이팅 꺼짐). Intensity 3 → 과노출 직전까지 밝아짐
 - [ ] Reset Light 버튼 → 기본값 복귀 (yaw=45, pitch=-45, color=white, intensity=1)

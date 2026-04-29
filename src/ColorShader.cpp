@@ -15,8 +15,14 @@ namespace
 {
 struct PerFrameCB
 {
-    DirectX::XMFLOAT4X4 mvp;
+    DirectX::XMFLOAT4X4 world;
+    DirectX::XMFLOAT4X4 view;
+    DirectX::XMFLOAT4X4 projection;
+    DirectX::XMFLOAT4 lightDirection;
+    DirectX::XMFLOAT4 lightColor;
     DirectX::XMFLOAT4 tintColor;
+    float time;
+    float padding[3];
 };
 
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
@@ -100,10 +106,15 @@ void ColorShader::Shutdown()
 bool ColorShader::Render(
     ID3D11DeviceContext* deviceContext,
     int indexCount,
-    const DirectX::XMMATRIX& mvp,
-    const DirectX::XMFLOAT4& tintColor)
+    const DirectX::XMMATRIX& world,
+    const DirectX::XMMATRIX& view,
+    const DirectX::XMMATRIX& projection,
+    const DirectX::XMFLOAT4& lightDirection,
+    const DirectX::XMFLOAT4& lightColor,
+    const DirectX::XMFLOAT4& tintColor,
+    float time)
 {
-    RenderShader(deviceContext, indexCount, mvp, tintColor);
+    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, tintColor, time);
     return true;
 }
 
@@ -231,15 +242,25 @@ void ColorShader::ShutdownShader()
 void ColorShader::RenderShader(
     ID3D11DeviceContext* deviceContext,
     int indexCount,
-    const DirectX::XMMATRIX& mvp,
-    const DirectX::XMFLOAT4& tintColor)
+    const DirectX::XMMATRIX& world,
+    const DirectX::XMMATRIX& view,
+    const DirectX::XMMATRIX& projection,
+    const DirectX::XMFLOAT4& lightDirection,
+    const DirectX::XMFLOAT4& lightColor,
+    const DirectX::XMFLOAT4& tintColor,
+    float time)
 {
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     if (SUCCEEDED(deviceContext->Map(perFrameCB_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
     {
         auto* data = static_cast<PerFrameCB*>(mapped.pData);
-        DirectX::XMStoreFloat4x4(&data->mvp, mvp);
+        DirectX::XMStoreFloat4x4(&data->world, world);
+        DirectX::XMStoreFloat4x4(&data->view, view);
+        DirectX::XMStoreFloat4x4(&data->projection, projection);
+        data->lightDirection = lightDirection;
+        data->lightColor = lightColor;
         data->tintColor = tintColor;
+        data->time = time;
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
