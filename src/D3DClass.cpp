@@ -36,7 +36,17 @@ bool D3DClass::Initialize(int screenWidth, int screenHeight, bool vsync, HWND hw
             return false;
         }
 
-        return CreateRasterizerState();
+        if (!CreateRasterizerState())
+        {
+            return false;
+        }
+
+        if (!CreateDepthStates())
+        {
+            return false;
+        }
+
+        return CreateSampler();
     }
     catch (const std::exception& error)
     {
@@ -94,6 +104,16 @@ void D3DClass::EndScene()
     {
         swapChain_->Present(0, 0);
     }
+}
+
+void D3DClass::SetDepthLessEqual()
+{
+    deviceContext_->OMSetDepthStencilState(depthLessEqualState_.Get(), 0);
+}
+
+void D3DClass::SetDepthDefault()
+{
+    deviceContext_->OMSetDepthStencilState(nullptr, 0);
 }
 
 bool D3DClass::CreateDeviceAndSwapChain(int screenWidth, int screenHeight, HWND hwnd, bool fullscreen)
@@ -181,6 +201,34 @@ bool D3DClass::CreateRasterizerState()
 
     ThrowIfFailed(device_->CreateRasterizerState(&desc, &rasterizerState_), "CreateRasterizerState failed.");
     deviceContext_->RSSetState(rasterizerState_.Get());
+    return true;
+}
+
+bool D3DClass::CreateDepthStates()
+{
+    D3D11_DEPTH_STENCIL_DESC desc = {};
+    desc.DepthEnable = TRUE;
+    desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+    desc.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
+    desc.StencilEnable = FALSE;
+
+    ThrowIfFailed(device_->CreateDepthStencilState(&desc, &depthLessEqualState_), "CreateDepthStencilState (LessEqual) failed.");
+    return true;
+}
+
+bool D3DClass::CreateSampler()
+{
+    D3D11_SAMPLER_DESC desc = {};
+    desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+    desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+    desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    desc.MaxAnisotropy = 1;
+    desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+    desc.MinLOD = 0;
+    desc.MaxLOD = D3D11_FLOAT32_MAX;
+
+    ThrowIfFailed(device_->CreateSamplerState(&desc, &defaultSampler_), "CreateSamplerState failed.");
     return true;
 }
 

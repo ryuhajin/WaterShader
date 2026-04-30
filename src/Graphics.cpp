@@ -63,6 +63,29 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         return false;
     }
 
+    cubemap_ = std::make_unique<CubemapTexture>();
+    const std::wstring cubemapPath = GetAssetPath(L"textures/skybox.dds");
+    if (!cubemap_->Initialize(d3d_->GetDevice(), cubemapPath.c_str()))
+    {
+        const std::wstring msg =
+            L"Failed to load cubemap:\n" + cubemapPath +
+            L"\n\nPlace a DDS cubemap (single .dds containing 6 faces) at this path, then rebuild or relaunch.";
+        MessageBoxW(hwnd, msg.c_str(), L"WaterShader: missing cubemap", MB_ICONERROR | MB_OK);
+        return false;
+    }
+
+    skybox_ = std::make_unique<Skybox>();
+    if (!skybox_->Initialize(d3d_->GetDevice()))
+    {
+        return false;
+    }
+
+    skyboxShader_ = std::make_unique<SkyboxShader>();
+    if (!skyboxShader_->Initialize(d3d_->GetDevice()))
+    {
+        return false;
+    }
+
     if (!ImGui_ImplDX11_Init(d3d_->GetDevice(), d3d_->GetDeviceContext()))
     {
         return false;
@@ -78,6 +101,24 @@ void Graphics::Shutdown()
     {
         ImGui_ImplDX11_Shutdown();
         imguiInitialized_ = false;
+    }
+
+    if (skyboxShader_)
+    {
+        skyboxShader_->Shutdown();
+        skyboxShader_.reset();
+    }
+
+    if (skybox_)
+    {
+        skybox_->Shutdown();
+        skybox_.reset();
+    }
+
+    if (cubemap_)
+    {
+        cubemap_->Shutdown();
+        cubemap_.reset();
     }
 
     if (colorShader_)
@@ -156,7 +197,9 @@ bool Graphics::Render(float deltaTime)
 {
     using namespace DirectX;
 
-    colorShader_->CheckHotReload(d3d_->GetDevice(), std::chrono::steady_clock::now());
+    const auto now = std::chrono::steady_clock::now();
+    colorShader_->CheckHotReload(d3d_->GetDevice(), now);
+    skyboxShader_->CheckHotReload(d3d_->GetDevice(), now);
 
     camera_->Render();
 
@@ -175,6 +218,11 @@ bool Graphics::Render(float deltaTime)
         SCREEN_NEAR,
         SCREEN_DEPTH);
 
+    XMMATRIX viewNoTrans = view;
+    viewNoTrans.r[3] = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+
+    const XMFLOAT4 cameraPosWS(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z, 1.0f);
+
     const float lightYawRad = XMConvertToRadians(lightYawDeg_);
     const float lightPitchRad = XMConvertToRadians(lightPitchDeg_);
     const float cosPitch = cosf(lightPitchRad);
@@ -186,8 +234,36 @@ bool Graphics::Render(float deltaTime)
     ImGui::NewFrame();
 
     d3d_->BeginScene(0.02f, 0.08f, 0.11f, 1.0f);
+
+    if (skyboxVisible_)
+    {
+        d3d_->SetDepthLessEqual();
+        skybox_->Render(d3d_->GetDeviceContext());
+        skyboxShader_->Render(
+            d3d_->GetDeviceContext(),
+            skybox_->GetIndexCount(),
+            viewNoTrans,
+            projection,
+            cubemap_->GetSRV(),
+            d3d_->GetSampler());
+        d3d_->SetDepthDefault();
+    }
+
     model_->Render(d3d_->GetDeviceContext());
-    colorShader_->Render(d3d_->GetDeviceContext(), model_->GetIndexCount(), world, view, projection, lightDir, lightColorPacked, tintColor_, elapsedTime_);
+    colorShader_->Render(
+        d3d_->GetDeviceContext(),
+        model_->GetIndexCount(),
+        world,
+        view,
+        projection,
+        lightDir,
+        lightColorPacked,
+        tintColor_,
+        elapsedTime_,
+        cameraPosWS,
+        reflectionStrength_,
+        cubemap_->GetSRV(),
+        d3d_->GetSampler());
 
     DrawImGuiPanel();
 
@@ -265,6 +341,10 @@ void Graphics::DrawImGuiPanel()
         lightColor_ = {1.0f, 1.0f, 1.0f};
         lightIntensity_ = 1.0f;
     }
+
+    ImGui::SeparatorText("Environment");
+    ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
+    ImGui::SliderFloat("Reflection Strength", &reflectionStrength_, 0.0f, 1.0f);
 
     ImGui::End();
 }

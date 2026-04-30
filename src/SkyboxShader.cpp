@@ -1,4 +1,4 @@
-#include "ColorShader.h"
+#include "SkyboxShader.h"
 
 #include <windows.h>
 
@@ -13,18 +13,10 @@
 
 namespace
 {
-struct PerFrameCB
+struct SkyboxCB
 {
-    DirectX::XMFLOAT4X4 world;
-    DirectX::XMFLOAT4X4 view;
+    DirectX::XMFLOAT4X4 viewNoTranslation;
     DirectX::XMFLOAT4X4 projection;
-    DirectX::XMFLOAT4 lightDirection;
-    DirectX::XMFLOAT4 lightColor;
-    DirectX::XMFLOAT4 tintColor;
-    DirectX::XMFLOAT4 cameraPositionWS;
-    float time;
-    float reflectionStrength;
-    float padding[2];
 };
 
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
@@ -59,7 +51,7 @@ bool CompileShader(const wchar_t* path, const char* entryPoint, const char* targ
         }
         else if (outError)
         {
-            *outError = "Shader compile failed (no error blob).";
+            *outError = "Skybox shader compile failed (no error blob).";
         }
         return false;
     }
@@ -95,41 +87,49 @@ std::wstring GetShaderPath(const wchar_t* fileName)
 }
 } // namespace
 
-bool ColorShader::Initialize(ID3D11Device* device)
+bool SkyboxShader::Initialize(ID3D11Device* device)
 {
-    return InitializeShader(device, GetShaderPath(L"simple.hlsl").c_str());
+    return InitializeShader(device, GetShaderPath(L"skybox.hlsl").c_str());
 }
 
-void ColorShader::Shutdown()
+void SkyboxShader::Shutdown()
 {
     ShutdownShader();
 }
 
-bool ColorShader::Render(
+bool SkyboxShader::Render(
     ID3D11DeviceContext* deviceContext,
     int indexCount,
-    const DirectX::XMMATRIX& world,
-    const DirectX::XMMATRIX& view,
+    const DirectX::XMMATRIX& viewNoTranslation,
     const DirectX::XMMATRIX& projection,
-    const DirectX::XMFLOAT4& lightDirection,
-    const DirectX::XMFLOAT4& lightColor,
-    const DirectX::XMFLOAT4& tintColor,
-    float time,
-    const DirectX::XMFLOAT4& cameraPositionWS,
-    float reflectionStrength,
     ID3D11ShaderResourceView* cubemapSRV,
     ID3D11SamplerState* sampler)
 {
-    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, tintColor, time, cameraPositionWS, reflectionStrength, cubemapSRV, sampler);
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    if (SUCCEEDED(deviceContext->Map(perFrameCB_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+    {
+        auto* data = static_cast<SkyboxCB*>(mapped.pData);
+        DirectX::XMStoreFloat4x4(&data->viewNoTranslation, viewNoTranslation);
+        DirectX::XMStoreFloat4x4(&data->projection, projection);
+        deviceContext->Unmap(perFrameCB_.Get(), 0);
+    }
+
+    deviceContext->IASetInputLayout(layout_.Get());
+    deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
+    deviceContext->PSSetShader(pixelShader_.Get(), nullptr, 0);
+    deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
+    deviceContext->PSSetShaderResources(0, 1, &cubemapSRV);
+    deviceContext->PSSetSamplers(0, 1, &sampler);
+    deviceContext->DrawIndexed(indexCount, 0, 0);
     return true;
 }
 
-bool ColorShader::InitializeShader(ID3D11Device* device, const wchar_t* shaderPath)
+bool SkyboxShader::InitializeShader(ID3D11Device* device, const wchar_t* shaderPath)
 {
     shaderPath_ = shaderPath;
 
     D3D11_BUFFER_DESC cbDesc = {};
-    cbDesc.ByteWidth = sizeof(PerFrameCB);
+    cbDesc.ByteWidth = sizeof(SkyboxCB);
     cbDesc.Usage = D3D11_USAGE_DYNAMIC;
     cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
@@ -154,7 +154,7 @@ bool ColorShader::InitializeShader(ID3D11Device* device, const wchar_t* shaderPa
     return true;
 }
 
-bool ColorShader::Reload(ID3D11Device* device)
+bool SkyboxShader::Reload(ID3D11Device* device)
 {
     Microsoft::WRL::ComPtr<ID3DBlob> vsBuffer;
     Microsoft::WRL::ComPtr<ID3DBlob> psBuffer;
@@ -186,9 +186,7 @@ bool ColorShader::Reload(ID3D11Device* device)
     }
 
     const D3D11_INPUT_ELEMENT_DESC polygonLayout[] = {
-        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,  D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
     };
 
     Microsoft::WRL::ComPtr<ID3D11InputLayout> newLayout;
@@ -212,7 +210,7 @@ bool ColorShader::Reload(ID3D11Device* device)
     return true;
 }
 
-void ColorShader::CheckHotReload(ID3D11Device* device, std::chrono::steady_clock::time_point now)
+void SkyboxShader::CheckHotReload(ID3D11Device* device, std::chrono::steady_clock::time_point now)
 {
     constexpr auto kPollInterval = std::chrono::milliseconds(200);
 
@@ -237,51 +235,10 @@ void ColorShader::CheckHotReload(ID3D11Device* device, std::chrono::steady_clock
     Reload(device);
 }
 
-void ColorShader::ShutdownShader()
+void SkyboxShader::ShutdownShader()
 {
     perFrameCB_.Reset();
     layout_.Reset();
     pixelShader_.Reset();
     vertexShader_.Reset();
-}
-
-void ColorShader::RenderShader(
-    ID3D11DeviceContext* deviceContext,
-    int indexCount,
-    const DirectX::XMMATRIX& world,
-    const DirectX::XMMATRIX& view,
-    const DirectX::XMMATRIX& projection,
-    const DirectX::XMFLOAT4& lightDirection,
-    const DirectX::XMFLOAT4& lightColor,
-    const DirectX::XMFLOAT4& tintColor,
-    float time,
-    const DirectX::XMFLOAT4& cameraPositionWS,
-    float reflectionStrength,
-    ID3D11ShaderResourceView* cubemapSRV,
-    ID3D11SamplerState* sampler)
-{
-    D3D11_MAPPED_SUBRESOURCE mapped = {};
-    if (SUCCEEDED(deviceContext->Map(perFrameCB_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
-    {
-        auto* data = static_cast<PerFrameCB*>(mapped.pData);
-        DirectX::XMStoreFloat4x4(&data->world, world);
-        DirectX::XMStoreFloat4x4(&data->view, view);
-        DirectX::XMStoreFloat4x4(&data->projection, projection);
-        data->lightDirection = lightDirection;
-        data->lightColor = lightColor;
-        data->tintColor = tintColor;
-        data->cameraPositionWS = cameraPositionWS;
-        data->time = time;
-        data->reflectionStrength = reflectionStrength;
-        deviceContext->Unmap(perFrameCB_.Get(), 0);
-    }
-
-    deviceContext->IASetInputLayout(layout_.Get());
-    deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
-    deviceContext->PSSetShader(pixelShader_.Get(), nullptr, 0);
-    deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
-    deviceContext->PSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
-    deviceContext->PSSetShaderResources(0, 1, &cubemapSRV);
-    deviceContext->PSSetSamplers(0, 1, &sampler);
-    deviceContext->DrawIndexed(indexCount, 0, 0);
 }

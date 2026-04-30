@@ -2,9 +2,12 @@
 
 #include "Camera.h"
 #include "ColorShader.h"
+#include "CubemapTexture.h"
 #include "D3DClass.h"
 #include "Light.h"
 #include "Model.h"
+#include "Skybox.h"
+#include "SkyboxShader.h"
 #include "Texture.h"
 
 #include <DirectXMath.h>
@@ -32,6 +35,9 @@ private:
     std::unique_ptr<Texture> texture_;
     std::unique_ptr<Model> model_;
     std::unique_ptr<ColorShader> colorShader_;
+    std::unique_ptr<CubemapTexture> cubemap_;
+    std::unique_ptr<Skybox> skybox_;
+    std::unique_ptr<SkyboxShader> skyboxShader_;
 
     bool imguiInitialized_ = false;
     unsigned int screenWidth_ = 0;
@@ -49,4 +55,6 @@ private:
     DirectX::XMFLOAT3 lightColor_ = {1.0f, 1.0f, 1.0f};
     float lightIntensity_ = 1.0f;
     float elapsedTime_ = 0.0f;
+    bool skyboxVisible_ = true;
+    float reflectionStrength_ = 0.4f;
 };
