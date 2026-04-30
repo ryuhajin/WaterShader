@@ -65,12 +65,11 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
 
     cubemap_ = std::make_unique<CubemapTexture>();
     const std::wstring cubemapPath = GetAssetPath(L"textures/skybox.dds");
-    if (!cubemap_->Initialize(d3d_->GetDevice(), cubemapPath.c_str()))
+    std::wstring cubemapError;
+    if (!cubemap_->Initialize(d3d_->GetDevice(), cubemapPath.c_str(), &cubemapError))
     {
-        const std::wstring msg =
-            L"Failed to load cubemap:\n" + cubemapPath +
-            L"\n\nPlace a DDS cubemap (single .dds containing 6 faces) at this path, then rebuild or relaunch.";
-        MessageBoxW(hwnd, msg.c_str(), L"WaterShader: missing cubemap", MB_ICONERROR | MB_OK);
+        const std::wstring msg = cubemapPath + L"\n\n" + cubemapError;
+        MessageBoxW(hwnd, msg.c_str(), L"WaterShader: cubemap load failed", MB_ICONERROR | MB_OK);
         return false;
     }
 
