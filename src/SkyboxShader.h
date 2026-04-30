@@ -8,7 +8,7 @@
 #include <filesystem>
 #include <string>
 
-class ColorShader
+class SkyboxShader
 {
 public:
     bool Initialize(ID3D11Device* device);
@@ -17,15 +17,8 @@ public:
     bool Render(
         ID3D11DeviceContext* deviceContext,
         int indexCount,
-        const DirectX::XMMATRIX& world,
-        const DirectX::XMMATRIX& view,
+        const DirectX::XMMATRIX& viewNoTranslation,
         const DirectX::XMMATRIX& projection,
-        const DirectX::XMFLOAT4& lightDirection,
-        const DirectX::XMFLOAT4& lightColor,
-        const DirectX::XMFLOAT4& tintColor,
-        float time,
-        const DirectX::XMFLOAT4& cameraPositionWS,
-        float reflectionStrength,
         ID3D11ShaderResourceView* cubemapSRV,
         ID3D11SamplerState* sampler);
 
@@ -36,20 +29,6 @@ private:
     bool InitializeShader(ID3D11Device* device, const wchar_t* shaderPath);
     bool Reload(ID3D11Device* device);
     void ShutdownShader();
-    void RenderShader(
-        ID3D11DeviceContext* deviceContext,
-        int indexCount,
-        const DirectX::XMMATRIX& world,
-        const DirectX::XMMATRIX& view,
-        const DirectX::XMMATRIX& projection,
-        const DirectX::XMFLOAT4& lightDirection,
-        const DirectX::XMFLOAT4& lightColor,
-        const DirectX::XMFLOAT4& tintColor,
-        float time,
-        const DirectX::XMFLOAT4& cameraPositionWS,
-        float reflectionStrength,
-        ID3D11ShaderResourceView* cubemapSRV,
-        ID3D11SamplerState* sampler);
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader_;

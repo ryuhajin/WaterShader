@@ -11,6 +11,8 @@ add_executable(WaterShader WIN32
     src/Camera.h
     src/ColorShader.cpp
     src/ColorShader.h
+    src/CubemapTexture.cpp
+    src/CubemapTexture.h
     src/D3DClass.cpp
     src/D3DClass.h
     src/Graphics.cpp
@@ -22,6 +24,10 @@ add_executable(WaterShader WIN32
     src/main.cpp
     src/Model.cpp
     src/Model.h
+    src/Skybox.cpp
+    src/Skybox.h
+    src/SkyboxShader.cpp
+    src/SkyboxShader.h
     src/System.cpp
     src/System.h
     src/SystemConfig.h
@@ -58,6 +64,9 @@ add_custom_command(TARGET WaterShader POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${SHADER_SOURCE_DIR}/simple.hlsl"
         "${SHADER_OUTPUT_DIR}/simple.hlsl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_SOURCE_DIR}/skybox.hlsl"
+        "${SHADER_OUTPUT_DIR}/skybox.hlsl"
 )
 
 set(ASSETS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")

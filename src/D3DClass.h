@@ -17,14 +17,20 @@ public:
     void BeginScene(float red, float green, float blue, float alpha);
     void EndScene();
 
+    void SetDepthLessEqual();
+    void SetDepthDefault();
+
     ID3D11Device* GetDevice() const { return device_.Get(); }
     ID3D11DeviceContext* GetDeviceContext() const { return deviceContext_.Get(); }
+    ID3D11SamplerState* GetSampler() const { return defaultSampler_.Get(); }
 
 private:
     bool CreateDeviceAndSwapChain(int screenWidth, int screenHeight, HWND hwnd, bool fullscreen);
     bool CreateRenderTarget();
     bool CreateDepthStencil();
     bool CreateRasterizerState();
+    bool CreateDepthStates();
+    bool CreateSampler();
     void ReleaseRenderTarget();
 
     bool vsyncEnabled_ = true;
@@ -40,4 +46,6 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Texture2D> depthTexture_;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView_;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState_;
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthLessEqualState_;
+    Microsoft::WRL::ComPtr<ID3D11SamplerState> defaultSampler_;
 };

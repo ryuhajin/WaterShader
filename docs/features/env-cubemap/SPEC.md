@@ -1,6 +1,6 @@
 # env-cubemap
 
-> Branch: `feature/env-cubemap` · Status: drafting · Updated: 2026-05-01
+> Branch: `feature/env-cubemap` · Status: done · Updated: 2026-05-01
 
 ## 1. Goal / Visual Target
 
