@@ -33,13 +33,13 @@
 
 ---
 
-## Day 3 — 2026-05-01 금 — 환경 큐브맵 + Skybox → `feature/env-cubemap`
+## Day 3 — 2026-05-01 금 — 환경 큐브맵 + Skybox → `feature/env-cubemap` ✓
 
-- [ ] DDS 큐브맵 로딩 (DirectXTK `DDSTextureLoader`)
-- [ ] Skybox 렌더 (큐브 또는 fullscreen quad + reverse projection)
-- [ ] `TextureCube` + `SamplerState` 셰이더 바인딩
-- [ ] plane에 reflect 벡터로 환경 샘플링 (간단 반사)
-- [ ] ImGui: Skybox on/off 토글, 반사 강도 슬라이더
+- [x] DDS 큐브맵 로딩 (DirectXTK `DDSTextureLoader`)
+- [x] Skybox 렌더 (inline cube box + `clip.xyww` + LessEqual DSS)
+- [x] `TextureCube` + `SamplerState` 셰이더 바인딩
+- [x] plane에 reflect 벡터로 환경 샘플링 (간단 반사)
+- [x] ImGui: Skybox on/off 토글, 반사 강도 슬라이더
 
 **완료 기준:** plane이 환경을 반사. 배경에 skybox가 보임. 카메라 회전에 따라 반사가 자연스럽게 추적.
 
