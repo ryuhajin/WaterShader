@@ -11,6 +11,14 @@
 class ColorShader
 {
 public:
+    struct Wave
+    {
+        DirectX::XMFLOAT2 direction = {1.0f, 0.0f};
+        float amplitude  = 0.05f;
+        float wavelength = 2.0f;
+        float speed      = 0.5f;
+    };
+
     struct WaterParams
     {
         DirectX::XMFLOAT4 shallowColor = {0.50f, 0.85f, 1.00f, 1.0f};
@@ -20,6 +28,10 @@ public:
         float fresnelPower       = 5.0f;
         float reflectionStrength = 0.4f;
         float normalScale        = 1.0f;
+        Wave waves[2] = {
+            { { 1.0f, 0.0f}, 0.05f, 2.0f, 0.5f },
+            { { 0.7f, 0.7f}, 0.03f, 1.3f, 0.7f },
+        };
     };
 
     bool Initialize(ID3D11Device* device);

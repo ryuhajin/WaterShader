@@ -13,6 +13,15 @@
 
 namespace
 {
+struct WaveCB
+{
+    DirectX::XMFLOAT2 direction;
+    float amplitude;
+    float wavelength;
+    float speed;
+    float pad[3];
+};
+
 struct PerFrameCB
 {
     DirectX::XMFLOAT4X4 world;
@@ -29,6 +38,7 @@ struct PerFrameCB
     float reflectionStrength;
     float fresnelPower;
     float normalScale;
+    WaveCB waves[2];
 };
 
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
@@ -288,6 +298,14 @@ void ColorShader::RenderShader(
         data->reflectionStrength = water.reflectionStrength;
         data->fresnelPower = water.fresnelPower;
         data->normalScale = water.normalScale;
+        for (int i = 0; i < 2; ++i)
+        {
+            data->waves[i].direction  = water.waves[i].direction;
+            data->waves[i].amplitude  = water.waves[i].amplitude;
+            data->waves[i].wavelength = water.waves[i].wavelength;
+            data->waves[i].speed      = water.waves[i].speed;
+            data->waves[i].pad[0] = data->waves[i].pad[1] = data->waves[i].pad[2] = 0.0f;
+        }
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 

@@ -375,5 +375,25 @@ void Graphics::DrawImGuiPanel()
     ImGui::SliderFloat2("Normal Scroll 1", &water_.normalScroll1.x, -0.2f, 0.2f);
     ImGui::SliderFloat2("Normal Scroll 2", &water_.normalScroll2.x, -0.2f, 0.2f);
 
+    for (int i = 0; i < 2; ++i)
+    {
+        char label[32];
+        std::snprintf(label, sizeof(label), "Wave %d", i);
+        if (ImGui::TreeNode(label))
+        {
+            auto& w = water_.waves[i];
+            float angleDeg = DirectX::XMConvertToDegrees(std::atan2(w.direction.y, w.direction.x));
+            if (ImGui::SliderFloat("Direction (deg)", &angleDeg, -180.0f, 180.0f))
+            {
+                const float r = DirectX::XMConvertToRadians(angleDeg);
+                w.direction = { std::cos(r), std::sin(r) };
+            }
+            ImGui::SliderFloat("Amplitude", &w.amplitude, 0.0f, 0.3f);
+            ImGui::SliderFloat("Wavelength", &w.wavelength, 0.2f, 8.0f);
+            ImGui::SliderFloat("Speed", &w.speed, 0.0f, 3.0f);
+            ImGui::TreePop();
+        }
+    }
+
     ImGui::End();
 }
