@@ -22,6 +22,8 @@ struct PerFrameCB
     DirectX::XMFLOAT4 lightColor;
     DirectX::XMFLOAT4 tintColor;
     DirectX::XMFLOAT4 cameraPositionWS;
+    DirectX::XMFLOAT4 shallowColor;
+    DirectX::XMFLOAT4 deepColor;
     float time;
     float reflectionStrength;
     float fresnelPower;
@@ -119,10 +121,12 @@ bool ColorShader::Render(
     const DirectX::XMFLOAT4& cameraPositionWS,
     float reflectionStrength,
     float fresnelPower,
+    const DirectX::XMFLOAT4& shallowColor,
+    const DirectX::XMFLOAT4& deepColor,
     ID3D11ShaderResourceView* cubemapSRV,
     ID3D11SamplerState* sampler)
 {
-    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, tintColor, time, cameraPositionWS, reflectionStrength, fresnelPower, cubemapSRV, sampler);
+    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, tintColor, time, cameraPositionWS, reflectionStrength, fresnelPower, shallowColor, deepColor, cubemapSRV, sampler);
     return true;
 }
 
@@ -260,6 +264,8 @@ void ColorShader::RenderShader(
     const DirectX::XMFLOAT4& cameraPositionWS,
     float reflectionStrength,
     float fresnelPower,
+    const DirectX::XMFLOAT4& shallowColor,
+    const DirectX::XMFLOAT4& deepColor,
     ID3D11ShaderResourceView* cubemapSRV,
     ID3D11SamplerState* sampler)
 {
@@ -274,6 +280,8 @@ void ColorShader::RenderShader(
         data->lightColor = lightColor;
         data->tintColor = tintColor;
         data->cameraPositionWS = cameraPositionWS;
+        data->shallowColor = shallowColor;
+        data->deepColor = deepColor;
         data->time = time;
         data->reflectionStrength = reflectionStrength;
         data->fresnelPower = fresnelPower;

@@ -58,4 +58,6 @@ private:
     bool skyboxVisible_ = true;
     float reflectionStrength_ = 0.4f;
     float fresnelPower_ = 5.0f;
+    DirectX::XMFLOAT4 shallowColor_ = {0.50f, 0.85f, 1.00f, 1.0f};
+    DirectX::XMFLOAT4 deepColor_    = {0.05f, 0.15f, 0.40f, 1.0f};
 };

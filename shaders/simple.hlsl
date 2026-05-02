@@ -7,6 +7,8 @@ cbuffer PerFrameCB : register(b0)
     float4 g_LightColor;
     float4 g_TintColor;
     float4 g_CameraPositionWS;
+    float4 g_ShallowColor;
+    float4 g_DeepColor;
     float  g_Time;
     float  g_ReflectionStrength;
     float  g_FresnelPower;
@@ -50,13 +52,15 @@ float4 PSMain(PSInput input) : SV_TARGET
 
     float3 L = normalize(-g_LightDirection.xyz);
     float  NdotL = saturate(dot(N, L));
-    float3 lambert = g_TintColor.rgb * g_LightColor.rgb * g_LightColor.a * NdotL;
+
+    float3 waterCol = lerp(g_DeepColor.rgb, g_ShallowColor.rgb, NdotV);
+    float3 litWater = waterCol * g_LightColor.rgb * g_LightColor.a * NdotL;
 
     float  fresnel = pow(1.0f - NdotV, g_FresnelPower);
 
     float3 R = reflect(-V, N);
     float3 envColor = g_Skybox.Sample(g_Sampler, R).rgb;
 
-    float3 lit = lerp(lambert, envColor, saturate(fresnel * g_ReflectionStrength));
-    return float4(lit, 1.0f);
+    float3 lit = lerp(litWater, envColor, saturate(fresnel * g_ReflectionStrength));
+    return float4(lit * g_TintColor.rgb, 1.0f);
 }

@@ -27,6 +27,8 @@ public:
         const DirectX::XMFLOAT4& cameraPositionWS,
         float reflectionStrength,
         float fresnelPower,
+        const DirectX::XMFLOAT4& shallowColor,
+        const DirectX::XMFLOAT4& deepColor,
         ID3D11ShaderResourceView* cubemapSRV,
         ID3D11SamplerState* sampler);
 
@@ -50,6 +52,8 @@ private:
         const DirectX::XMFLOAT4& cameraPositionWS,
         float reflectionStrength,
         float fresnelPower,
+        const DirectX::XMFLOAT4& shallowColor,
+        const DirectX::XMFLOAT4& deepColor,
         ID3D11ShaderResourceView* cubemapSRV,
         ID3D11SamplerState* sampler);
 

@@ -262,6 +262,8 @@ bool Graphics::Render(float deltaTime)
         cameraPosWS,
         reflectionStrength_,
         fresnelPower_,
+        shallowColor_,
+        deepColor_,
         cubemap_->GetSRV(),
         d3d_->GetSampler());
 
@@ -348,6 +350,8 @@ void Graphics::DrawImGuiPanel()
 
     ImGui::SeparatorText("Water");
     ImGui::SliderFloat("Fresnel Power", &fresnelPower_, 1.0f, 8.0f);
+    ImGui::ColorEdit3("Shallow Color", &shallowColor_.x);
+    ImGui::ColorEdit3("Deep Color", &deepColor_.x);
 
     ImGui::End();
 }
