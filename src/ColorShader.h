@@ -26,6 +26,7 @@ public:
         float time,
         const DirectX::XMFLOAT4& cameraPositionWS,
         float reflectionStrength,
+        float fresnelPower,
         ID3D11ShaderResourceView* cubemapSRV,
         ID3D11SamplerState* sampler);
 
@@ -48,6 +49,7 @@ private:
         float time,
         const DirectX::XMFLOAT4& cameraPositionWS,
         float reflectionStrength,
+        float fresnelPower,
         ID3D11ShaderResourceView* cubemapSRV,
         ID3D11SamplerState* sampler);
 

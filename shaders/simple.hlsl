@@ -9,7 +9,8 @@ cbuffer PerFrameCB : register(b0)
     float4 g_CameraPositionWS;
     float  g_Time;
     float  g_ReflectionStrength;
-    float2 _padding;
+    float  g_FresnelPower;
+    float  _padding;
 };
 
 TextureCube  g_Skybox  : register(t0);
@@ -44,14 +45,18 @@ PSInput VSMain(VSInput input)
 float4 PSMain(PSInput input) : SV_TARGET
 {
     float3 N = normalize(input.normalWS);
+    float3 V = normalize(g_CameraPositionWS.xyz - input.worldPos);
+    float  NdotV = saturate(dot(N, V));
+
     float3 L = normalize(-g_LightDirection.xyz);
     float  NdotL = saturate(dot(N, L));
     float3 lambert = g_TintColor.rgb * g_LightColor.rgb * g_LightColor.a * NdotL;
 
-    float3 V = normalize(g_CameraPositionWS.xyz - input.worldPos);
+    float  fresnel = pow(1.0f - NdotV, g_FresnelPower);
+
     float3 R = reflect(-V, N);
     float3 envColor = g_Skybox.Sample(g_Sampler, R).rgb;
 
-    float3 lit = lambert + envColor * g_ReflectionStrength;
+    float3 lit = lerp(lambert, envColor, saturate(fresnel * g_ReflectionStrength));
     return float4(lit, 1.0f);
 }

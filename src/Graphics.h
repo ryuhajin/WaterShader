@@ -57,4 +57,5 @@ private:
     float elapsedTime_ = 0.0f;
     bool skyboxVisible_ = true;
     float reflectionStrength_ = 0.4f;
+    float fresnelPower_ = 5.0f;
 };

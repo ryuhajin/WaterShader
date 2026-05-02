@@ -24,7 +24,8 @@ struct PerFrameCB
     DirectX::XMFLOAT4 cameraPositionWS;
     float time;
     float reflectionStrength;
-    float padding[2];
+    float fresnelPower;
+    float padding;
 };
 
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
@@ -117,10 +118,11 @@ bool ColorShader::Render(
     float time,
     const DirectX::XMFLOAT4& cameraPositionWS,
     float reflectionStrength,
+    float fresnelPower,
     ID3D11ShaderResourceView* cubemapSRV,
     ID3D11SamplerState* sampler)
 {
-    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, tintColor, time, cameraPositionWS, reflectionStrength, cubemapSRV, sampler);
+    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, tintColor, time, cameraPositionWS, reflectionStrength, fresnelPower, cubemapSRV, sampler);
     return true;
 }
 
@@ -257,6 +259,7 @@ void ColorShader::RenderShader(
     float time,
     const DirectX::XMFLOAT4& cameraPositionWS,
     float reflectionStrength,
+    float fresnelPower,
     ID3D11ShaderResourceView* cubemapSRV,
     ID3D11SamplerState* sampler)
 {
@@ -273,6 +276,7 @@ void ColorShader::RenderShader(
         data->cameraPositionWS = cameraPositionWS;
         data->time = time;
         data->reflectionStrength = reflectionStrength;
+        data->fresnelPower = fresnelPower;
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 

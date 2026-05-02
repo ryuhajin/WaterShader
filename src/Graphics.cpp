@@ -261,6 +261,7 @@ bool Graphics::Render(float deltaTime)
         elapsedTime_,
         cameraPosWS,
         reflectionStrength_,
+        fresnelPower_,
         cubemap_->GetSRV(),
         d3d_->GetSampler());
 
@@ -344,6 +345,9 @@ void Graphics::DrawImGuiPanel()
     ImGui::SeparatorText("Environment");
     ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
     ImGui::SliderFloat("Reflection Strength", &reflectionStrength_, 0.0f, 1.0f);
+
+    ImGui::SeparatorText("Water");
+    ImGui::SliderFloat("Fresnel Power", &fresnelPower_, 1.0f, 8.0f);
 
     ImGui::End();
 }
