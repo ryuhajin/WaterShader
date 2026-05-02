@@ -116,6 +116,16 @@ void D3DClass::SetDepthDefault()
     deviceContext_->OMSetDepthStencilState(nullptr, 0);
 }
 
+void D3DClass::SetRasterizerDoubleSided()
+{
+    deviceContext_->RSSetState(rasterizerStateDoubleSided_.Get());
+}
+
+void D3DClass::SetRasterizerDefault()
+{
+    deviceContext_->RSSetState(rasterizerState_.Get());
+}
+
 bool D3DClass::CreateDeviceAndSwapChain(int screenWidth, int screenHeight, HWND hwnd, bool fullscreen)
 {
     DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
@@ -200,6 +210,13 @@ bool D3DClass::CreateRasterizerState()
     desc.DepthClipEnable = TRUE;
 
     ThrowIfFailed(device_->CreateRasterizerState(&desc, &rasterizerState_), "CreateRasterizerState failed.");
+
+    D3D11_RASTERIZER_DESC doubleSidedDesc = desc;
+    doubleSidedDesc.CullMode = D3D11_CULL_NONE;
+    ThrowIfFailed(
+        device_->CreateRasterizerState(&doubleSidedDesc, &rasterizerStateDoubleSided_),
+        "CreateRasterizerState (double-sided) failed.");
+
     deviceContext_->RSSetState(rasterizerState_.Get());
     return true;
 }

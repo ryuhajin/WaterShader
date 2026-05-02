@@ -268,6 +268,7 @@ bool Graphics::Render(float deltaTime)
         d3d_->SetDepthDefault();
     }
 
+    d3d_->SetRasterizerDoubleSided();
     model_->Render(d3d_->GetDeviceContext());
     colorShader_->Render(
         d3d_->GetDeviceContext(),
@@ -285,6 +286,7 @@ bool Graphics::Render(float deltaTime)
         normalMap_->GetSRV(),
         d3d_->GetSampler(),
         d3d_->GetWrapSampler());
+    d3d_->SetRasterizerDefault();
 
     DrawImGuiPanel();
 
