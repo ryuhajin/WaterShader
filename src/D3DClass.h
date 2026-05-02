@@ -23,6 +23,7 @@ public:
     ID3D11Device* GetDevice() const { return device_.Get(); }
     ID3D11DeviceContext* GetDeviceContext() const { return deviceContext_.Get(); }
     ID3D11SamplerState* GetSampler() const { return defaultSampler_.Get(); }
+    ID3D11SamplerState* GetWrapSampler() const { return wrapSampler_.Get(); }
 
 private:
     bool CreateDeviceAndSwapChain(int screenWidth, int screenHeight, HWND hwnd, bool fullscreen);
@@ -48,4 +49,5 @@ private:
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState_;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthLessEqualState_;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> defaultSampler_;
+    Microsoft::WRL::ComPtr<ID3D11SamplerState> wrapSampler_;
 };

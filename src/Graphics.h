@@ -32,7 +32,7 @@ private:
     std::unique_ptr<D3DClass> d3d_;
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Light> light_;
-    std::unique_ptr<Texture> texture_;
+    std::unique_ptr<Texture> normalMap_;
     std::unique_ptr<Model> model_;
     std::unique_ptr<ColorShader> colorShader_;
     std::unique_ptr<CubemapTexture> cubemap_;
@@ -56,8 +56,5 @@ private:
     float lightIntensity_ = 1.0f;
     float elapsedTime_ = 0.0f;
     bool skyboxVisible_ = true;
-    float reflectionStrength_ = 0.4f;
-    float fresnelPower_ = 5.0f;
-    DirectX::XMFLOAT4 shallowColor_ = {0.50f, 0.85f, 1.00f, 1.0f};
-    DirectX::XMFLOAT4 deepColor_    = {0.05f, 0.15f, 0.40f, 1.0f};
+    ColorShader::WaterParams water_;
 };

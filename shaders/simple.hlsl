@@ -9,14 +9,17 @@ cbuffer PerFrameCB : register(b0)
     float4 g_CameraPositionWS;
     float4 g_ShallowColor;
     float4 g_DeepColor;
+    float4 g_NormalScroll;        // xy = scroll1, zw = scroll2
     float  g_Time;
     float  g_ReflectionStrength;
     float  g_FresnelPower;
-    float  _padding;
+    float  g_NormalScale;
 };
 
-TextureCube  g_Skybox  : register(t0);
-SamplerState g_Sampler : register(s0);
+TextureCube  g_Skybox        : register(t0);
+SamplerState g_Sampler       : register(s0);
+Texture2D    g_NormalMap     : register(t1);
+SamplerState g_NormalSampler : register(s1);
 
 struct VSInput
 {
@@ -46,7 +49,19 @@ PSInput VSMain(VSInput input)
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    float3 N = normalize(input.normalWS);
+    // Two scrolling normal map samples blended in tangent space.
+    float2 uv1 = input.uv * g_NormalScale + g_NormalScroll.xy * g_Time;
+    float2 uv2 = input.uv * g_NormalScale + g_NormalScroll.zw * g_Time;
+    float3 n1 = g_NormalMap.Sample(g_NormalSampler, uv1).xyz * 2.0f - 1.0f;
+    float3 n2 = g_NormalMap.Sample(g_NormalSampler, uv2).xyz * 2.0f - 1.0f;
+    float3 nTan = normalize(n1 + n2);
+
+    // Plane TBN: tangent = world X, bitangent = world Z, normal = vertex normal.
+    float3 N0 = normalize(input.normalWS);
+    float3 T  = normalize(mul(float3(1, 0, 0), (float3x3)g_World));
+    float3 B  = normalize(mul(float3(0, 0, 1), (float3x3)g_World));
+    float3 N  = normalize(nTan.x * T + nTan.y * B + nTan.z * N0);
+
     float3 V = normalize(g_CameraPositionWS.xyz - input.worldPos);
     float  NdotV = saturate(dot(N, V));
 

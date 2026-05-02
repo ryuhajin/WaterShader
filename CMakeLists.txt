@@ -31,6 +31,7 @@ add_executable(WaterShader WIN32
     src/System.cpp
     src/System.h
     src/SystemConfig.h
+    src/Texture.cpp
     src/Texture.h
     src/Timer.cpp
     src/Timer.h

@@ -24,10 +24,11 @@ struct PerFrameCB
     DirectX::XMFLOAT4 cameraPositionWS;
     DirectX::XMFLOAT4 shallowColor;
     DirectX::XMFLOAT4 deepColor;
+    DirectX::XMFLOAT4 normalScroll;     // xy = scroll1, zw = scroll2
     float time;
     float reflectionStrength;
     float fresnelPower;
-    float padding;
+    float normalScale;
 };
 
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
@@ -119,14 +120,13 @@ bool ColorShader::Render(
     const DirectX::XMFLOAT4& tintColor,
     float time,
     const DirectX::XMFLOAT4& cameraPositionWS,
-    float reflectionStrength,
-    float fresnelPower,
-    const DirectX::XMFLOAT4& shallowColor,
-    const DirectX::XMFLOAT4& deepColor,
+    const WaterParams& water,
     ID3D11ShaderResourceView* cubemapSRV,
-    ID3D11SamplerState* sampler)
+    ID3D11ShaderResourceView* normalSRV,
+    ID3D11SamplerState* clampSampler,
+    ID3D11SamplerState* wrapSampler)
 {
-    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, tintColor, time, cameraPositionWS, reflectionStrength, fresnelPower, shallowColor, deepColor, cubemapSRV, sampler);
+    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, tintColor, time, cameraPositionWS, water, cubemapSRV, normalSRV, clampSampler, wrapSampler);
     return true;
 }
 
@@ -262,12 +262,11 @@ void ColorShader::RenderShader(
     const DirectX::XMFLOAT4& tintColor,
     float time,
     const DirectX::XMFLOAT4& cameraPositionWS,
-    float reflectionStrength,
-    float fresnelPower,
-    const DirectX::XMFLOAT4& shallowColor,
-    const DirectX::XMFLOAT4& deepColor,
+    const WaterParams& water,
     ID3D11ShaderResourceView* cubemapSRV,
-    ID3D11SamplerState* sampler)
+    ID3D11ShaderResourceView* normalSRV,
+    ID3D11SamplerState* clampSampler,
+    ID3D11SamplerState* wrapSampler)
 {
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     if (SUCCEEDED(deviceContext->Map(perFrameCB_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
@@ -280,20 +279,27 @@ void ColorShader::RenderShader(
         data->lightColor = lightColor;
         data->tintColor = tintColor;
         data->cameraPositionWS = cameraPositionWS;
-        data->shallowColor = shallowColor;
-        data->deepColor = deepColor;
+        data->shallowColor = water.shallowColor;
+        data->deepColor = water.deepColor;
+        data->normalScroll = DirectX::XMFLOAT4(
+            water.normalScroll1.x, water.normalScroll1.y,
+            water.normalScroll2.x, water.normalScroll2.y);
         data->time = time;
-        data->reflectionStrength = reflectionStrength;
-        data->fresnelPower = fresnelPower;
+        data->reflectionStrength = water.reflectionStrength;
+        data->fresnelPower = water.fresnelPower;
+        data->normalScale = water.normalScale;
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
+
+    ID3D11ShaderResourceView* srvs[2] = {cubemapSRV, normalSRV};
+    ID3D11SamplerState* samplers[2] = {clampSampler, wrapSampler};
 
     deviceContext->IASetInputLayout(layout_.Get());
     deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
     deviceContext->PSSetShader(pixelShader_.Get(), nullptr, 0);
     deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->PSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
-    deviceContext->PSSetShaderResources(0, 1, &cubemapSRV);
-    deviceContext->PSSetSamplers(0, 1, &sampler);
+    deviceContext->PSSetShaderResources(0, 2, srvs);
+    deviceContext->PSSetSamplers(0, 2, samplers);
     deviceContext->DrawIndexed(indexCount, 0, 0);
 }

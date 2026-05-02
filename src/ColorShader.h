@@ -11,6 +11,17 @@
 class ColorShader
 {
 public:
+    struct WaterParams
+    {
+        DirectX::XMFLOAT4 shallowColor = {0.50f, 0.85f, 1.00f, 1.0f};
+        DirectX::XMFLOAT4 deepColor    = {0.05f, 0.15f, 0.40f, 1.0f};
+        DirectX::XMFLOAT2 normalScroll1 = { 0.03f,  0.02f};
+        DirectX::XMFLOAT2 normalScroll2 = {-0.02f,  0.04f};
+        float fresnelPower       = 5.0f;
+        float reflectionStrength = 0.4f;
+        float normalScale        = 1.0f;
+    };
+
     bool Initialize(ID3D11Device* device);
     void Shutdown();
     void CheckHotReload(ID3D11Device* device, std::chrono::steady_clock::time_point now);
@@ -25,12 +36,11 @@ public:
         const DirectX::XMFLOAT4& tintColor,
         float time,
         const DirectX::XMFLOAT4& cameraPositionWS,
-        float reflectionStrength,
-        float fresnelPower,
-        const DirectX::XMFLOAT4& shallowColor,
-        const DirectX::XMFLOAT4& deepColor,
+        const WaterParams& water,
         ID3D11ShaderResourceView* cubemapSRV,
-        ID3D11SamplerState* sampler);
+        ID3D11ShaderResourceView* normalSRV,
+        ID3D11SamplerState* clampSampler,
+        ID3D11SamplerState* wrapSampler);
 
     const std::string& GetLastError() const { return lastError_; }
     const std::string& GetLastReloadStamp() const { return lastReloadStamp_; }
@@ -50,12 +60,11 @@ private:
         const DirectX::XMFLOAT4& tintColor,
         float time,
         const DirectX::XMFLOAT4& cameraPositionWS,
-        float reflectionStrength,
-        float fresnelPower,
-        const DirectX::XMFLOAT4& shallowColor,
-        const DirectX::XMFLOAT4& deepColor,
+        const WaterParams& water,
         ID3D11ShaderResourceView* cubemapSRV,
-        ID3D11SamplerState* sampler);
+        ID3D11ShaderResourceView* normalSRV,
+        ID3D11SamplerState* clampSampler,
+        ID3D11SamplerState* wrapSampler);
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader_;
