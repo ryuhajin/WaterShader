@@ -111,7 +111,7 @@ std::wstring GetShaderPath(const wchar_t* fileName)
 
 bool ColorShader::Initialize(ID3D11Device* device)
 {
-    return InitializeShader(device, GetShaderPath(L"simple.hlsl").c_str());
+    return InitializeShader(device);
 }
 
 void ColorShader::Shutdown()
@@ -140,9 +140,18 @@ bool ColorShader::Render(
     return true;
 }
 
-bool ColorShader::InitializeShader(ID3D11Device* device, const wchar_t* shaderPath)
+bool ColorShader::InitializeShader(ID3D11Device* device)
 {
-    shaderPath_ = shaderPath;
+    vsPath_ = GetShaderPath(L"vertexShader.hlsl");
+    psPath_ = GetShaderPath(L"PixelShader.hlsl");
+
+    watchedFiles_ = {
+        {vsPath_,                          {}},
+        {psPath_,                          {}},
+        {GetShaderPath(L"Common.hlsli"),   {}},
+        {GetShaderPath(L"Lighting.hlsli"), {}},
+        {GetShaderPath(L"Cubemap.hlsli"),  {}},
+    };
 
     D3D11_BUFFER_DESC cbDesc = {};
     cbDesc.ByteWidth = sizeof(PerFrameCB);
@@ -161,10 +170,13 @@ bool ColorShader::InitializeShader(ID3D11Device* device, const wchar_t* shaderPa
     }
 
     std::error_code ec;
-    const auto mtime = std::filesystem::last_write_time(shaderPath_, ec);
-    if (!ec)
+    for (auto& w : watchedFiles_)
     {
-        lastWriteTime_ = mtime;
+        const auto mtime = std::filesystem::last_write_time(w.path, ec);
+        if (!ec)
+        {
+            w.mtime = mtime;
+        }
     }
 
     return true;
@@ -176,12 +188,12 @@ bool ColorShader::Reload(ID3D11Device* device)
     Microsoft::WRL::ComPtr<ID3DBlob> psBuffer;
 
     std::string error;
-    if (!CompileShader(shaderPath_.c_str(), "VSMain", "vs_5_0", &vsBuffer, &error))
+    if (!CompileShader(vsPath_.c_str(), "VSMain", "vs_5_0", &vsBuffer, &error))
     {
         lastError_ = error;
         return false;
     }
-    if (!CompileShader(shaderPath_.c_str(), "PSMain", "ps_5_0", &psBuffer, &error))
+    if (!CompileShader(psPath_.c_str(), "PSMain", "ps_5_0", &psBuffer, &error))
     {
         lastError_ = error;
         return false;
@@ -238,19 +250,26 @@ void ColorShader::CheckHotReload(ID3D11Device* device, std::chrono::steady_clock
     }
     nextCheckTime_ = now + kPollInterval;
 
+    bool changed = false;
     std::error_code ec;
-    const auto mtime = std::filesystem::last_write_time(shaderPath_, ec);
-    if (ec)
+    for (auto& w : watchedFiles_)
     {
-        return;
+        const auto mtime = std::filesystem::last_write_time(w.path, ec);
+        if (ec)
+        {
+            continue;
+        }
+        if (mtime != w.mtime)
+        {
+            w.mtime = mtime;
+            changed = true;
+        }
     }
-    if (mtime == lastWriteTime_)
-    {
-        return;
-    }
-    lastWriteTime_ = mtime;
 
-    Reload(device);
+    if (changed)
+    {
+        Reload(device);
+    }
 }
 
 void ColorShader::ShutdownShader()

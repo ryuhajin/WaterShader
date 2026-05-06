@@ -7,6 +7,7 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 class ColorShader
 {
@@ -58,7 +59,7 @@ public:
     const std::string& GetLastReloadStamp() const { return lastReloadStamp_; }
 
 private:
-    bool InitializeShader(ID3D11Device* device, const wchar_t* shaderPath);
+    bool InitializeShader(ID3D11Device* device);
     bool Reload(ID3D11Device* device);
     void ShutdownShader();
     void RenderShader(
@@ -83,8 +84,16 @@ private:
     Microsoft::WRL::ComPtr<ID3D11InputLayout> layout_;
     Microsoft::WRL::ComPtr<ID3D11Buffer> perFrameCB_;
 
-    std::wstring shaderPath_;
-    std::filesystem::file_time_type lastWriteTime_{};
+    std::wstring vsPath_;
+    std::wstring psPath_;
+
+    struct WatchedFile
+    {
+        std::wstring path;
+        std::filesystem::file_time_type mtime{};
+    };
+    std::vector<WatchedFile> watchedFiles_;
+
     std::chrono::steady_clock::time_point nextCheckTime_{};
     std::string lastError_;
     std::string lastReloadStamp_;

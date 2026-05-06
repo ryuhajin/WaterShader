@@ -83,3 +83,28 @@ Wave direction은 cbuffer에 `XMFLOAT2 (cos, sin)`으로 들어가지만 슬라�
 ## 9. amp=0이면 출렁임 OFF
 
 Wave amp 슬라이더를 0으로 끌면 해당 wave가 완전히 무효화. 두 wave 모두 0이면 정점 변위 없음 → input.position 그대로 사용. ImGui로 즉석에서 정점 변위 ON/OFF 토글 가능.
+
+## 10. 셰이더 파일 구조 — VS/PS 분리 + hlsli 인클루드
+
+water 셰이더 본체를 직접 작성·디버깅하기 편하도록 `simple.hlsl` 한 파일을 다음 5개로 재구성:
+
+```
+shaders/
+├── Common.hlsli       — PerFrameCB cbuffer + VSInput/PSInput struct
+├── Lighting.hlsli     — Lambert / FresnelSchlick 헬퍼
+├── Cubemap.hlsli      — g_Skybox(t0) + g_Sampler(s0) + SampleEnv 헬퍼
+├── vertexShader.hlsl  — #include Common.hlsli; sine wave 변위 + VSMain
+└── PixelShader.hlsl   — #include Common+Lighting+Cubemap.hlsli; g_NormalMap(t1)+g_NormalSampler(s1) + PSMain
+```
+
+**hlsli ↔ hlsl 분담 원칙:**
+- **hlsli**: 선언(declaration) + 단순 산술 헬퍼. include guard(`WS_*_HLSLI`) 필수. 사용자가 본체 작업 중 자주 건드리지 않을 부분.
+- **hlsl**: 합성식·변위 본체·바인딩 사용처. 사용자가 디버깅·튜닝하면서 손볼 영역.
+
+**cbuffer는 한 덩어리로 유지**: HLSL의 `cbuffer`는 단일 선언 단위라 여러 파일에 쪼갤 수 없음. PerFrameCB를 hlsli로 빼면 그 안의 모든 필드(VS-only인 Wave 포함)도 같이 따라옴. PS가 안 읽는 필드는 컴파일러가 무시하므로 비용 0. C++ `PerFrameCB` 매핑이 한 곳에 묶여 있어 유지보수도 단순.
+
+**바인딩 슬롯 충돌 방지**: 한 셰이더에서 같은 register를 두 번 선언하면 컴파일 에러. `Cubemap.hlsli`가 t0/s0을 잡고 있으므로 이 파일을 인클루드하는 `PixelShader.hlsl`에서 t0/s0을 재선언하지 않음. water-only 리소스는 t1/s1(`g_NormalMap`/`g_NormalSampler`)만 PS에서 별도 선언. `skybox.hlsl`은 자체 t0/s0 선언이 있으므로 `Cubemap.hlsli`를 인클루드하지 않음.
+
+**`.hlsli`는 컴파일 타깃이 아님**: CMake `add_executable` 소스에 들어가지 않고, POST_BUILD `copy_if_different`로 빌드 디렉터리에 데이터 파일로만 복사. 런타임에 `D3DCompileFromFile`이 `D3D_COMPILE_STANDARD_FILE_INCLUDE`로 `.hlsl`이 인클루드할 때 같은 디렉터리에서 해상.
+
+**Hot-reload 다중 파일 watch**: `ColorShader::watchedFiles_`(vector)에 5개 경로 모두 등록. 200ms 폴링에서 어느 하나라도 mtime이 바뀌면 VS+PS 모두 재컴파일. `Common.hlsli` 한 줄만 고쳐도 즉시 반영됨.

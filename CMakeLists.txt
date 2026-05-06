@@ -60,11 +60,25 @@ target_link_libraries(WaterShader PRIVATE
 set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(SHADER_OUTPUT_DIR "$<TARGET_FILE_DIR:WaterShader>/shaders")
 
+# NOTE: .hlsl/.hlsli files are NOT compile targets; they are runtime data
+# loaded by D3DCompileFromFile. This rule only mirrors them next to the exe.
 add_custom_command(TARGET WaterShader POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${SHADER_SOURCE_DIR}/simple.hlsl"
-        "${SHADER_OUTPUT_DIR}/simple.hlsl"
+        "${SHADER_SOURCE_DIR}/vertexShader.hlsl"
+        "${SHADER_OUTPUT_DIR}/vertexShader.hlsl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_SOURCE_DIR}/PixelShader.hlsl"
+        "${SHADER_OUTPUT_DIR}/PixelShader.hlsl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_SOURCE_DIR}/Common.hlsli"
+        "${SHADER_OUTPUT_DIR}/Common.hlsli"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_SOURCE_DIR}/Lighting.hlsli"
+        "${SHADER_OUTPUT_DIR}/Lighting.hlsli"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_SOURCE_DIR}/Cubemap.hlsli"
+        "${SHADER_OUTPUT_DIR}/Cubemap.hlsli"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${SHADER_SOURCE_DIR}/skybox.hlsl"
         "${SHADER_OUTPUT_DIR}/skybox.hlsl"
