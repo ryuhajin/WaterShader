@@ -116,6 +116,16 @@ void D3DClass::SetDepthDefault()
     deviceContext_->OMSetDepthStencilState(nullptr, 0);
 }
 
+void D3DClass::SetRasterizerDoubleSided()
+{
+    deviceContext_->RSSetState(rasterizerStateDoubleSided_.Get());
+}
+
+void D3DClass::SetRasterizerDefault()
+{
+    deviceContext_->RSSetState(rasterizerState_.Get());
+}
+
 bool D3DClass::CreateDeviceAndSwapChain(int screenWidth, int screenHeight, HWND hwnd, bool fullscreen)
 {
     DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
@@ -200,6 +210,13 @@ bool D3DClass::CreateRasterizerState()
     desc.DepthClipEnable = TRUE;
 
     ThrowIfFailed(device_->CreateRasterizerState(&desc, &rasterizerState_), "CreateRasterizerState failed.");
+
+    D3D11_RASTERIZER_DESC doubleSidedDesc = desc;
+    doubleSidedDesc.CullMode = D3D11_CULL_NONE;
+    ThrowIfFailed(
+        device_->CreateRasterizerState(&doubleSidedDesc, &rasterizerStateDoubleSided_),
+        "CreateRasterizerState (double-sided) failed.");
+
     deviceContext_->RSSetState(rasterizerState_.Get());
     return true;
 }
@@ -229,6 +246,18 @@ bool D3DClass::CreateSampler()
     desc.MaxLOD = D3D11_FLOAT32_MAX;
 
     ThrowIfFailed(device_->CreateSamplerState(&desc, &defaultSampler_), "CreateSamplerState failed.");
+
+    D3D11_SAMPLER_DESC wrapDesc = {};
+    wrapDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    wrapDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+    wrapDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+    wrapDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+    wrapDesc.MaxAnisotropy = 1;
+    wrapDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+    wrapDesc.MinLOD = 0;
+    wrapDesc.MaxLOD = D3D11_FLOAT32_MAX;
+
+    ThrowIfFailed(device_->CreateSamplerState(&wrapDesc, &wrapSampler_), "CreateSamplerState (wrap) failed.");
     return true;
 }
 

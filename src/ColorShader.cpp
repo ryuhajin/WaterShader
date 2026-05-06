@@ -13,6 +13,15 @@
 
 namespace
 {
+struct WaveCB
+{
+    DirectX::XMFLOAT2 direction;
+    float amplitude;
+    float wavelength;
+    float speed;
+    float pad[3];
+};
+
 struct PerFrameCB
 {
     DirectX::XMFLOAT4X4 world;
@@ -22,9 +31,14 @@ struct PerFrameCB
     DirectX::XMFLOAT4 lightColor;
     DirectX::XMFLOAT4 tintColor;
     DirectX::XMFLOAT4 cameraPositionWS;
+    DirectX::XMFLOAT4 shallowColor;
+    DirectX::XMFLOAT4 deepColor;
+    DirectX::XMFLOAT4 normalScroll;     // xy = scroll1, zw = scroll2
     float time;
     float reflectionStrength;
-    float padding[2];
+    float fresnelPower;
+    float normalScale;
+    WaveCB waves[2];
 };
 
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
@@ -97,7 +111,7 @@ std::wstring GetShaderPath(const wchar_t* fileName)
 
 bool ColorShader::Initialize(ID3D11Device* device)
 {
-    return InitializeShader(device, GetShaderPath(L"simple.hlsl").c_str());
+    return InitializeShader(device);
 }
 
 void ColorShader::Shutdown()
@@ -116,17 +130,28 @@ bool ColorShader::Render(
     const DirectX::XMFLOAT4& tintColor,
     float time,
     const DirectX::XMFLOAT4& cameraPositionWS,
-    float reflectionStrength,
+    const WaterParams& water,
     ID3D11ShaderResourceView* cubemapSRV,
-    ID3D11SamplerState* sampler)
+    ID3D11ShaderResourceView* normalSRV,
+    ID3D11SamplerState* clampSampler,
+    ID3D11SamplerState* wrapSampler)
 {
-    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, tintColor, time, cameraPositionWS, reflectionStrength, cubemapSRV, sampler);
+    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, tintColor, time, cameraPositionWS, water, cubemapSRV, normalSRV, clampSampler, wrapSampler);
     return true;
 }
 
-bool ColorShader::InitializeShader(ID3D11Device* device, const wchar_t* shaderPath)
+bool ColorShader::InitializeShader(ID3D11Device* device)
 {
-    shaderPath_ = shaderPath;
+    vsPath_ = GetShaderPath(L"vertexShader.hlsl");
+    psPath_ = GetShaderPath(L"PixelShader.hlsl");
+
+    watchedFiles_ = {
+        {vsPath_,                          {}},
+        {psPath_,                          {}},
+        {GetShaderPath(L"Common.hlsli"),   {}},
+        {GetShaderPath(L"Lighting.hlsli"), {}},
+        {GetShaderPath(L"Cubemap.hlsli"),  {}},
+    };
 
     D3D11_BUFFER_DESC cbDesc = {};
     cbDesc.ByteWidth = sizeof(PerFrameCB);
@@ -145,10 +170,13 @@ bool ColorShader::InitializeShader(ID3D11Device* device, const wchar_t* shaderPa
     }
 
     std::error_code ec;
-    const auto mtime = std::filesystem::last_write_time(shaderPath_, ec);
-    if (!ec)
+    for (auto& w : watchedFiles_)
     {
-        lastWriteTime_ = mtime;
+        const auto mtime = std::filesystem::last_write_time(w.path, ec);
+        if (!ec)
+        {
+            w.mtime = mtime;
+        }
     }
 
     return true;
@@ -160,12 +188,12 @@ bool ColorShader::Reload(ID3D11Device* device)
     Microsoft::WRL::ComPtr<ID3DBlob> psBuffer;
 
     std::string error;
-    if (!CompileShader(shaderPath_.c_str(), "VSMain", "vs_5_0", &vsBuffer, &error))
+    if (!CompileShader(vsPath_.c_str(), "VSMain", "vs_5_0", &vsBuffer, &error))
     {
         lastError_ = error;
         return false;
     }
-    if (!CompileShader(shaderPath_.c_str(), "PSMain", "ps_5_0", &psBuffer, &error))
+    if (!CompileShader(psPath_.c_str(), "PSMain", "ps_5_0", &psBuffer, &error))
     {
         lastError_ = error;
         return false;
@@ -222,19 +250,26 @@ void ColorShader::CheckHotReload(ID3D11Device* device, std::chrono::steady_clock
     }
     nextCheckTime_ = now + kPollInterval;
 
+    bool changed = false;
     std::error_code ec;
-    const auto mtime = std::filesystem::last_write_time(shaderPath_, ec);
-    if (ec)
+    for (auto& w : watchedFiles_)
     {
-        return;
+        const auto mtime = std::filesystem::last_write_time(w.path, ec);
+        if (ec)
+        {
+            continue;
+        }
+        if (mtime != w.mtime)
+        {
+            w.mtime = mtime;
+            changed = true;
+        }
     }
-    if (mtime == lastWriteTime_)
-    {
-        return;
-    }
-    lastWriteTime_ = mtime;
 
-    Reload(device);
+    if (changed)
+    {
+        Reload(device);
+    }
 }
 
 void ColorShader::ShutdownShader()
@@ -256,9 +291,11 @@ void ColorShader::RenderShader(
     const DirectX::XMFLOAT4& tintColor,
     float time,
     const DirectX::XMFLOAT4& cameraPositionWS,
-    float reflectionStrength,
+    const WaterParams& water,
     ID3D11ShaderResourceView* cubemapSRV,
-    ID3D11SamplerState* sampler)
+    ID3D11ShaderResourceView* normalSRV,
+    ID3D11SamplerState* clampSampler,
+    ID3D11SamplerState* wrapSampler)
 {
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     if (SUCCEEDED(deviceContext->Map(perFrameCB_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
@@ -271,17 +308,35 @@ void ColorShader::RenderShader(
         data->lightColor = lightColor;
         data->tintColor = tintColor;
         data->cameraPositionWS = cameraPositionWS;
+        data->shallowColor = water.shallowColor;
+        data->deepColor = water.deepColor;
+        data->normalScroll = DirectX::XMFLOAT4(
+            water.normalScroll1.x, water.normalScroll1.y,
+            water.normalScroll2.x, water.normalScroll2.y);
         data->time = time;
-        data->reflectionStrength = reflectionStrength;
+        data->reflectionStrength = water.reflectionStrength;
+        data->fresnelPower = water.fresnelPower;
+        data->normalScale = water.normalScale;
+        for (int i = 0; i < 2; ++i)
+        {
+            data->waves[i].direction  = water.waves[i].direction;
+            data->waves[i].amplitude  = water.waves[i].amplitude;
+            data->waves[i].wavelength = water.waves[i].wavelength;
+            data->waves[i].speed      = water.waves[i].speed;
+            data->waves[i].pad[0] = data->waves[i].pad[1] = data->waves[i].pad[2] = 0.0f;
+        }
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
+
+    ID3D11ShaderResourceView* srvs[2] = {cubemapSRV, normalSRV};
+    ID3D11SamplerState* samplers[2] = {clampSampler, wrapSampler};
 
     deviceContext->IASetInputLayout(layout_.Get());
     deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
     deviceContext->PSSetShader(pixelShader_.Get(), nullptr, 0);
     deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->PSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
-    deviceContext->PSSetShaderResources(0, 1, &cubemapSRV);
-    deviceContext->PSSetSamplers(0, 1, &sampler);
+    deviceContext->PSSetShaderResources(0, 2, srvs);
+    deviceContext->PSSetSamplers(0, 2, samplers);
     deviceContext->DrawIndexed(indexCount, 0, 0);
 }

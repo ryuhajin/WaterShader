@@ -1,6 +1,6 @@
 # water-base
 
-> Branch: `feature/water-base` · Status: drafting · Updated: 2026-05-02
+> Branch: `feature/water-base` · Status: done · Updated: 2026-05-02
 
 ## 1. Goal / Visual Target
 

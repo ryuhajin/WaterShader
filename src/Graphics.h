@@ -32,7 +32,7 @@ private:
     std::unique_ptr<D3DClass> d3d_;
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Light> light_;
-    std::unique_ptr<Texture> texture_;
+    std::unique_ptr<Texture> normalMap_;
     std::unique_ptr<Model> model_;
     std::unique_ptr<ColorShader> colorShader_;
     std::unique_ptr<CubemapTexture> cubemap_;
@@ -56,5 +56,5 @@ private:
     float lightIntensity_ = 1.0f;
     float elapsedTime_ = 0.0f;
     bool skyboxVisible_ = true;
-    float reflectionStrength_ = 0.4f;
+    ColorShader::WaterParams water_;
 };

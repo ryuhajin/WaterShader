@@ -49,7 +49,23 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     light_->SetDirection(0.0f, -1.0f, 1.0f);
     light_->SetDiffuseColor(1.0f, 1.0f, 1.0f, 1.0f);
 
-    texture_ = std::make_unique<Texture>();
+    normalMap_ = std::make_unique<Texture>();
+    {
+        const std::wstring normalDdsPath = GetAssetPath(L"textures/water_normal.dds");
+        const std::wstring normalPngPath = GetAssetPath(L"textures/water_normal.png");
+        std::wstring normalError;
+        bool loaded = normalMap_->Initialize(d3d_->GetDevice(), normalDdsPath.c_str(), &normalError);
+        if (!loaded)
+        {
+            std::wstring secondError;
+            loaded = normalMap_->Initialize(d3d_->GetDevice(), normalPngPath.c_str(), &secondError);
+            if (!loaded)
+            {
+                // Fallback: 1x1 flat tangent normal so the shader path stays exercised.
+                normalMap_->InitializeFlat(d3d_->GetDevice(), 128, 128, 255, 255);
+            }
+        }
+    }
 
     model_ = std::make_unique<Model>();
     if (!model_->Initialize(d3d_->GetDevice(), GetAssetPath(L"models/32x32Plane.obj")))
@@ -132,7 +148,11 @@ void Graphics::Shutdown()
         model_.reset();
     }
 
-    texture_.reset();
+    if (normalMap_)
+    {
+        normalMap_->Shutdown();
+        normalMap_.reset();
+    }
     light_.reset();
     camera_.reset();
 
@@ -248,6 +268,7 @@ bool Graphics::Render(float deltaTime)
         d3d_->SetDepthDefault();
     }
 
+    d3d_->SetRasterizerDoubleSided();
     model_->Render(d3d_->GetDeviceContext());
     colorShader_->Render(
         d3d_->GetDeviceContext(),
@@ -260,9 +281,12 @@ bool Graphics::Render(float deltaTime)
         tintColor_,
         elapsedTime_,
         cameraPosWS,
-        reflectionStrength_,
+        water_,
         cubemap_->GetSRV(),
-        d3d_->GetSampler());
+        normalMap_->GetSRV(),
+        d3d_->GetSampler(),
+        d3d_->GetWrapSampler());
+    d3d_->SetRasterizerDefault();
 
     DrawImGuiPanel();
 
@@ -343,7 +367,35 @@ void Graphics::DrawImGuiPanel()
 
     ImGui::SeparatorText("Environment");
     ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
-    ImGui::SliderFloat("Reflection Strength", &reflectionStrength_, 0.0f, 1.0f);
+    ImGui::SliderFloat("Reflection Strength", &water_.reflectionStrength, 0.0f, 1.0f);
+
+    ImGui::SeparatorText("Water");
+    ImGui::SliderFloat("Fresnel Power", &water_.fresnelPower, 1.0f, 8.0f);
+    ImGui::ColorEdit3("Shallow Color", &water_.shallowColor.x);
+    ImGui::ColorEdit3("Deep Color", &water_.deepColor.x);
+    ImGui::SliderFloat("Normal Scale", &water_.normalScale, 0.1f, 5.0f);
+    ImGui::SliderFloat2("Normal Scroll 1", &water_.normalScroll1.x, -0.2f, 0.2f);
+    ImGui::SliderFloat2("Normal Scroll 2", &water_.normalScroll2.x, -0.2f, 0.2f);
+
+    for (int i = 0; i < 2; ++i)
+    {
+        char label[32];
+        std::snprintf(label, sizeof(label), "Wave %d", i);
+        if (ImGui::TreeNode(label))
+        {
+            auto& w = water_.waves[i];
+            float angleDeg = DirectX::XMConvertToDegrees(std::atan2(w.direction.y, w.direction.x));
+            if (ImGui::SliderFloat("Direction (deg)", &angleDeg, -180.0f, 180.0f))
+            {
+                const float r = DirectX::XMConvertToRadians(angleDeg);
+                w.direction = { std::cos(r), std::sin(r) };
+            }
+            ImGui::SliderFloat("Amplitude", &w.amplitude, 0.0f, 0.3f);
+            ImGui::SliderFloat("Wavelength", &w.wavelength, 0.2f, 8.0f);
+            ImGui::SliderFloat("Speed", &w.speed, 0.0f, 3.0f);
+            ImGui::TreePop();
+        }
+    }
 
     ImGui::End();
 }
