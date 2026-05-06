@@ -47,13 +47,15 @@
 
 ---
 
-## Day 4 — 2026-05-02 토 — Water Base → `feature/water-base`
+## Day 4 — 2026-05-02 토 — Water Base → `feature/water-base` ✓
 
-- [ ] UV scroll (`g_Time` 활용, 두 방향 different speed)
-- [ ] normal map 두 장 블렌드 (기본 + detail)
-- [ ] Fresnel 항: `pow(1 - dot(N, V), power)`
-- [ ] Shallow/Deep color 블렌딩 (camera 거리 또는 fresnel 기반)
-- [ ] 양면 그리기 RasterizerState (water plane은 단면이라 양면 필요)
+- [x] UV scroll (`g_Time` 활용, 두 방향 different speed)
+- [x] normal map 두 장 블렌드 (기본 + detail)
+- [x] Fresnel 항: `pow(1 - dot(N, V), power)`
+- [x] Shallow/Deep color 블렌딩 (camera 거리 또는 fresnel 기반)
+- [x] 양면 그리기 RasterizerState (water plane은 단면이라 양면 필요)
+- [x] (추가) sine wave 정점 변위 + analytic normal 재계산
+- [x] (추가) 셰이더 파일 분리: `simple.hlsl` → `vertexShader.hlsl` + `PixelShader.hlsl` + `Common/Lighting/Cubemap.hlsli`
 
 **완료 기준:** 수면이 흐르고, 시야각에 따라 fresnel로 reflection이 강조되며, 깊이감 있는 색.
 
