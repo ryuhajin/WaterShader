@@ -61,12 +61,12 @@
 
 ---
 
-## Day 5 — 2026-05-03 일 — Foam + Ripple → `feature/foam-mask`, `feature/ripple-sdf`
+## Day 5 — 2026-05-03 일 — Foam + Ripple → `feature/foam-mask`, `feature/ripple-sdf` *(deferred → Post-deadline 섹션 참고)*
 
-- [ ] Foam mask: depth 차이 기반 또는 noise + threshold + softness
-- [ ] SDF 방식의 원형 ripple (시간 기반 펼침)
-- [ ] 자체 제작 noise/mask 텍스처 1장 이상 연결
-- [ ] ImGui: foam threshold/softness, ripple radius/speed
+- [ ] Foam mask: depth 차이 기반 또는 noise + threshold + softness — **`feature/foam-mask`에 코드 90% 완성, 시각 검증 미진행. D-1 시간 제약으로 마감 후 재개.**
+- [ ] SDF 방식의 원형 ripple (시간 기반 펼침) — 미착수, deferred
+- [ ] 자체 제작 noise/mask 텍스처 1장 이상 연결 — foam 자산 1장 완성됨 (브랜치 보존)
+- [ ] ImGui: foam threshold/softness, ripple radius/speed — foam 슬라이더는 브랜치에 구현됨
 
 **완료 기준:** foam이 물결 위에 점점이 떠 있고, ripple이 한 점에서 펼쳐지는 동작.
 
@@ -114,6 +114,20 @@
 - [ ] **제출**
 
 **완료 기준:** GitHub 링크 + 영상 + breakdown PDF가 한 묶음으로 제공 가능.
+
+---
+
+## Post-deadline (2026-05-11 마감 이후 재개)
+
+본 마감 범위에서 시간 제약으로 제외된 항목. 코드/자산이 일부 완료된 항목은 해당 브랜치에서 이어감 — 자세한 진행 현황은 각 feature 폴더의 `NOTES.md` 참고.
+
+- [ ] `feature/foam-mask` — wave-crest whitecap. **코드 90% 완성**, 시각 검증 미진행. 자산 1장(`wave_foam.dds`) 제작 완료. 재개 시 `git checkout feature/foam-mask`. ([NOTES](features/foam-mask/NOTES.md))
+- [ ] `feature/ripple-sdf` — 시간 기반 SDF ripple. 미착수.
+- [ ] `feature/water-specular` — Blinn-Phong specular. main에 floating 작업 있음 (`git stash list`로 wip stash 확인).
+- [ ] `feature/waterfall` — Day 6 폭포 ribbon 메시 + 셰이더. 미착수.
+- [ ] `feature/color-presets` — 분위기 preset 2개. 미착수.
+- [ ] `feature/water-detail-normal` — Macro + Detail 2-layer normal map (사실적 ocean 표준 패턴). 미착수.
+- [ ] `feature/ue5-port` — UE5 머티리얼 포팅 (보너스).
 
 ---
 

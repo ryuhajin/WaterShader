@@ -1,6 +1,10 @@
 # foam-mask
 
-> Branch: `feature/foam-mask` · Status: in-progress · Updated: 2026-05-10
+> Branch: `feature/foam-mask` · Status: **deferred (post-2026-05-11)** · Updated: 2026-05-10
+
+## 0. Status — 마감 후 재개
+
+D-1 (2026-05-10) 시점에서 시간 제약으로 본 마감 범위에서 제외. 본 feature는 마감(2026-05-11 15:00) 이후 재개 예정. 코드/자산/시도 기록은 `feature/foam-mask` 브랜치 끝 commit에 보존됨 — 재개 시 `git checkout feature/foam-mask` 후 시각 검증부터 이어감. 자세한 진행 현황과 재개 가이드는 같은 폴더의 `NOTES.md` 참고.
 
 ## 1. Goal / Visual Target
 
