@@ -19,3 +19,9 @@ Debug/
 Release/
 RelWithDebInfo/
 MinSizeRel/
+
+# ImGui 패널 상태 (런타임 생성)
+imgui.ini
+
+# 텍스처 변환 도구 (사용자 로컬에만 둠)
+assets/textures/texconv.exe
