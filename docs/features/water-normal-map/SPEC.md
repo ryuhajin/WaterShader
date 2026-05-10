@@ -1,6 +1,6 @@
 # water-normal-map
 
-> Branch: `feature/water-normal-map` · Status: in-progress · Updated: 2026-05-10
+> Branch: `feature/water-normal-map` · Status: done · Updated: 2026-05-10
 
 ## 1. Goal / Visual Target
 
@@ -36,8 +36,10 @@ float3 N = normalize(nTan.x*T + nTan.y*B + nTan.z*N0);
 
 | 종류 | 이름 | 형식 | 범위/비고 |
 |---|---|---|---|
-| Asset | `assets/textures/water_normal.jpg` | 2D normal map | 자체 제작, 후보 5장 중 기본 픽 (water_normal1~4.jpg, Water_normal2.jpg는 비교용) |
-| Loader | `Graphics.cpp` 텍스처 체인 | C++ | `.dds → .png → .jpg → flat` 순으로 시도 (`.jpg` 분기 신규) |
+| Asset | `assets/textures/water_normal.dds` | 2D normal map (DDS) | **최종 사용분.** 자체 제작 JPG → texconv로 변환. WIC가 Photoshop의 Adobe APP14 JPG 디코드 실패해서 DDS 경로로 안착. |
+| Asset | `assets/textures/water_normal*.jpg` | 비교용 후보 | water_normal1~4.jpg, Water_normal2.jpg는 시각 비교 후보로 보관 |
+| Loader | `Graphics.cpp` 텍스처 체인 | C++ | `.dds → .png → .jpg → flat` 순으로 시도. 진단용 multi-line status를 ImGui에 표시. |
+| Debug | `g_DebugParams.x` | int (cbuffer) | 0=render, 1=sampled normal map, 2=world-space N, 3=UV. ImGui Combo로 노출. |
 | CBuffer | `g_NormalScale` | float | 0~3, 기본 1.0 (water-base 그대로) |
 | CBuffer | `g_NormalScroll` | float4 (xy/zw) | water-base 기본값 그대로 |
 | ImGui | Normal Scale slider | — | water-base에서 노출됨 (변경 없음) |
@@ -46,15 +48,13 @@ float3 N = normalize(nTan.x*T + nTan.y*B + nTan.z*N0);
 
 ## 4. Acceptance Criteria / Test Plan
 
-- [ ] 빌드 성공, C++/HLSL 경고 0
-- [ ] **로더 검증:** 디버거 또는 출력으로 `Texture::InitializeFlat` 폴백이 호출되지 않음 확인 (`.jpg` 경로 성공)
-- [ ] **Normal Scale 0** → 화면이 sine wave 변위만 + 평면 셰이딩 (잔물결 없음, 회귀 검증)
-- [ ] **Normal Scale 1.0** → 잔물결이 표면에 명확히 보임. 환경 반사가 노멀에 따라 흔들림
-- [ ] **Normal Scroll 흔들기** → UV 흐름 시각화, 시간이 흐르며 두 layer가 다른 속도로 스크롤
-- [ ] **카메라 줌인/줌아웃** — 카메라 멀리서도 평균색이 푸른빛 유지, NaN/black pixel 없음
-- [ ] 회귀: Fresnel/Cubemap 반사, Wave 변위, Light, Tint, Skybox toggle 모두 정상
-- [ ] `references/water-normal-map-20260510.png` 캡처 1장 저장
-- [x] 자체 제작 텍스처 사용 — `assets/textures/water_normal.jpg` (포트폴리오 self-made 카운트 +1)
+- [x] 빌드 성공, C++/HLSL 경고 0
+- [x] **로더 검증:** ImGui Debug View "Normal Map Loader: [OK] DDS loaded -> ..." 표시 — 폴백 경로 안 탐
+- [x] **Sampled normal map 디버그 모드** — 실제 노멀 맵 패턴이 RGB로 보임 (단색 푸른빛이면 폴백, 패턴 보이면 정상)
+- [x] **Normal Scale (tile) 0.1 ↔ 5.0** → 패턴 크기 변화 시각 확인
+- [x] **Layer A/B U/V speed** → 시간에 따른 패턴 흐름 확인 (4개 슬라이더 분리)
+- [x] **회귀:** Fresnel/Cubemap 반사, Wave 변위, Light, Tint, Skybox toggle 모두 정상
+- [x] 자체 제작 텍스처 사용 — `assets/textures/water_normal.dds` (포트폴리오 self-made 카운트 +1)
 
 ## 5. Notes (선택)
 

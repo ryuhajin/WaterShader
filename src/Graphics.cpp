@@ -51,20 +51,36 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
 
     normalMap_ = std::make_unique<Texture>();
     {
-        const std::wstring normalDdsPath = GetAssetPath(L"textures/water_normal.dds");
-        const std::wstring normalPngPath = GetAssetPath(L"textures/water_normal.png");
-        std::wstring normalError;
-        bool loaded = normalMap_->Initialize(d3d_->GetDevice(), normalDdsPath.c_str(), &normalError);
+        struct Attempt { const wchar_t* relPath; const char* label; };
+        const Attempt attempts[] = {
+            { L"textures/water_normal.dds", "DDS" },
+            { L"textures/water_normal.png", "PNG" },
+            { L"textures/water_normal.jpg", "JPG" },
+        };
+        std::string statusLog;
+        bool loaded = false;
+        for (const auto& a : attempts)
+        {
+            const std::wstring path = GetAssetPath(a.relPath);
+            const std::string pathUtf8(path.begin(), path.end());
+            std::wstring err;
+            if (normalMap_->Initialize(d3d_->GetDevice(), path.c_str(), &err))
+            {
+                statusLog += std::string("[OK]   ") + a.label + " loaded -> " + pathUtf8 + "\n";
+                loaded = true;
+                break;
+            }
+            const std::string errUtf8(err.begin(), err.end());
+            statusLog += std::string("[FAIL] ") + a.label + " " + errUtf8 + " -> " + pathUtf8 + "\n";
+        }
         if (!loaded)
         {
-            std::wstring secondError;
-            loaded = normalMap_->Initialize(d3d_->GetDevice(), normalPngPath.c_str(), &secondError);
-            if (!loaded)
-            {
-                // Fallback: 1x1 flat tangent normal so the shader path stays exercised.
-                normalMap_->InitializeFlat(d3d_->GetDevice(), 128, 128, 255, 255);
-            }
+            // Fallback: 1x1 flat tangent normal so the shader path stays exercised.
+            normalMap_->InitializeFlat(d3d_->GetDevice(), 128, 128, 255, 255);
+            statusLog += "[FALLBACK] flat (128,128,255) - all sources failed\n";
         }
+        normalMapStatus_ = statusLog;
+        OutputDebugStringA(("[NormalMap]\n" + statusLog).c_str());
     }
 
     model_ = std::make_unique<Model>();
@@ -373,9 +389,12 @@ void Graphics::DrawImGuiPanel()
     ImGui::SliderFloat("Fresnel Power", &water_.fresnelPower, 1.0f, 8.0f);
     ImGui::ColorEdit3("Shallow Color", &water_.shallowColor.x);
     ImGui::ColorEdit3("Deep Color", &water_.deepColor.x);
-    ImGui::SliderFloat("Normal Scale", &water_.normalScale, 0.1f, 5.0f);
-    ImGui::SliderFloat2("Normal Scroll 1", &water_.normalScroll1.x, -0.2f, 0.2f);
-    ImGui::SliderFloat2("Normal Scroll 2", &water_.normalScroll2.x, -0.2f, 0.2f);
+    ImGui::SliderFloat("Normal Scale (tile)", &water_.normalScale, 0.1f, 5.0f);
+    ImGui::TextDisabled("Normal map UV scroll velocity (2 layers blended)");
+    ImGui::SliderFloat("Layer A - U speed (per sec)", &water_.normalScroll1.x, -0.2f, 0.2f);
+    ImGui::SliderFloat("Layer A - V speed (per sec)", &water_.normalScroll1.y, -0.2f, 0.2f);
+    ImGui::SliderFloat("Layer B - U speed (per sec)", &water_.normalScroll2.x, -0.2f, 0.2f);
+    ImGui::SliderFloat("Layer B - V speed (per sec)", &water_.normalScroll2.y, -0.2f, 0.2f);
 
     for (int i = 0; i < 2; ++i)
     {
@@ -396,6 +415,12 @@ void Graphics::DrawImGuiPanel()
             ImGui::TreePop();
         }
     }
+
+    // Debug View — keep this section last so new ImGui controls always go above it.
+    ImGui::SeparatorText("Debug View");
+    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV" };
+    ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
+    ImGui::TextWrapped("Normal Map Loader: %s", normalMapStatus_.c_str());
 
     ImGui::End();
 }

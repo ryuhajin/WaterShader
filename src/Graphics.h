@@ -13,6 +13,7 @@
 #include <DirectXMath.h>
 
 #include <memory>
+#include <string>
 
 class Input;
 
@@ -57,4 +58,5 @@ private:
     float elapsedTime_ = 0.0f;
     bool skyboxVisible_ = true;
     ColorShader::WaterParams water_;
+    std::string normalMapStatus_;
 };

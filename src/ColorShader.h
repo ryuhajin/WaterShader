@@ -33,6 +33,7 @@ public:
             { { 1.0f, 0.0f}, 0.05f, 2.0f, 0.5f },
             { { 0.7f, 0.7f}, 0.03f, 1.3f, 0.7f },
         };
+        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV
     };
 
     bool Initialize(ID3D11Device* device);
