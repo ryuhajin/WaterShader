@@ -1,14 +1,10 @@
 # WaterShader — 스타일라이즈드 수면 HLSL 포트폴리오
 
-펄어비스 아트_셰이더 디자인 인턴십(2026-05-11 마감) 지원을 위한 **DirectX 11 + HLSL** 스타일라이즈드 수면 셰이더 포트폴리오.
-
-> 외부 머티리얼 그래프나 엔진 추상에 의존하지 않고 raw HLSL로 직접 작성한 셰이더. ImGui로 모든 파라미터를 실시간 조절 가능하며, hot reload로 셰이더 파일 저장 즉시 결과 확인.
+외부 머티리얼 그래프나 엔진 추상에 의존하지 않고 raw HLSL로 직접 작성한 셰이더. ImGui로 모든 파라미터를 실시간 조절 가능하며, hot reload로 셰이더 파일 저장 즉시 결과 확인.
 
 ---
 
 ## 미리보기
-
-스크린샷 / 데모 영상 placeholder — `references/` 폴더에 추가 예정.
 
 ImGui 패널에서 다음을 실시간 조절:
 - Lighting (방향/색/강도) · Camera (FOV/이동/회전속도) · Tint Color
@@ -20,26 +16,26 @@ ImGui 패널에서 다음을 실시간 조절:
 
 ## 구현된 기능 (마감 산출분)
 
-### `feature/water-base` (Day 4)
+### `feature/water-base`
 - **Sine wave 정점 변위** (2-layer) + **analytic normal 재계산** — 마루/골 방향 연속성 유지
 - **2-layer scrolling normal map** + plane 가정 TBN(T=worldX, B=worldZ)
 - **Fresnel 기반 cubemap reflection** — `lerp(litWater, env, fresnel * strength)`
 - **Shallow/Deep color** — NdotV 기반 깊이감
 - **양면 그리기 RasterizerState** — 단면 plane 아래에서도 보이도록
 
-### `feature/water-normal-map` (Day 4 확장)
+### `feature/water-normal-map`
 - 자체 제작 **water_normal.dds** 자산 투입 (Photoshop → texconv BC4_UNORM 변환)
 - `.dds → .png → .jpg → flat` 다단계 폴백 텍스처 로더 + ImGui 진단 출력
 - **Debug 시각화 모드** — Sampled normal map / World-space N / UV 직접 출력으로 진단 시간 0
 - ImGui slider 분해 — `Normal Scroll 1/2` (Float2) → `Layer A/B - U/V speed (per sec)` (4개 분리)
 
-### 인프라 (Day 1~3)
+### 인프라
 - DirectX 11 + Win32 + ImGui + vcpkg manifest 통합
 - HLSL hot reload (200ms 폴링, 컴파일 에러는 ImGui 빨간 텍스트로 노출, 기존 셰이더 유지)
 - DirectXTK DDS/WIC 텍스처 로더, tinyobjloader OBJ
 - Cubemap + 인라인 cube skybox + LessEqual DSS
 
-### 마감 후 재개 예정
+### 추가 예정
 - `feature/foam-mask` — wave-crest whitecap. **코드 90% 완성**, 시각 검증 미진행. 자산 1장 제작 완료. (브랜치 보존)
 - `feature/water-specular` — Blinn-Phong specular (`git stash`에 작업분 보존)
 - `feature/water-detail-normal` — Macro + Detail 2-layer normal map (사실적 ocean 표준)
@@ -157,13 +153,6 @@ cmake --build build/vs2022 --config Debug
 │       └── foam-mask/   # deferred — 코드는 feature/foam-mask 브랜치
 └── CMakeLists.txt
 ```
-
----
-
-## 자체 제작 자산
-
-- **`assets/textures/water_normal.dds`** — Photoshop으로 작성한 tiling normal map. WIC 디코드 이슈로 texconv를 통해 DDS(BC4_UNORM, 512×512)로 변환해 사용. 비교용 후보 JPG 5장(`water_normal*.jpg`) 보존.
-- **`assets/textures/wave_foam.dds`** — wave crest whitecap mask (256×256, R 채널). `feature/foam-mask` 브랜치에 보존, 마감 후 머지 예정.
 
 ---
 
