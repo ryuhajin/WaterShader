@@ -24,7 +24,7 @@ ImGui 패널에서 다음을 실시간 조절:
 - **양면 그리기 RasterizerState** — 단면 plane 아래에서도 보이도록
 
 ### `feature/water-normal-map`
-- 자체 제작 **water_normal.dds** 자산 투입 (Photoshop → texconv BC4_UNORM 변환)
+- water_normal.dds 자산 투입 (texconv BC4_UNORM 변환)
 - `.dds → .png → .jpg → flat` 다단계 폴백 텍스처 로더 + ImGui 진단 출력
 - **Debug 시각화 모드** — Sampled normal map / World-space N / UV 직접 출력으로 진단 시간 0
 - ImGui slider 분해 — `Normal Scroll 1/2` (Float2) → `Layer A/B - U/V speed (per sec)` (4개 분리)
