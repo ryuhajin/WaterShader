@@ -29,6 +29,8 @@ cbuffer PerFrameCB : register(b0)
     float  g_Wave1_Wavelen;
     float  g_Wave1_Speed;
     float3 _wave1_pad;
+    // Debug: x = mode (0=normal, 1=sampled normal map, 2=world-space N, 3=UV)
+    float4 g_DebugParams;
 };
 
 struct VSInput

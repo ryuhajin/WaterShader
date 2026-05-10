@@ -21,6 +21,13 @@ float4 PSMain(PSInput input) : SV_TARGET
     float3 B  = normalize(mul(float3(0, 0, 1), (float3x3)g_World));
     float3 N  = normalize(nTan.x * T + nTan.y * B + nTan.z * N0);
 
+    // Debug visualizations (g_DebugParams.x): 1 = sampled normal map RGB,
+    // 2 = world-space N as RGB, 3 = UV as RG. Mode 0 falls through to lit water.
+    int debugMode = (int)g_DebugParams.x;
+    if (debugMode == 1) { return float4(g_NormalMap.Sample(g_NormalSampler, uv1).rgb, 1.0f); }
+    if (debugMode == 2) { return float4(N * 0.5f + 0.5f, 1.0f); }
+    if (debugMode == 3) { return float4(frac(input.uv), 0.0f, 1.0f); }
+
     float3 V = normalize(g_CameraPositionWS.xyz - input.worldPos);
     float  NdotV = saturate(dot(N, V));
 
