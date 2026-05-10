@@ -25,3 +25,6 @@ imgui.ini
 
 # 텍스처 변환 도구 (사용자 로컬에만 둠)
 assets/textures/texconv.exe
+
+# 개인 실습/면접 대비 가이드라인 — 공개 추적 안 함
+study/
