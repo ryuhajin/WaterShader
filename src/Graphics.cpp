@@ -53,17 +53,21 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     {
         const std::wstring normalDdsPath = GetAssetPath(L"textures/water_normal.dds");
         const std::wstring normalPngPath = GetAssetPath(L"textures/water_normal.png");
-        std::wstring normalError;
-        bool loaded = normalMap_->Initialize(d3d_->GetDevice(), normalDdsPath.c_str(), &normalError);
+        const std::wstring normalJpgPath = GetAssetPath(L"textures/water_normal.jpg");
+        std::wstring err;
+        bool loaded = normalMap_->Initialize(d3d_->GetDevice(), normalDdsPath.c_str(), &err);
         if (!loaded)
         {
-            std::wstring secondError;
-            loaded = normalMap_->Initialize(d3d_->GetDevice(), normalPngPath.c_str(), &secondError);
-            if (!loaded)
-            {
-                // Fallback: 1x1 flat tangent normal so the shader path stays exercised.
-                normalMap_->InitializeFlat(d3d_->GetDevice(), 128, 128, 255, 255);
-            }
+            loaded = normalMap_->Initialize(d3d_->GetDevice(), normalPngPath.c_str(), &err);
+        }
+        if (!loaded)
+        {
+            loaded = normalMap_->Initialize(d3d_->GetDevice(), normalJpgPath.c_str(), &err);
+        }
+        if (!loaded)
+        {
+            // Fallback: 1x1 flat tangent normal so the shader path stays exercised.
+            normalMap_->InitializeFlat(d3d_->GetDevice(), 128, 128, 255, 255);
         }
     }
 
