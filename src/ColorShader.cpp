@@ -1,4 +1,4 @@
-#include "ColorShader.h"
+﻿#include "ColorShader.h"
 
 #include <windows.h>
 
@@ -13,13 +13,13 @@
 
 namespace
 {
-struct WaveCB
+struct WaveParams
 {
     DirectX::XMFLOAT2 direction;
     float amplitude;
     float wavelength;
     float speed;
-    float pad[3];
+    float padding[3];
 };
 
 struct PerFrameCB
@@ -27,18 +27,23 @@ struct PerFrameCB
     DirectX::XMFLOAT4X4 world;
     DirectX::XMFLOAT4X4 view;
     DirectX::XMFLOAT4X4 projection;
-    DirectX::XMFLOAT4 lightDirection;
-    DirectX::XMFLOAT4 lightColor;
-    DirectX::XMFLOAT4 tintColor;
+
+    DirectX::XMFLOAT4 lightDirection; // xyz = direction, w unused
+    DirectX::XMFLOAT4 lightColor; // rgb = color, a = intensity
+    DirectX::XMFLOAT4 ambientColor; // rgb = color, a = intensity
     DirectX::XMFLOAT4 cameraPositionWS;
-    DirectX::XMFLOAT4 shallowColor;
-    DirectX::XMFLOAT4 deepColor;
+
+    DirectX::XMFLOAT4 facingColor; // 카메라 정면에서 보이는 water color. high viewFacingAmount
+    DirectX::XMFLOAT4 grazingColor; // 카메라 비스듬히 볼 때 보이는 water color. low viewFacingAmount
     DirectX::XMFLOAT4 normalScroll;     // xy = scroll1, zw = scroll2
-    float time;
-    float reflectionStrength;
-    float fresnelPower;
-    float normalScale;
-    WaveCB waves[2];
+
+    // x = time, y = reflectionStrength, z = fresnelPower, w = normalScale
+    DirectX::XMFLOAT4 waterParams; 
+    
+    // x = strength, y = sharpness, z/w unused
+    DirectX::XMFLOAT4 specularParams;
+
+    WaveParams waves[2];
     DirectX::XMFLOAT4 debugParams; // x = debug mode
 };
 
@@ -128,7 +133,7 @@ bool ColorShader::Render(
     const DirectX::XMMATRIX& projection,
     const DirectX::XMFLOAT4& lightDirection,
     const DirectX::XMFLOAT4& lightColor,
-    const DirectX::XMFLOAT4& tintColor,
+    const DirectX::XMFLOAT4& ambientColor,
     float time,
     const DirectX::XMFLOAT4& cameraPositionWS,
     const WaterParams& water,
@@ -137,7 +142,7 @@ bool ColorShader::Render(
     ID3D11SamplerState* clampSampler,
     ID3D11SamplerState* wrapSampler)
 {
-    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, tintColor, time, cameraPositionWS, water, cubemapSRV, normalSRV, clampSampler, wrapSampler);
+    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, ambientColor, time, cameraPositionWS, water, cubemapSRV, normalSRV, clampSampler, wrapSampler);
     return true;
 }
 
@@ -289,7 +294,7 @@ void ColorShader::RenderShader(
     const DirectX::XMMATRIX& projection,
     const DirectX::XMFLOAT4& lightDirection,
     const DirectX::XMFLOAT4& lightColor,
-    const DirectX::XMFLOAT4& tintColor,
+    const DirectX::XMFLOAT4& ambientColor,
     float time,
     const DirectX::XMFLOAT4& cameraPositionWS,
     const WaterParams& water,
@@ -307,24 +312,30 @@ void ColorShader::RenderShader(
         DirectX::XMStoreFloat4x4(&data->projection, projection);
         data->lightDirection = lightDirection;
         data->lightColor = lightColor;
-        data->tintColor = tintColor;
+        data->ambientColor = ambientColor;
         data->cameraPositionWS = cameraPositionWS;
-        data->shallowColor = water.shallowColor;
-        data->deepColor = water.deepColor;
+        data->facingColor = water.facingColor;
+        data->grazingColor = water.grazingColor;
         data->normalScroll = DirectX::XMFLOAT4(
             water.normalScroll1.x, water.normalScroll1.y,
             water.normalScroll2.x, water.normalScroll2.y);
-        data->time = time;
-        data->reflectionStrength = water.reflectionStrength;
-        data->fresnelPower = water.fresnelPower;
-        data->normalScale = water.normalScale;
+        data->waterParams = DirectX::XMFLOAT4(
+            time,
+            water.reflectionStrength,
+            water.fresnelPower,
+            water.normalScale);
+        data->specularParams = DirectX::XMFLOAT4(
+            water.specularStrength,
+            water.specularSharpness,
+            0.0f,
+            0.0f);
         for (int i = 0; i < 2; ++i)
         {
             data->waves[i].direction  = water.waves[i].direction;
             data->waves[i].amplitude  = water.waves[i].amplitude;
             data->waves[i].wavelength = water.waves[i].wavelength;
             data->waves[i].speed      = water.waves[i].speed;
-            data->waves[i].pad[0] = data->waves[i].pad[1] = data->waves[i].pad[2] = 0.0f;
+            data->waves[i].padding[0] = data->waves[i].padding[1] = data->waves[i].padding[2] = 0.0f;
         }
         data->debugParams = DirectX::XMFLOAT4(static_cast<float>(water.debugMode), 0.0f, 0.0f, 0.0f);
         deviceContext->Unmap(perFrameCB_.Get(), 0);
@@ -342,3 +353,6 @@ void ColorShader::RenderShader(
     deviceContext->PSSetSamplers(0, 2, samplers);
     deviceContext->DrawIndexed(indexCount, 0, 0);
 }
+
+
+

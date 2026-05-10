@@ -1,36 +1,35 @@
 #ifndef WS_COMMON_HLSLI
 #define WS_COMMON_HLSLI
 
+struct WaveParams
+{
+    float2 direction;
+    float  amplitude;
+    float  wavelength;
+    float  speed;
+    float3 padding;
+};
+
 cbuffer PerFrameCB : register(b0)
 {
     row_major float4x4 g_World;
     row_major float4x4 g_View;
     row_major float4x4 g_Projection;
-    float4 g_LightDirection;
-    float4 g_LightColor;
-    float4 g_TintColor;
+
+    float4 g_LightDirection;   // xyz = direction, w unused
+    float4 g_LightColor;       // rgb = color, a = intensity
+    float4 g_AmbientColor;     // rgb = color, a = intensity
     float4 g_CameraPositionWS;
-    float4 g_ShallowColor;
-    float4 g_DeepColor;
-    float4 g_NormalScroll;        // xy = scroll1, zw = scroll2
-    float  g_Time;
-    float  g_ReflectionStrength;
-    float  g_FresnelPower;
-    float  g_NormalScale;
-    // Wave 0
-    float2 g_Wave0_Dir;
-    float  g_Wave0_Amp;
-    float  g_Wave0_Wavelen;
-    float  g_Wave0_Speed;
-    float3 _wave0_pad;
-    // Wave 1
-    float2 g_Wave1_Dir;
-    float  g_Wave1_Amp;
-    float  g_Wave1_Wavelen;
-    float  g_Wave1_Speed;
-    float3 _wave1_pad;
-    // Debug: x = mode (0=normal, 1=sampled normal map, 2=world-space N, 3=UV)
-    float4 g_DebugParams;
+
+    float4 g_FacingColor;      // high viewFacingAmount
+    float4 g_GrazingColor;     // low viewFacingAmount
+    float4 g_NormalScroll;     // xy = uv1 scroll, zw = uv2 scroll
+
+    float4 g_WaterParams;      // x=time, y=reflectionStrength, z=fresnelPower, w=normalScale
+    float4 g_SpecularParams;   // x=strength, y=sharpness, z/w unused
+
+    WaveParams g_Waves[2];
+    float4 g_DebugParams;      // x = debug mode: 0 render, 1 normal map, 2 world N, 3 UV, 4 front/back face
 };
 
 struct VSInput
@@ -49,3 +48,5 @@ struct PSInput
 };
 
 #endif // WS_COMMON_HLSLI
+
+

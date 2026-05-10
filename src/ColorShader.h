@@ -22,18 +22,20 @@ public:
 
     struct WaterParams
     {
-        DirectX::XMFLOAT4 shallowColor = {0.50f, 0.85f, 1.00f, 1.0f};
-        DirectX::XMFLOAT4 deepColor    = {0.05f, 0.15f, 0.40f, 1.0f};
+        DirectX::XMFLOAT4 facingColor  = {0.50f, 0.85f, 1.00f, 1.0f};
+        DirectX::XMFLOAT4 grazingColor = {0.05f, 0.15f, 0.40f, 1.0f};
         DirectX::XMFLOAT2 normalScroll1 = { 0.03f,  0.02f};
         DirectX::XMFLOAT2 normalScroll2 = {-0.02f,  0.04f};
         float fresnelPower       = 5.0f;
         float reflectionStrength = 0.4f;
         float normalScale        = 1.0f;
+        float specularStrength   = 0.25f;
+        float specularSharpness  = 64.0f;
         Wave waves[2] = {
             { { 1.0f, 0.0f}, 0.05f, 2.0f, 0.5f },
             { { 0.7f, 0.7f}, 0.03f, 1.3f, 0.7f },
         };
-        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV
+        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face
     };
 
     bool Initialize(ID3D11Device* device);
@@ -47,7 +49,7 @@ public:
         const DirectX::XMMATRIX& projection,
         const DirectX::XMFLOAT4& lightDirection,
         const DirectX::XMFLOAT4& lightColor,
-        const DirectX::XMFLOAT4& tintColor,
+        const DirectX::XMFLOAT4& ambientColor,
         float time,
         const DirectX::XMFLOAT4& cameraPositionWS,
         const WaterParams& water,
@@ -71,7 +73,7 @@ private:
         const DirectX::XMMATRIX& projection,
         const DirectX::XMFLOAT4& lightDirection,
         const DirectX::XMFLOAT4& lightColor,
-        const DirectX::XMFLOAT4& tintColor,
+        const DirectX::XMFLOAT4& ambientColor,
         float time,
         const DirectX::XMFLOAT4& cameraPositionWS,
         const WaterParams& water,

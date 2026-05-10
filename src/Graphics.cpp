@@ -1,4 +1,4 @@
-#include "Graphics.h"
+﻿#include "Graphics.h"
 
 #include "Input.h"
 #include "SystemConfig.h"
@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace
@@ -123,7 +124,170 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     }
     imguiInitialized_ = true;
 
+    LoadPresets();
+    ApplyPreset(0);
+
     return true;
+}
+
+void Graphics::ApplyPreset(int index)
+{
+    if (index < 0 || index >= static_cast<int>(presets_.size()))
+    {
+        return;
+    }
+
+    const int debugMode = water_.debugMode;
+    const ShaderPreset& preset = presets_[index];
+
+    lightYawDeg_ = preset.lightYawDeg;
+    lightPitchDeg_ = preset.lightPitchDeg;
+    lightColor_ = preset.lightColor;
+    lightIntensity_ = preset.lightIntensity;
+    ambientColor_ = preset.ambientColor;
+    ambientIntensity_ = preset.ambientIntensity;
+    water_ = preset.water;
+    water_.debugMode = debugMode;
+}
+
+void Graphics::SaveCurrentPreset(int index)
+{
+    if (index < 0 || index >= static_cast<int>(presets_.size()))
+    {
+        return;
+    }
+
+    ShaderPreset& preset = presets_[index];
+    preset.lightYawDeg = lightYawDeg_;
+    preset.lightPitchDeg = lightPitchDeg_;
+    preset.lightColor = lightColor_;
+    preset.lightIntensity = lightIntensity_;
+    preset.ambientColor = ambientColor_;
+    preset.ambientIntensity = ambientIntensity_;
+    preset.water = water_;
+    preset.water.debugMode = 0;
+    SavePresets();
+}
+
+void Graphics::LoadPresets()
+{
+    presets_[0] = ShaderPreset{};
+
+    presets_[1] = ShaderPreset{};
+    presets_[1].lightYawDeg = 35.0f;
+    presets_[1].lightPitchDeg = -10.0f;
+    presets_[1].lightColor = {1.0f, 0.58f, 0.35f};
+    presets_[1].lightIntensity = 1.2f;
+    presets_[1].ambientColor = {0.18f, 0.10f, 0.16f};
+    presets_[1].ambientIntensity = 0.45f;
+    presets_[1].water.facingColor = {0.58f, 0.48f, 0.78f, 1.0f};
+    presets_[1].water.grazingColor = {0.08f, 0.03f, 0.10f, 1.0f};
+    presets_[1].water.reflectionStrength = 0.75f;
+    presets_[1].water.fresnelPower = 4.0f;
+    presets_[1].water.specularStrength = 0.35f;
+    presets_[1].water.specularSharpness = 72.0f;
+
+    presets_[2] = ShaderPreset{};
+    presets_[2].lightYawDeg = 70.0f;
+    presets_[2].lightPitchDeg = -55.0f;
+    presets_[2].lightColor = {0.92f, 1.0f, 0.94f};
+    presets_[2].lightIntensity = 1.35f;
+    presets_[2].ambientColor = {0.08f, 0.22f, 0.24f};
+    presets_[2].ambientIntensity = 0.55f;
+    presets_[2].water.facingColor = {0.30f, 0.92f, 1.0f, 1.0f};
+    presets_[2].water.grazingColor = {0.00f, 0.20f, 0.34f, 1.0f};
+    presets_[2].water.reflectionStrength = 0.65f;
+    presets_[2].water.fresnelPower = 3.5f;
+    presets_[2].water.specularStrength = 0.30f;
+    presets_[2].water.specularSharpness = 96.0f;
+
+    const std::filesystem::path presetPath = GetAssetPath(L"shader_presets.txt");
+    std::ifstream file(presetPath);
+    if (!file)
+    {
+        return;
+    }
+
+    std::string header;
+    int version = 0;
+    file >> header >> version;
+    if (header != "WaterShaderPresets" || version != 1)
+    {
+        return;
+    }
+
+    for (ShaderPreset& preset : presets_)
+    {
+        file
+            >> preset.lightYawDeg
+            >> preset.lightPitchDeg
+            >> preset.lightColor.x >> preset.lightColor.y >> preset.lightColor.z
+            >> preset.lightIntensity
+            >> preset.ambientColor.x >> preset.ambientColor.y >> preset.ambientColor.z
+            >> preset.ambientIntensity
+            >> preset.water.facingColor.x >> preset.water.facingColor.y >> preset.water.facingColor.z
+            >> preset.water.grazingColor.x >> preset.water.grazingColor.y >> preset.water.grazingColor.z
+            >> preset.water.reflectionStrength
+            >> preset.water.fresnelPower
+            >> preset.water.normalScale
+            >> preset.water.specularStrength
+            >> preset.water.specularSharpness
+            >> preset.water.normalScroll1.x >> preset.water.normalScroll1.y
+            >> preset.water.normalScroll2.x >> preset.water.normalScroll2.y;
+
+        for (auto& wave : preset.water.waves)
+        {
+            file
+                >> wave.direction.x >> wave.direction.y
+                >> wave.amplitude
+                >> wave.wavelength
+                >> wave.speed;
+        }
+    }
+}
+
+void Graphics::SavePresets() const
+{
+    const std::filesystem::path presetPath = GetAssetPath(L"shader_presets.txt");
+    std::filesystem::create_directories(presetPath.parent_path());
+
+    std::ofstream file(presetPath);
+    if (!file)
+    {
+        return;
+    }
+
+    file << "WaterShaderPresets 1\n";
+    for (const ShaderPreset& preset : presets_)
+    {
+        file
+            << preset.lightYawDeg << ' '
+            << preset.lightPitchDeg << ' '
+            << preset.lightColor.x << ' ' << preset.lightColor.y << ' ' << preset.lightColor.z << ' '
+            << preset.lightIntensity << ' '
+            << preset.ambientColor.x << ' ' << preset.ambientColor.y << ' ' << preset.ambientColor.z << ' '
+            << preset.ambientIntensity << ' '
+            << preset.water.facingColor.x << ' ' << preset.water.facingColor.y << ' ' << preset.water.facingColor.z << ' '
+            << preset.water.grazingColor.x << ' ' << preset.water.grazingColor.y << ' ' << preset.water.grazingColor.z << ' '
+            << preset.water.reflectionStrength << ' '
+            << preset.water.fresnelPower << ' '
+            << preset.water.normalScale << ' '
+            << preset.water.specularStrength << ' '
+            << preset.water.specularSharpness << ' '
+            << preset.water.normalScroll1.x << ' ' << preset.water.normalScroll1.y << ' '
+            << preset.water.normalScroll2.x << ' ' << preset.water.normalScroll2.y;
+
+        for (const auto& wave : preset.water.waves)
+        {
+            file
+                << ' ' << wave.direction.x << ' ' << wave.direction.y
+                << ' ' << wave.amplitude
+                << ' ' << wave.wavelength
+                << ' ' << wave.speed;
+        }
+
+        file << '\n';
+    }
 }
 
 void Graphics::Shutdown()
@@ -263,6 +427,7 @@ bool Graphics::Render(float deltaTime)
     const float cosPitch = cosf(lightPitchRad);
     const XMFLOAT4 lightDir(sinf(lightYawRad) * cosPitch, -sinf(lightPitchRad), cosf(lightYawRad) * cosPitch, 0.0f);
     const XMFLOAT4 lightColorPacked(lightColor_.x, lightColor_.y, lightColor_.z, lightIntensity_);
+    const XMFLOAT4 ambientColorPacked(ambientColor_.x, ambientColor_.y, ambientColor_.z, ambientIntensity_);
 
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
@@ -284,7 +449,7 @@ bool Graphics::Render(float deltaTime)
         d3d_->SetDepthDefault();
     }
 
-    d3d_->SetRasterizerDoubleSided();
+    d3d_->SetRasterizerWaterSurface();
     model_->Render(d3d_->GetDeviceContext());
     colorShader_->Render(
         d3d_->GetDeviceContext(),
@@ -294,7 +459,7 @@ bool Graphics::Render(float deltaTime)
         projection,
         lightDir,
         lightColorPacked,
-        tintColor_,
+        ambientColorPacked,
         elapsedTime_,
         cameraPosWS,
         water_,
@@ -331,14 +496,6 @@ void Graphics::DrawImGuiPanel()
     }
     ImGui::Separator();
 
-    ImGui::SeparatorText("Tint Color");
-    int tintR = static_cast<int>(tintColor_.x * 255.0f + 0.5f);
-    int tintG = static_cast<int>(tintColor_.y * 255.0f + 0.5f);
-    int tintB = static_cast<int>(tintColor_.z * 255.0f + 0.5f);
-    if (ImGui::SliderInt("R", &tintR, 0, 255)) { tintColor_.x = tintR / 255.0f; }
-    if (ImGui::SliderInt("G", &tintG, 0, 255)) { tintColor_.y = tintG / 255.0f; }
-    if (ImGui::SliderInt("B", &tintB, 0, 255)) { tintColor_.z = tintB / 255.0f; }
-
     ImGui::SeparatorText("Model Rotation");
     ImGui::SliderFloat("X##model", &modelRotation_.x, 0.0f, 360.0f);
     ImGui::SliderFloat("Y##model", &modelRotation_.y, 0.0f, 360.0f);
@@ -362,16 +519,34 @@ void Graphics::DrawImGuiPanel()
         cameraTurnSpeed_ = 90.0f;
     }
 
+    ImGui::SeparatorText("Settings");
+    const char* presetNames[] = { "Basic", "Sunset", "Tropical" };
+    for (int i = 0; i < 3; ++i)
+    {
+        char applyLabel[32];
+        std::snprintf(applyLabel, sizeof(applyLabel), "Apply %s", presetNames[i]);
+        if (ImGui::Button(applyLabel))
+        {
+            ApplyPreset(i);
+        }
+
+        ImGui::SameLine();
+
+        char saveLabel[40];
+        std::snprintf(saveLabel, sizeof(saveLabel), "Save Current##%s", presetNames[i]);
+        if (ImGui::Button(saveLabel))
+        {
+            SaveCurrentPreset(i);
+        }
+    }
+
     ImGui::SeparatorText("Lighting");
     ImGui::SliderFloat("Light Yaw (deg)", &lightYawDeg_, 0.0f, 360.0f);
     ImGui::SliderFloat("Light Pitch (deg)", &lightPitchDeg_, -90.0f, 90.0f);
-    int lightR = static_cast<int>(lightColor_.x * 255.0f + 0.5f);
-    int lightG = static_cast<int>(lightColor_.y * 255.0f + 0.5f);
-    int lightB = static_cast<int>(lightColor_.z * 255.0f + 0.5f);
-    if (ImGui::SliderInt("R##light", &lightR, 0, 255)) { lightColor_.x = lightR / 255.0f; }
-    if (ImGui::SliderInt("G##light", &lightG, 0, 255)) { lightColor_.y = lightG / 255.0f; }
-    if (ImGui::SliderInt("B##light", &lightB, 0, 255)) { lightColor_.z = lightB / 255.0f; }
+    ImGui::ColorEdit3("Light Color", &lightColor_.x);
     ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 3.0f);
+    ImGui::SliderFloat("Specular Strength", &water_.specularStrength, 0.0f, 2.0f);
+    ImGui::SliderFloat("Specular Sharpness", &water_.specularSharpness, 16.0f, 256.0f);
     ImGui::Text("Time: %.2fs", elapsedTime_);
     if (ImGui::Button("Reset Light"))
     {
@@ -379,7 +554,13 @@ void Graphics::DrawImGuiPanel()
         lightPitchDeg_ = -45.0f;
         lightColor_ = {1.0f, 1.0f, 1.0f};
         lightIntensity_ = 1.0f;
+        ambientColor_ = {0.10f, 0.14f, 0.18f};
+        ambientIntensity_ = 0.35f;
     }
+
+    ImGui::SeparatorText("Ambient");
+    ImGui::ColorEdit3("Ambient Color", &ambientColor_.x);
+    ImGui::SliderFloat("Ambient Intensity", &ambientIntensity_, 0.0f, 1.0f);
 
     ImGui::SeparatorText("Environment");
     ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
@@ -387,8 +568,8 @@ void Graphics::DrawImGuiPanel()
 
     ImGui::SeparatorText("Water");
     ImGui::SliderFloat("Fresnel Power", &water_.fresnelPower, 1.0f, 8.0f);
-    ImGui::ColorEdit3("Shallow Color", &water_.shallowColor.x);
-    ImGui::ColorEdit3("Deep Color", &water_.deepColor.x);
+    ImGui::ColorEdit3("Facing Color", &water_.facingColor.x);
+    ImGui::ColorEdit3("Grazing Color", &water_.grazingColor.x);
     ImGui::SliderFloat("Normal Scale (tile)", &water_.normalScale, 0.1f, 5.0f);
     ImGui::TextDisabled("Normal map UV scroll velocity (2 layers blended)");
     ImGui::SliderFloat("Layer A - U speed (per sec)", &water_.normalScroll1.x, -0.2f, 0.2f);
@@ -418,9 +599,10 @@ void Graphics::DrawImGuiPanel()
 
     // Debug View — keep this section last so new ImGui controls always go above it.
     ImGui::SeparatorText("Debug View");
-    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV" };
+    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
     ImGui::TextWrapped("Normal Map Loader: %s", normalMapStatus_.c_str());
 
     ImGui::End();
 }
+

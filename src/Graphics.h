@@ -12,6 +12,7 @@
 
 #include <DirectXMath.h>
 
+#include <array>
 #include <memory>
 #include <string>
 
@@ -29,6 +30,21 @@ private:
     bool Render(float deltaTime);
     void DrawImGuiPanel();
     void UpdateCamera(float deltaTime, const Input& input);
+    void ApplyPreset(int index);
+    void SaveCurrentPreset(int index);
+    void LoadPresets();
+    void SavePresets() const;
+
+    struct ShaderPreset
+    {
+        float lightYawDeg = 45.0f;
+        float lightPitchDeg = -45.0f;
+        DirectX::XMFLOAT3 lightColor = {1.0f, 1.0f, 1.0f};
+        float lightIntensity = 1.0f;
+        DirectX::XMFLOAT3 ambientColor = {0.10f, 0.14f, 0.18f};
+        float ambientIntensity = 0.35f;
+        ColorShader::WaterParams water;
+    };
 
     std::unique_ptr<D3DClass> d3d_;
     std::unique_ptr<Camera> camera_;
@@ -50,13 +66,15 @@ private:
     float cameraFovDeg_ = 60.0f;
     float cameraMoveSpeed_ = 2.0f;
     float cameraTurnSpeed_ = 90.0f;
-    DirectX::XMFLOAT4 tintColor_ = {1.0f, 1.0f, 1.0f, 1.0f};
     float lightYawDeg_ = 45.0f;
     float lightPitchDeg_ = -45.0f;
     DirectX::XMFLOAT3 lightColor_ = {1.0f, 1.0f, 1.0f};
     float lightIntensity_ = 1.0f;
+    DirectX::XMFLOAT3 ambientColor_ = {0.10f, 0.14f, 0.18f};
+    float ambientIntensity_ = 0.35f;
     float elapsedTime_ = 0.0f;
     bool skyboxVisible_ = true;
     ColorShader::WaterParams water_;
     std::string normalMapStatus_;
+    std::array<ShaderPreset, 3> presets_{};
 };

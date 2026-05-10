@@ -20,6 +20,7 @@ public:
     void SetDepthLessEqual();
     void SetDepthDefault();
     void SetRasterizerDoubleSided();
+    void SetRasterizerWaterSurface();
     void SetRasterizerDefault();
 
     ID3D11Device* GetDevice() const { return device_.Get(); }
@@ -50,6 +51,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView_;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState_;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateDoubleSided_;
+    Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateWaterSurface_;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthLessEqualState_;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> defaultSampler_;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> wrapSampler_;

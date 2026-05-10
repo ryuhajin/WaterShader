@@ -121,6 +121,11 @@ void D3DClass::SetRasterizerDoubleSided()
     deviceContext_->RSSetState(rasterizerStateDoubleSided_.Get());
 }
 
+void D3DClass::SetRasterizerWaterSurface()
+{
+    deviceContext_->RSSetState(rasterizerStateWaterSurface_.Get());
+}
+
 void D3DClass::SetRasterizerDefault()
 {
     deviceContext_->RSSetState(rasterizerState_.Get());
@@ -216,6 +221,12 @@ bool D3DClass::CreateRasterizerState()
     ThrowIfFailed(
         device_->CreateRasterizerState(&doubleSidedDesc, &rasterizerStateDoubleSided_),
         "CreateRasterizerState (double-sided) failed.");
+
+    D3D11_RASTERIZER_DESC waterSurfaceDesc = doubleSidedDesc;
+    waterSurfaceDesc.FrontCounterClockwise = FALSE;
+    ThrowIfFailed(
+        device_->CreateRasterizerState(&waterSurfaceDesc, &rasterizerStateWaterSurface_),
+        "CreateRasterizerState (water surface) failed.");
 
     deviceContext_->RSSetState(rasterizerState_.Get());
     return true;
