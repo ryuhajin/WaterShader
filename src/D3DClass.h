@@ -27,6 +27,7 @@ public:
     ID3D11DeviceContext* GetDeviceContext() const { return deviceContext_.Get(); }
     ID3D11SamplerState* GetSampler() const { return defaultSampler_.Get(); }
     ID3D11SamplerState* GetWrapSampler() const { return wrapSampler_.Get(); }
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> GetBackBuffer() const;
 
 private:
     bool CreateDeviceAndSwapChain(int screenWidth, int screenHeight, HWND hwnd, bool fullscreen);

@@ -131,6 +131,13 @@ void D3DClass::SetRasterizerDefault()
     deviceContext_->RSSetState(rasterizerState_.Get());
 }
 
+Microsoft::WRL::ComPtr<ID3D11Texture2D> D3DClass::GetBackBuffer() const
+{
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> backBuffer;
+    swapChain_->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+    return backBuffer;
+}
+
 bool D3DClass::CreateDeviceAndSwapChain(int screenWidth, int screenHeight, HWND hwnd, bool fullscreen)
 {
     DXGI_SWAP_CHAIN_DESC swapChainDesc = {};

@@ -13,8 +13,10 @@
 #include <DirectXMath.h>
 
 #include <array>
+#include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 class Input;
 
@@ -35,6 +37,11 @@ private:
     void LoadPresets();
     void SavePresets() const;
 
+    // Before/after capture: renders preset x fixed camera shots at a fixed time and saves JPEGs.
+    void StartCaptureSet(const std::string& label, bool quitWhenDone);
+    bool BeginCaptureFrame();
+    void EndCaptureFrame();
+
     struct ShaderPreset
     {
         float lightYawDeg = 45.0f;
@@ -44,6 +51,24 @@ private:
         DirectX::XMFLOAT3 ambientColor = {0.10f, 0.14f, 0.18f};
         float ambientIntensity = 0.35f;
         ColorShader::WaterParams water;
+    };
+
+    ShaderPreset MakePresetFromCurrent() const;
+    void ApplyPresetValues(const ShaderPreset& preset);
+
+    struct CaptureJob
+    {
+        int preset = 0;
+        int shot = 0;
+    };
+
+    struct CaptureRestoreState
+    {
+        ShaderPreset preset;
+        DirectX::XMFLOAT3 cameraPosition;
+        DirectX::XMFLOAT3 cameraRotation;
+        float cameraFovDeg;
+        float elapsedTime;
     };
 
     std::unique_ptr<D3DClass> d3d_;
@@ -77,4 +102,13 @@ private:
     ColorShader::WaterParams water_;
     std::string normalMapStatus_;
     std::array<ShaderPreset, 3> presets_{};
+
+    std::vector<CaptureJob> captureQueue_;
+    std::filesystem::path captureDir_;
+    std::filesystem::path pendingCapturePath_;
+    CaptureRestoreState captureRestore_{};
+    bool quitAfterCapture_ = false;
+    bool captureFinishedQuit_ = false;
+    char captureLabel_[64] = "manual";
+    std::string captureStatus_;
 };

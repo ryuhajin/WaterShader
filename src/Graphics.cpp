@@ -7,6 +7,10 @@
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
 
+#include <ScreenGrab.h>
+#include <shellapi.h>
+#include <wincodec.h>
+
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -29,6 +33,25 @@ std::wstring GetAssetPath(const wchar_t* relativePath)
     return path.wstring();
 #endif
 }
+
+struct CaptureShot
+{
+    const char* name;
+    DirectX::XMFLOAT3 position;
+    DirectX::XMFLOAT3 rotation; // x = pitch, y = yaw (deg)
+    float fovDeg;
+};
+
+// Fixed camera shots for before/after comparison. Plane spans x,z in [-1, 1].
+// "sunward" looks along the skybox sun (yaw ~33 deg) from a low angle to catch the glint path.
+constexpr CaptureShot kCaptureShots[] = {
+    { "oblique", {  0.00f, 1.00f, -2.20f }, { 24.0f,  0.0f, 0.0f }, 60.0f },
+    { "top",     {  0.00f, 2.40f,  0.00f }, { 89.9f,  0.0f, 0.0f }, 60.0f },
+    { "sunward", { -1.04f, 0.45f, -1.59f }, { 12.0f, 33.0f, 0.0f }, 60.0f },
+};
+
+constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical" };
+constexpr float kCaptureTime = 12.0f;
 } // namespace
 
 bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
@@ -127,6 +150,21 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     LoadPresets();
     ApplyPreset(0);
 
+    // WaterShader.exe --capture <label> : save every preset x shot, then quit.
+    int argc = 0;
+    if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc))
+    {
+        for (int i = 1; i + 1 < argc; ++i)
+        {
+            if (std::wstring(argv[i]) == L"--capture")
+            {
+                const std::wstring label = argv[i + 1];
+                StartCaptureSet(std::string(label.begin(), label.end()), true);
+            }
+        }
+        LocalFree(argv);
+    }
+
     return true;
 }
 
@@ -138,8 +176,12 @@ void Graphics::ApplyPreset(int index)
     }
 
     const int debugMode = water_.debugMode;
-    const ShaderPreset& preset = presets_[index];
+    ApplyPresetValues(presets_[index]);
+    water_.debugMode = debugMode;
+}
 
+void Graphics::ApplyPresetValues(const ShaderPreset& preset)
+{
     lightYawDeg_ = preset.lightYawDeg;
     lightPitchDeg_ = preset.lightPitchDeg;
     lightColor_ = preset.lightColor;
@@ -147,7 +189,19 @@ void Graphics::ApplyPreset(int index)
     ambientColor_ = preset.ambientColor;
     ambientIntensity_ = preset.ambientIntensity;
     water_ = preset.water;
-    water_.debugMode = debugMode;
+}
+
+Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
+{
+    ShaderPreset preset;
+    preset.lightYawDeg = lightYawDeg_;
+    preset.lightPitchDeg = lightPitchDeg_;
+    preset.lightColor = lightColor_;
+    preset.lightIntensity = lightIntensity_;
+    preset.ambientColor = ambientColor_;
+    preset.ambientIntensity = ambientIntensity_;
+    preset.water = water_;
+    return preset;
 }
 
 void Graphics::SaveCurrentPreset(int index)
@@ -157,16 +211,99 @@ void Graphics::SaveCurrentPreset(int index)
         return;
     }
 
-    ShaderPreset& preset = presets_[index];
-    preset.lightYawDeg = lightYawDeg_;
-    preset.lightPitchDeg = lightPitchDeg_;
-    preset.lightColor = lightColor_;
-    preset.lightIntensity = lightIntensity_;
-    preset.ambientColor = ambientColor_;
-    preset.ambientIntensity = ambientIntensity_;
-    preset.water = water_;
-    preset.water.debugMode = 0;
+    presets_[index] = MakePresetFromCurrent();
+    presets_[index].water.debugMode = 0;
     SavePresets();
+}
+
+void Graphics::StartCaptureSet(const std::string& label, bool quitWhenDone)
+{
+    captureQueue_.clear();
+    for (int preset = 0; preset < static_cast<int>(presets_.size()); ++preset)
+    {
+        for (int shot = 0; shot < static_cast<int>(std::size(kCaptureShots)); ++shot)
+        {
+            captureQueue_.push_back({preset, shot});
+        }
+    }
+
+    // assets/ -> project root -> docs/features/water-polish/captures/<label>
+    const std::filesystem::path projectRoot =
+        std::filesystem::path(GetAssetPath(L"shader_presets.txt")).parent_path().parent_path();
+    captureDir_ = projectRoot / "docs" / "features" / "water-polish" / "captures" / label;
+    std::error_code ec;
+    std::filesystem::create_directories(captureDir_, ec);
+
+    captureRestore_ = {MakePresetFromCurrent(), cameraPosition_, cameraRotation_, cameraFovDeg_, elapsedTime_};
+    quitAfterCapture_ = quitWhenDone;
+    captureStatus_ = "Capturing -> " + captureDir_.string();
+}
+
+bool Graphics::BeginCaptureFrame()
+{
+    if (captureQueue_.empty())
+    {
+        return false;
+    }
+
+    const CaptureJob job = captureQueue_.front();
+    captureQueue_.erase(captureQueue_.begin());
+
+    ApplyPresetValues(presets_[job.preset]);
+    water_.debugMode = 0;
+
+    const CaptureShot& shot = kCaptureShots[job.shot];
+    cameraPosition_ = shot.position;
+    cameraRotation_ = shot.rotation;
+    cameraFovDeg_ = shot.fovDeg;
+    camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
+    camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
+
+    // Fixed time so before/after frames show the same wave phase.
+    elapsedTime_ = kCaptureTime;
+
+    const std::string fileName = std::string(kPresetFileNames[job.preset]) + "_" + shot.name + ".jpg";
+    pendingCapturePath_ = captureDir_ / fileName;
+    return true;
+}
+
+void Graphics::EndCaptureFrame()
+{
+    // WIC needs COM; S_FALSE / RPC_E_CHANGED_MODE just mean it is already initialized.
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+
+    // JPEG keeps each step's capture set ~2MB in git instead of ~11MB as PNG.
+    const auto backBuffer = d3d_->GetBackBuffer();
+    const HRESULT hr = DirectX::SaveWICTextureToFile(
+        d3d_->GetDeviceContext(),
+        backBuffer.Get(),
+        GUID_ContainerFormatJpeg,
+        pendingCapturePath_.wstring().c_str(),
+        nullptr,
+        [](IPropertyBag2* props)
+        {
+            PROPBAG2 option = {};
+            option.pstrName = const_cast<wchar_t*>(L"ImageQuality");
+            VARIANT value;
+            VariantInit(&value);
+            value.vt = VT_R4;
+            value.fltVal = 0.95f;
+            props->Write(1, &option, &value);
+        });
+    OutputDebugStringA(((SUCCEEDED(hr) ? "[Capture] saved " : "[Capture] FAILED ") + pendingCapturePath_.string() + "\n").c_str());
+
+    if (!captureQueue_.empty())
+    {
+        return;
+    }
+
+    ApplyPresetValues(captureRestore_.preset);
+    cameraPosition_ = captureRestore_.cameraPosition;
+    cameraRotation_ = captureRestore_.cameraRotation;
+    cameraFovDeg_ = captureRestore_.cameraFovDeg;
+    elapsedTime_ = captureRestore_.elapsedTime;
+    captureStatus_ = "Saved -> " + captureDir_.string();
+    captureFinishedQuit_ = quitAfterCapture_;
 }
 
 void Graphics::LoadPresets()
@@ -400,6 +537,8 @@ bool Graphics::Render(float deltaTime)
     colorShader_->CheckHotReload(d3d_->GetDevice(), now);
     skyboxShader_->CheckHotReload(d3d_->GetDevice(), now);
 
+    const bool capturing = BeginCaptureFrame();
+
     camera_->Render();
 
     const float aspect = (screenHeight_ > 0)
@@ -469,14 +608,22 @@ bool Graphics::Render(float deltaTime)
         d3d_->GetWrapSampler());
     d3d_->SetRasterizerDefault();
 
-    DrawImGuiPanel();
+    if (!capturing)
+    {
+        DrawImGuiPanel();
+    }
 
     ImGui::Render();
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
+    if (capturing)
+    {
+        EndCaptureFrame();
+    }
+
     d3d_->EndScene();
 
-    return true;
+    return !captureFinishedQuit_;
 }
 
 void Graphics::DrawImGuiPanel()
@@ -595,6 +742,18 @@ void Graphics::DrawImGuiPanel()
             ImGui::SliderFloat("Speed", &w.speed, 0.0f, 3.0f);
             ImGui::TreePop();
         }
+    }
+
+    ImGui::SeparatorText("Capture");
+    ImGui::InputText("Label", captureLabel_, sizeof(captureLabel_));
+    if (ImGui::Button("Capture Set (presets x shots)"))
+    {
+        StartCaptureSet(captureLabel_, false);
+    }
+    ImGui::TextDisabled("Fixed time %.1fs, UI hidden. Saves to docs/features/water-polish/captures/<label>", kCaptureTime);
+    if (!captureStatus_.empty())
+    {
+        ImGui::TextWrapped("%s", captureStatus_.c_str());
     }
 
     // Debug View — keep this section last so new ImGui controls always go above it.
