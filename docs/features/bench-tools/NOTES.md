@@ -11,6 +11,7 @@
 | 카메라 프리셋 | Camera Presets: 고정 샷 5개(캡처와 같은 정의) + 슬롯 4개 Save/Load → `assets/camera_presets.txt` |
 | 하늘 | Environment → `Sky / Reflection` 드롭다운. 셰이더 프리셋에 `environment`로 저장 |
 | 성능 | 좌상단 `Stats` (타이틀 화살표로 접기). VSync 토글 |
+| 카메라 이동 | WASD / Q·E / 화살표 — ImGui 버튼을 누른 뒤에도 바로 동작 (텍스트 입력 중에만 막힘) |
 
 ## 명령줄
 

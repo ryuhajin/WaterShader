@@ -12,7 +12,6 @@
 #include <wincodec.h>
 
 #include <algorithm>
-#include <cfloat>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -882,9 +881,6 @@ bool Graphics::Render(float deltaTime)
 void Graphics::UpdateFrameStats(float deltaTime)
 {
     // Values shown in the overlay are averaged over 0.5 s so they are readable.
-    frameMsHistory_[frameHistoryIndex_] = deltaTime * 1000.0f;
-    frameHistoryIndex_ = (frameHistoryIndex_ + 1) % kFrameHistory;
-
     statsAccumTime_ += deltaTime;
     statsAccumCpuMs_ += cpuFrameMs_;
     ++statsAccumFrames_;
@@ -920,8 +916,6 @@ void Graphics::DrawStatsOverlay()
         {
             ImGui::Text("GPU          n/a");
         }
-        ImGui::PlotLines("##frametime", frameMsHistory_.data(), kFrameHistory, frameHistoryIndex_,
-            "frame ms", 0.0f, FLT_MAX, ImVec2(200.0f, 40.0f)); // FLT_MAX = auto-scale
 
         bool vsync = d3d_->GetVSync();
         if (ImGui::Checkbox("VSync", &vsync))

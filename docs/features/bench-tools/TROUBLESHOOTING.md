@@ -39,6 +39,28 @@
 
 ---
 
+## E. 카메라 프리셋 버튼을 누른 뒤 WASD로 카메라가 안 움직임 (2026-09-30)
+
+**증상**
+- `sunward`, `ocean_wide` 같은 프리셋 버튼을 누르고 나면 WASD/화살표로 카메라가 움직이지 않음. 뷰포트 빈 곳을 한 번 클릭하면 다시 됨.
+
+**원인**
+- `System.cpp`에서 `ImGuiConfigFlags_NavEnableKeyboard`를 켜 두었음. 이 상태에선 **ImGui 창에 포커스만 있어도** `io.WantCaptureKeyboard = true`.
+- `System::MessageHandler`는 `WantCaptureKeyboard`일 때 `WM_KEYDOWN`을 `Input`에 넘기지 않음 → 버튼 클릭으로 Shader Bench 창이 포커스를 가지면 키 입력이 전부 막힘. 앱 시작 직후에도 창이 자동 포커스되어 같은 상태였다.
+- 잠재 버그: `WM_KEYUP`도 같은 조건으로 막혀 있어서, W를 누른 채 ImGui를 클릭하고 떼면 W가 계속 눌린 상태로 남을 수 있었다.
+
+**해결**
+- ImGui 키보드 내비게이션 끔 → ImGui는 텍스트 입력 중일 때만 키보드를 가져감(화살표 카메라 회전과의 충돌도 사라짐).
+- `WM_KEYUP`은 조건 없이 항상 `Input`에 전달.
+
+**검증**
+- 창 메시지(`PostMessage`)로 W 입력을 0.8초 보내는 테스트(실제 마우스·키보드는 건드리지 않음): 수정 전 Shader Bench에 포커스가 있는 상태에서 카메라 위치 변화 없음 → 수정 후 같은 조건에서 이동 확인.
+
+**교훈**
+- `WantCaptureKeyboard`는 "지금 타이핑 중"이 아니라 설정에 따라 "ImGui 창이 포커스됨"을 뜻할 수 있다. 입력을 막는 조건은 KEYDOWN에만 걸고, KEYUP(해제)은 항상 통과시킨다.
+
+---
+
 ## B. (8번) JPG 노멀맵 로드 실패 원인 — COM 초기화 가설 검증
 
 이전 기록(`water-normal-map/NOTES.md`)은 "Photoshop JPG의 Adobe APP14 마커 + ICC 프로필 때문에 WIC가 거부"로 추정했다.

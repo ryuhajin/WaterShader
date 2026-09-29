@@ -135,9 +135,6 @@ private:
     float statsAccumTime_ = 0.0f;
     int statsAccumFrames_ = 0;
     float statsAccumCpuMs_ = 0.0f;
-    static constexpr int kFrameHistory = 120;
-    std::array<float, kFrameHistory> frameMsHistory_{};
-    int frameHistoryIndex_ = 0;
 
     static constexpr int kCameraSlotCount = 4;
     std::array<CameraView, kCameraSlotCount> cameraSlots_{};
