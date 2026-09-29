@@ -32,6 +32,7 @@ private:
     bool Render(float deltaTime);
     void DrawImGuiPanel();
     void UpdateCamera(float deltaTime, const Input& input);
+    void UpdateModelRotation();
     void ApplyPreset(int index);
     void SaveCurrentPreset(int index);
     void LoadPresets();
@@ -56,6 +57,22 @@ private:
     ShaderPreset MakePresetFromCurrent() const;
     void ApplyPresetValues(const ShaderPreset& preset);
 
+    // Everything that defines a framing: fixed capture shots, save slots and capture restore share it.
+    struct CameraView
+    {
+        DirectX::XMFLOAT3 position = {0.0f, 0.0f, 0.0f};
+        DirectX::XMFLOAT3 rotation = {0.0f, 0.0f, 0.0f}; // x = pitch, y = yaw (deg)
+        float fovDeg = 60.0f;
+        bool ocean = false;
+        DirectX::XMFLOAT3 modelRotation = {0.0f, 0.0f, 0.0f}; // bench plane only
+    };
+
+    CameraView MakeViewFromCurrent() const;
+    void ApplyView(const CameraView& view);
+    void ApplyCameraShot(int shotIndex);
+    void LoadCameraSlots();
+    void SaveCameraSlots() const;
+
     struct CaptureJob
     {
         int preset = 0;
@@ -65,11 +82,8 @@ private:
     struct CaptureRestoreState
     {
         ShaderPreset preset;
-        DirectX::XMFLOAT3 cameraPosition;
-        DirectX::XMFLOAT3 cameraRotation;
-        float cameraFovDeg;
-        float elapsedTime;
-        bool oceanMode;
+        CameraView view;
+        float elapsedTime = 0.0f;
     };
 
     std::unique_ptr<D3DClass> d3d_;
@@ -87,8 +101,9 @@ private:
     unsigned int screenWidth_ = 0;
     unsigned int screenHeight_ = 0;
 
+    // Initial values come from the default capture shot (ApplyCameraShot in Initialize).
     DirectX::XMFLOAT3 modelRotation_ = {0.0f, 0.0f, 0.0f};
-    DirectX::XMFLOAT3 cameraPosition_ = {0.0f, 0.0f, -2.5f};
+    DirectX::XMFLOAT3 cameraPosition_ = {0.0f, 0.0f, 0.0f};
     DirectX::XMFLOAT3 cameraRotation_ = {0.0f, 0.0f, 0.0f};
     float cameraFovDeg_ = 60.0f;
     float cameraMoveSpeed_ = 2.0f;
@@ -105,6 +120,10 @@ private:
     ColorShader::WaterParams water_;
     std::string normalMapStatus_;
     std::array<ShaderPreset, 3> presets_{};
+
+    static constexpr int kCameraSlotCount = 4;
+    std::array<CameraView, kCameraSlotCount> cameraSlots_{};
+    std::array<bool, kCameraSlotCount> cameraSlotUsed_{};
 
     std::vector<CaptureJob> captureQueue_;
     std::filesystem::path captureDir_;

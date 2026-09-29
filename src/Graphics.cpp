@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -75,6 +76,9 @@ constexpr CaptureShot kCaptureShots[] = {
     { "ocean_wide",    {  0.00f, 1.60f, -3.00f }, { 14.0f, 10.0f, 0.0f }, 60.0f, true  },
 };
 
+// Startup / Reset Camera framing: the step2_sun_glint "sunward" shot (bench plane, glint visible).
+constexpr int kDefaultShotIndex = 2;
+
 constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical" };
 
 constexpr int kPresetFileVersion = 3;
@@ -130,8 +134,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     }
 
     camera_ = std::make_unique<Camera>();
-    camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
-    camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
+    ApplyCameraShot(kDefaultShotIndex);
+    LoadCameraSlots();
 
     light_ = std::make_unique<Light>();
     light_->SetDirection(0.0f, -1.0f, 1.0f);
@@ -299,7 +303,7 @@ void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone)
     std::error_code ec;
     std::filesystem::create_directories(captureDir_, ec);
 
-    captureRestore_ = {MakePresetFromCurrent(), cameraPosition_, cameraRotation_, cameraFovDeg_, elapsedTime_, oceanMode_};
+    captureRestore_ = {MakePresetFromCurrent(), MakeViewFromCurrent(), elapsedTime_};
     quitAfterCapture_ = quitWhenDone;
     captureStatus_ = "Capturing -> " + WideToUtf8(captureDir_.wstring());
 }
@@ -317,13 +321,9 @@ bool Graphics::BeginCaptureFrame()
     ApplyPresetValues(presets_[job.preset]);
     water_.debugMode = captureDebugMode_;
 
+    // Also resets the bench plane rotation, so mouse-drag state never leaks into captures.
+    ApplyCameraShot(job.shot);
     const CaptureShot& shot = kCaptureShots[job.shot];
-    cameraPosition_ = shot.position;
-    cameraRotation_ = shot.rotation;
-    cameraFovDeg_ = shot.fovDeg;
-    oceanMode_ = shot.ocean;
-    camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
-    camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
 
     // Fixed time so before/after frames show the same wave phase.
     elapsedTime_ = kCaptureTime;
@@ -367,13 +367,83 @@ void Graphics::EndCaptureFrame()
     }
 
     ApplyPresetValues(captureRestore_.preset);
-    cameraPosition_ = captureRestore_.cameraPosition;
-    cameraRotation_ = captureRestore_.cameraRotation;
-    cameraFovDeg_ = captureRestore_.cameraFovDeg;
-    oceanMode_ = captureRestore_.oceanMode;
+    ApplyView(captureRestore_.view);
     elapsedTime_ = captureRestore_.elapsedTime;
     captureStatus_ = "Saved -> " + WideToUtf8(captureDir_.wstring());
     captureFinishedQuit_ = quitAfterCapture_;
+}
+
+Graphics::CameraView Graphics::MakeViewFromCurrent() const
+{
+    return {cameraPosition_, cameraRotation_, cameraFovDeg_, oceanMode_, modelRotation_};
+}
+
+void Graphics::ApplyView(const CameraView& view)
+{
+    cameraPosition_ = view.position;
+    cameraRotation_ = view.rotation;
+    cameraFovDeg_ = view.fovDeg;
+    oceanMode_ = view.ocean;
+    modelRotation_ = view.modelRotation;
+    camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
+    camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
+}
+
+void Graphics::ApplyCameraShot(int shotIndex)
+{
+    const CaptureShot& shot = kCaptureShots[shotIndex];
+    ApplyView({shot.position, shot.rotation, shot.fovDeg, shot.ocean, {0.0f, 0.0f, 0.0f}});
+}
+
+// assets/camera_presets.txt: one line per slot
+//   used  pos.x pos.y pos.z  pitch yaw roll  fov  ocean  model.x model.y model.z
+void Graphics::LoadCameraSlots()
+{
+    std::ifstream file(GetAssetPath(L"camera_presets.txt"));
+    std::string header;
+    int version = 0;
+    if (!file || !(file >> header >> version) || header != "WaterShaderCameras" || version != 1)
+    {
+        return;
+    }
+
+    for (int i = 0; i < kCameraSlotCount; ++i)
+    {
+        CameraView& v = cameraSlots_[i];
+        int used = 0;
+        int ocean = 0;
+        file >> used
+             >> v.position.x >> v.position.y >> v.position.z
+             >> v.rotation.x >> v.rotation.y >> v.rotation.z
+             >> v.fovDeg >> ocean
+             >> v.modelRotation.x >> v.modelRotation.y >> v.modelRotation.z;
+        if (!file)
+        {
+            break;
+        }
+        v.ocean = ocean != 0;
+        cameraSlotUsed_[i] = used != 0;
+    }
+}
+
+void Graphics::SaveCameraSlots() const
+{
+    std::ofstream file(GetAssetPath(L"camera_presets.txt"));
+    if (!file)
+    {
+        return;
+    }
+
+    file << "WaterShaderCameras 1\n";
+    for (int i = 0; i < kCameraSlotCount; ++i)
+    {
+        const CameraView& v = cameraSlots_[i];
+        file << (cameraSlotUsed_[i] ? 1 : 0) << ' '
+             << v.position.x << ' ' << v.position.y << ' ' << v.position.z << ' '
+             << v.rotation.x << ' ' << v.rotation.y << ' ' << v.rotation.z << ' '
+             << v.fovDeg << ' ' << (v.ocean ? 1 : 0) << ' '
+             << v.modelRotation.x << ' ' << v.modelRotation.y << ' ' << v.modelRotation.z << '\n';
+    }
 }
 
 void Graphics::LoadPresets()
@@ -588,7 +658,24 @@ bool Graphics::Frame(float deltaTime, const Input& input)
 {
     elapsedTime_ += deltaTime;
     UpdateCamera(deltaTime, input);
+    UpdateModelRotation();
     return Render(deltaTime);
+}
+
+void Graphics::UpdateModelRotation()
+{
+    // Left-drag on the viewport spins the bench plane. The ocean grid stays level (it is the world).
+    // ImGui's Win32 backend already tracks the mouse, so no extra input plumbing is needed.
+    const ImGuiIO& io = ImGui::GetIO();
+    if (oceanMode_ || io.WantCaptureMouse || !io.MouseDown[0])
+    {
+        return;
+    }
+
+    constexpr float kDegreesPerPixel = 0.3f;
+    modelRotation_.y -= io.MouseDelta.x * kDegreesPerPixel;
+    modelRotation_.x = std::clamp(modelRotation_.x + io.MouseDelta.y * kDegreesPerPixel, -89.0f, 89.0f);
+    modelRotation_.y = std::fmod(modelRotation_.y, 360.0f);
 }
 
 void Graphics::UpdateCamera(float deltaTime, const Input& input)
@@ -649,10 +736,11 @@ bool Graphics::Render(float deltaTime)
         ? static_cast<float>(screenWidth_) / static_cast<float>(screenHeight_)
         : 1.0f;
 
-    const XMMATRIX world =
-        XMMatrixRotationX(XMConvertToRadians(modelRotation_.x)) *
-        XMMatrixRotationY(XMConvertToRadians(modelRotation_.y)) *
-        XMMatrixRotationZ(XMConvertToRadians(modelRotation_.z));
+    // Bench plane: pitch in local space, then yaw around world Y (turntable-style drag).
+    const XMMATRIX world = oceanMode_
+        ? XMMatrixIdentity()
+        : XMMatrixRotationX(XMConvertToRadians(modelRotation_.x)) *
+          XMMatrixRotationY(XMConvertToRadians(modelRotation_.y));
     const XMMATRIX view = camera_->GetViewMatrix();
     const XMMATRIX projection = XMMatrixPerspectiveFovLH(
         XMConvertToRadians(cameraFovDeg_),
@@ -755,9 +843,15 @@ void Graphics::DrawImGuiPanel()
     ImGui::Separator();
 
     ImGui::SeparatorText("Model Rotation");
-    ImGui::SliderFloat("X##model", &modelRotation_.x, 0.0f, 360.0f);
-    ImGui::SliderFloat("Y##model", &modelRotation_.y, 0.0f, 360.0f);
-    ImGui::SliderFloat("Z##model", &modelRotation_.z, 0.0f, 360.0f);
+    if (oceanMode_)
+    {
+        ImGui::TextDisabled("Ocean Grid is fixed (rotation only for the bench plane)");
+    }
+    else
+    {
+        ImGui::TextDisabled("Left-drag on the viewport to rotate the plane");
+        ImGui::Text("Pitch %.1f  Yaw %.1f", modelRotation_.x, modelRotation_.y);
+    }
     if (ImGui::Button("Reset Model Rotation"))
     {
         modelRotation_ = {0.0f, 0.0f, 0.0f};
@@ -770,12 +864,47 @@ void Graphics::DrawImGuiPanel()
     ImGui::Text("WASD: move, Q/E: down/up, Arrows: rotate");
     if (ImGui::Button("Reset Camera"))
     {
-        cameraPosition_ = {0.0f, 0.0f, -2.5f};
-        cameraRotation_ = {0.0f, 0.0f, 0.0f};
-        cameraFovDeg_ = 60.0f;
+        ApplyCameraShot(kDefaultShotIndex);
         cameraMoveSpeed_ = 2.0f;
         cameraTurnSpeed_ = 90.0f;
     }
+
+    ImGui::SeparatorText("Camera Presets");
+    ImGui::TextDisabled("Fixed shots (same as --capture)");
+    for (int i = 0; i < static_cast<int>(std::size(kCaptureShots)); ++i)
+    {
+        if (i > 0 && i != 3)
+        {
+            ImGui::SameLine();
+        }
+        if (ImGui::Button(kCaptureShots[i].name))
+        {
+            ApplyCameraShot(i);
+        }
+    }
+    ImGui::TextDisabled("Slots (saved to assets/camera_presets.txt)");
+    for (int i = 0; i < kCameraSlotCount; ++i)
+    {
+        ImGui::PushID(i);
+        ImGui::Text("Slot %d%s", i + 1, cameraSlotUsed_[i] ? (cameraSlots_[i].ocean ? " [ocean]" : " [bench]") : " (empty)");
+        ImGui::SameLine(120.0f);
+        if (ImGui::Button("Save"))
+        {
+            cameraSlots_[i] = MakeViewFromCurrent();
+            cameraSlotUsed_[i] = true;
+            SaveCameraSlots();
+        }
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!cameraSlotUsed_[i]);
+        if (ImGui::Button("Load"))
+        {
+            ApplyView(cameraSlots_[i]);
+        }
+        ImGui::EndDisabled();
+        ImGui::PopID();
+    }
+    ImGui::Text("Pos (%.2f, %.2f, %.2f)  Pitch %.1f Yaw %.1f",
+        cameraPosition_.x, cameraPosition_.y, cameraPosition_.z, cameraRotation_.x, cameraRotation_.y);
 
     ImGui::SeparatorText("Settings");
     const char* presetNames[] = { "Basic", "Sunset", "Tropical" };
