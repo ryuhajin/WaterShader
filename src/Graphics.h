@@ -44,8 +44,8 @@ private:
 
     struct ShaderPreset
     {
-        float lightYawDeg = 45.0f;
-        float lightPitchDeg = -45.0f;
+        float sunYawDeg = 34.5f;
+        float sunElevationDeg = 20.0f;
         DirectX::XMFLOAT3 lightColor = {1.0f, 1.0f, 1.0f};
         float lightIntensity = 1.0f;
         DirectX::XMFLOAT3 ambientColor = {0.10f, 0.14f, 0.18f};
@@ -91,8 +91,8 @@ private:
     float cameraFovDeg_ = 60.0f;
     float cameraMoveSpeed_ = 2.0f;
     float cameraTurnSpeed_ = 90.0f;
-    float lightYawDeg_ = 45.0f;
-    float lightPitchDeg_ = -45.0f;
+    float sunYawDeg_ = 34.5f;
+    float sunElevationDeg_ = 20.0f;
     DirectX::XMFLOAT3 lightColor_ = {1.0f, 1.0f, 1.0f};
     float lightIntensity_ = 1.0f;
     DirectX::XMFLOAT3 ambientColor_ = {0.10f, 0.14f, 0.18f};
@@ -109,6 +109,7 @@ private:
     CaptureRestoreState captureRestore_{};
     bool quitAfterCapture_ = false;
     bool captureFinishedQuit_ = false;
+    int captureDebugMode_ = 0;
     char captureLabel_[64] = "manual";
     std::string captureStatus_;
 };

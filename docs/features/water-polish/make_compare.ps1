@@ -1,0 +1,42 @@
+# Builds side-by-side comparison sheets from capture sets.
+#   rows = presets, columns = capture steps (in the order given)
+# Usage: powershell -File make_compare.ps1 before step1_bugfix step2_sun_glint
+param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Steps)
+
+Add-Type -AssemblyName System.Drawing
+
+$root = Join-Path $PSScriptRoot "captures"
+$outDir = Join-Path $PSScriptRoot "compare"
+New-Item -ItemType Directory -Force $outDir | Out-Null
+
+$presets = @("basic", "sunset", "tropical")
+$shots = @("oblique", "top", "sunward")
+$cellW = 480; $cellH = 270; $labelH = 28
+
+$jpeg = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq "image/jpeg" }
+$encParams = New-Object System.Drawing.Imaging.EncoderParameters(1)
+$encParams.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, [long]90)
+
+foreach ($shot in $shots) {
+    $sheet = New-Object System.Drawing.Bitmap ($cellW * $Steps.Count), ($labelH + $cellH * $presets.Count)
+    $g = [System.Drawing.Graphics]::FromImage($sheet)
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g.Clear([System.Drawing.Color]::FromArgb(24, 24, 24))
+    $font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+
+    for ($c = 0; $c -lt $Steps.Count; $c++) {
+        $g.DrawString($Steps[$c], $font, [System.Drawing.Brushes]::White, ($c * $cellW + 8), 4)
+        for ($r = 0; $r -lt $presets.Count; $r++) {
+            $path = Join-Path $root "$($Steps[$c])\$($presets[$r])_$shot.jpg"
+            if (-not (Test-Path $path)) { continue }
+            $img = [System.Drawing.Image]::FromFile($path)
+            $g.DrawImage($img, ($c * $cellW), ($labelH + $r * $cellH), $cellW, $cellH)
+            $img.Dispose()
+        }
+    }
+
+    $out = Join-Path $outDir "$shot.jpg"
+    $sheet.Save($out, $jpeg, $encParams)
+    $g.Dispose(); $sheet.Dispose()
+    Write-Output "saved $out"
+}

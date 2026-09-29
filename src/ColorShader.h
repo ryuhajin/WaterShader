@@ -31,6 +31,8 @@ public:
         float normalScale        = 1.0f;
         float specularStrength   = 0.25f;
         float specularSharpness  = 64.0f;
+        float sunGlintPower      = 800.0f;  // reflect(-V, N) vs sun direction lobe
+        float sunGlintIntensity  = 12.0f;   // HDR multiplier, >1 so glints survive the rolloff
         Wave waves[2] = {
             { { 1.0f, 0.0f}, 0.05f, 2.0f, 0.5f },
             { { 0.7f, 0.7f}, 0.03f, 1.3f, 0.7f },

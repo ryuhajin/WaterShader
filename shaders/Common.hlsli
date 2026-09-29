@@ -16,7 +16,7 @@ cbuffer PerFrameCB : register(b0)
     row_major float4x4 g_View;
     row_major float4x4 g_Projection;
 
-    float4 g_LightDirection;   // xyz = direction, w unused
+    float4 g_LightDirection;   // xyz = direction light travels (away from the sun), w unused
     float4 g_LightColor;       // rgb = color, a = intensity
     float4 g_AmbientColor;     // rgb = color, a = intensity
     float4 g_CameraPositionWS;
@@ -26,7 +26,7 @@ cbuffer PerFrameCB : register(b0)
     float4 g_NormalScroll;     // xy = uv1 scroll, zw = uv2 scroll
 
     float4 g_WaterParams;      // x=time, y=reflectionStrength, z=fresnelPower, w=normalScale
-    float4 g_SpecularParams;   // x=strength, y=sharpness, z/w unused
+    float4 g_SpecularParams;   // x=strength, y=sharpness, z=sun glint power, w=sun glint intensity
 
     WaveParams g_Waves[2];
     float4 g_DebugParams;      // x = debug mode: 0 render, 1 normal map, 2 world N, 3 UV, 4 front/back face

@@ -61,7 +61,16 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float3 reflectedSceneColor = SampleEnv(reflectionDirWS);
 
     float reflectionAmount = saturate(reflectionByViewAngle * reflectionStrength);
+    if (debugMode == 5) { return float4(diffuseAmount, specular, reflectionAmount, 1.0); }
+
     float3 finalColor = lerp(litWaterColor, reflectedSceneColor, reflectionAmount);
-    return float4(finalColor, 1.0);
+
+    // Sun glint is part of the mirror reflection, so it follows the same Fresnel weight.
+    float sunGlintPower = g_SpecularParams.z;
+    float sunGlintIntensity = g_SpecularParams.w;
+    float sunGlint = SunGlintFactor(reflectionDirWS, lightDirWS, sunGlintPower) * sunGlintIntensity * reflectionAmount;
+    finalColor += sunGlint * g_LightColor.rgb * g_LightColor.a;
+
+    return float4(HighlightRolloff(finalColor), 1.0);
 }
 

@@ -40,7 +40,7 @@ struct PerFrameCB
     // x = time, y = reflectionStrength, z = fresnelPower, w = normalScale
     DirectX::XMFLOAT4 waterParams; 
     
-    // x = strength, y = sharpness, z/w unused
+    // x = strength, y = sharpness, z = sun glint power, w = sun glint intensity
     DirectX::XMFLOAT4 specularParams;
 
     WaveParams waves[2];
@@ -327,8 +327,8 @@ void ColorShader::RenderShader(
         data->specularParams = DirectX::XMFLOAT4(
             water.specularStrength,
             water.specularSharpness,
-            0.0f,
-            0.0f);
+            water.sunGlintPower,
+            water.sunGlintIntensity);
         for (int i = 0; i < 2; ++i)
         {
             data->waves[i].direction  = water.waves[i].direction;

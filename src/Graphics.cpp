@@ -15,6 +15,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 
 namespace
@@ -51,6 +52,21 @@ constexpr CaptureShot kCaptureShots[] = {
 };
 
 constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical" };
+
+constexpr int kPresetFileVersion = 2;
+
+// Optional "key value" pairs appended after the fixed preset fields. Missing keys keep the
+// code defaults and unknown keys are skipped, so new parameters don't need a format bump.
+template <typename Preset, typename Fn>
+void ForEachExtraField(Preset& preset, Fn&& fn)
+{
+    fn("sunGlintPower", preset.water.sunGlintPower);
+    fn("sunGlintIntensity", preset.water.sunGlintIntensity);
+}
+
+// Measured from assets/textures/skybox.dds (sun disk on the +Z face, just above the horizon).
+constexpr float kSkyboxSunYawDeg = 34.5f;
+constexpr float kSkyboxSunElevationDeg = 4.0f;
 constexpr float kCaptureTime = 12.0f;
 } // namespace
 
@@ -161,6 +177,10 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 const std::wstring label = argv[i + 1];
                 StartCaptureSet(std::string(label.begin(), label.end()), true);
             }
+            else if (std::wstring(argv[i]) == L"--debug")
+            {
+                captureDebugMode_ = _wtoi(argv[i + 1]);
+            }
         }
         LocalFree(argv);
     }
@@ -182,8 +202,8 @@ void Graphics::ApplyPreset(int index)
 
 void Graphics::ApplyPresetValues(const ShaderPreset& preset)
 {
-    lightYawDeg_ = preset.lightYawDeg;
-    lightPitchDeg_ = preset.lightPitchDeg;
+    sunYawDeg_ = preset.sunYawDeg;
+    sunElevationDeg_ = preset.sunElevationDeg;
     lightColor_ = preset.lightColor;
     lightIntensity_ = preset.lightIntensity;
     ambientColor_ = preset.ambientColor;
@@ -194,8 +214,8 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
 Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
 {
     ShaderPreset preset;
-    preset.lightYawDeg = lightYawDeg_;
-    preset.lightPitchDeg = lightPitchDeg_;
+    preset.sunYawDeg = sunYawDeg_;
+    preset.sunElevationDeg = sunElevationDeg_;
     preset.lightColor = lightColor_;
     preset.lightIntensity = lightIntensity_;
     preset.ambientColor = ambientColor_;
@@ -250,7 +270,7 @@ bool Graphics::BeginCaptureFrame()
     captureQueue_.erase(captureQueue_.begin());
 
     ApplyPresetValues(presets_[job.preset]);
-    water_.debugMode = 0;
+    water_.debugMode = captureDebugMode_;
 
     const CaptureShot& shot = kCaptureShots[job.shot];
     cameraPosition_ = shot.position;
@@ -311,8 +331,7 @@ void Graphics::LoadPresets()
     presets_[0] = ShaderPreset{};
 
     presets_[1] = ShaderPreset{};
-    presets_[1].lightYawDeg = 35.0f;
-    presets_[1].lightPitchDeg = -10.0f;
+    presets_[1].sunElevationDeg = 5.0f;
     presets_[1].lightColor = {1.0f, 0.58f, 0.35f};
     presets_[1].lightIntensity = 1.2f;
     presets_[1].ambientColor = {0.18f, 0.10f, 0.16f};
@@ -325,8 +344,7 @@ void Graphics::LoadPresets()
     presets_[1].water.specularSharpness = 72.0f;
 
     presets_[2] = ShaderPreset{};
-    presets_[2].lightYawDeg = 70.0f;
-    presets_[2].lightPitchDeg = -55.0f;
+    presets_[2].sunElevationDeg = 32.0f;
     presets_[2].lightColor = {0.92f, 1.0f, 0.94f};
     presets_[2].lightIntensity = 1.35f;
     presets_[2].ambientColor = {0.08f, 0.22f, 0.24f};
@@ -345,19 +363,28 @@ void Graphics::LoadPresets()
         return;
     }
 
+    // v2: second field is sun elevation (> 0 above the horizon). v1 stored an inverted pitch, so it is ignored.
+    std::string line;
+    std::getline(file, line);
+    std::istringstream headerStream(line);
     std::string header;
     int version = 0;
-    file >> header >> version;
-    if (header != "WaterShaderPresets" || version != 1)
+    headerStream >> header >> version;
+    if (header != "WaterShaderPresets" || version != kPresetFileVersion)
     {
         return;
     }
 
     for (ShaderPreset& preset : presets_)
     {
-        file
-            >> preset.lightYawDeg
-            >> preset.lightPitchDeg
+        if (!std::getline(file, line))
+        {
+            break;
+        }
+        std::istringstream in(line);
+        in
+            >> preset.sunYawDeg
+            >> preset.sunElevationDeg
             >> preset.lightColor.x >> preset.lightColor.y >> preset.lightColor.z
             >> preset.lightIntensity
             >> preset.ambientColor.x >> preset.ambientColor.y >> preset.ambientColor.z
@@ -374,11 +401,24 @@ void Graphics::LoadPresets()
 
         for (auto& wave : preset.water.waves)
         {
-            file
+            in
                 >> wave.direction.x >> wave.direction.y
                 >> wave.amplitude
                 >> wave.wavelength
                 >> wave.speed;
+        }
+
+        std::string key;
+        float value = 0.0f;
+        while (in >> key >> value)
+        {
+            ForEachExtraField(preset, [&](const char* name, float& field)
+            {
+                if (key == name)
+                {
+                    field = value;
+                }
+            });
         }
     }
 }
@@ -394,12 +434,12 @@ void Graphics::SavePresets() const
         return;
     }
 
-    file << "WaterShaderPresets 1\n";
+    file << "WaterShaderPresets " << kPresetFileVersion << '\n';
     for (const ShaderPreset& preset : presets_)
     {
         file
-            << preset.lightYawDeg << ' '
-            << preset.lightPitchDeg << ' '
+            << preset.sunYawDeg << ' '
+            << preset.sunElevationDeg << ' '
             << preset.lightColor.x << ' ' << preset.lightColor.y << ' ' << preset.lightColor.z << ' '
             << preset.lightIntensity << ' '
             << preset.ambientColor.x << ' ' << preset.ambientColor.y << ' ' << preset.ambientColor.z << ' '
@@ -422,6 +462,11 @@ void Graphics::SavePresets() const
                 << ' ' << wave.wavelength
                 << ' ' << wave.speed;
         }
+
+        ForEachExtraField(preset, [&](const char* name, const float& field)
+        {
+            file << ' ' << name << ' ' << field;
+        });
 
         file << '\n';
     }
@@ -561,10 +606,16 @@ bool Graphics::Render(float deltaTime)
 
     const XMFLOAT4 cameraPosWS(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z, 1.0f);
 
-    const float lightYawRad = XMConvertToRadians(lightYawDeg_);
-    const float lightPitchRad = XMConvertToRadians(lightPitchDeg_);
-    const float cosPitch = cosf(lightPitchRad);
-    const XMFLOAT4 lightDir(sinf(lightYawRad) * cosPitch, -sinf(lightPitchRad), cosf(lightYawRad) * cosPitch, 0.0f);
+    // Sun position on the sky (yaw uses the camera convention, elevation > 0 = above the horizon).
+    // g_LightDirection is the direction light travels, i.e. away from the sun.
+    const float sunYawRad = XMConvertToRadians(sunYawDeg_);
+    const float sunElevationRad = XMConvertToRadians(sunElevationDeg_);
+    const float cosElevation = cosf(sunElevationRad);
+    const XMFLOAT4 lightDir(
+        -sinf(sunYawRad) * cosElevation,
+        -sinf(sunElevationRad),
+        -cosf(sunYawRad) * cosElevation,
+        0.0f);
     const XMFLOAT4 lightColorPacked(lightColor_.x, lightColor_.y, lightColor_.z, lightIntensity_);
     const XMFLOAT4 ambientColorPacked(ambientColor_.x, ambientColor_.y, ambientColor_.z, ambientIntensity_);
 
@@ -688,17 +739,25 @@ void Graphics::DrawImGuiPanel()
     }
 
     ImGui::SeparatorText("Lighting");
-    ImGui::SliderFloat("Light Yaw (deg)", &lightYawDeg_, 0.0f, 360.0f);
-    ImGui::SliderFloat("Light Pitch (deg)", &lightPitchDeg_, -90.0f, 90.0f);
+    ImGui::SliderFloat("Sun Yaw (deg)", &sunYawDeg_, 0.0f, 360.0f);
+    ImGui::SliderFloat("Sun Elevation (deg)", &sunElevationDeg_, 0.0f, 90.0f);
+    ImGui::TextDisabled("Skybox sun: yaw %.1f, elevation %.1f", kSkyboxSunYawDeg, kSkyboxSunElevationDeg);
+    if (ImGui::Button("Match Skybox Sun"))
+    {
+        sunYawDeg_ = kSkyboxSunYawDeg;
+        sunElevationDeg_ = kSkyboxSunElevationDeg;
+    }
     ImGui::ColorEdit3("Light Color", &lightColor_.x);
     ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 3.0f);
     ImGui::SliderFloat("Specular Strength", &water_.specularStrength, 0.0f, 2.0f);
     ImGui::SliderFloat("Specular Sharpness", &water_.specularSharpness, 16.0f, 256.0f);
+    ImGui::SliderFloat("Sun Glint Power", &water_.sunGlintPower, 64.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Sun Glint Intensity", &water_.sunGlintIntensity, 0.0f, 50.0f);
     ImGui::Text("Time: %.2fs", elapsedTime_);
     if (ImGui::Button("Reset Light"))
     {
-        lightYawDeg_ = 45.0f;
-        lightPitchDeg_ = -45.0f;
+        sunYawDeg_ = kSkyboxSunYawDeg;
+        sunElevationDeg_ = 20.0f;
         lightColor_ = {1.0f, 1.0f, 1.0f};
         lightIntensity_ = 1.0f;
         ambientColor_ = {0.10f, 0.14f, 0.18f};
