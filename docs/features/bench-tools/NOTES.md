@@ -6,7 +6,8 @@
 
 | 기능 | 방법 |
 |---|---|
-| 판 회전 | 뷰포트 좌클릭 드래그 (좌우 = yaw, 상하 = pitch, ±89°). Ocean Grid에선 비활성 + world = identity |
+| 판 회전 | 뷰포트 좌클릭 드래그 (좌우 = yaw, 상하 = pitch, ±89°). Ocean Grid에선 판 회전 없음 + world = identity |
+| 시점 회전 (마우스 룩) | Bench: 우클릭 드래그 / Ocean Grid: 좌·우클릭 드래그 (pitch ±89°). 화살표 키도 동일 |
 | 시작 구도 | `sunward` 샷 (step2_sun_glint 구도). `Reset Camera`도 동일 |
 | 카메라 프리셋 | Camera Presets: 고정 샷 5개(캡처와 같은 정의) + 슬롯 4개 Save/Load → `assets/camera_presets.txt` |
 | 하늘 | Environment → `Sky / Reflection` 드롭다운. 셰이더 프리셋에 `environment`로 저장 |

@@ -703,25 +703,38 @@ void Graphics::Shutdown()
 bool Graphics::Frame(float deltaTime, const Input& input)
 {
     elapsedTime_ += deltaTime;
+    UpdateMouseDrag(); // before UpdateCamera, which pushes cameraRotation_ to the camera
     UpdateCamera(deltaTime, input);
-    UpdateModelRotation();
     return Render(deltaTime);
 }
 
-void Graphics::UpdateModelRotation()
+void Graphics::UpdateMouseDrag()
 {
-    // Left-drag on the viewport spins the bench plane. The ocean grid stays level (it is the world).
-    // ImGui's Win32 backend already tracks the mouse, so no extra input plumbing is needed.
+    // Viewport drags (ImGui's Win32 backend already tracks the mouse, so no extra input plumbing):
+    //   bench plane: left-drag = rotate the plane, right-drag = look around
+    //   ocean grid : left- or right-drag = look around (the grid itself stays level)
     const ImGuiIO& io = ImGui::GetIO();
-    if (oceanMode_ || io.WantCaptureMouse || !io.MouseDown[0])
+    if (io.WantCaptureMouse)
     {
         return;
     }
 
     constexpr float kDegreesPerPixel = 0.3f;
-    modelRotation_.y -= io.MouseDelta.x * kDegreesPerPixel;
-    modelRotation_.x = std::clamp(modelRotation_.x + io.MouseDelta.y * kDegreesPerPixel, -89.0f, 89.0f);
-    modelRotation_.y = std::fmod(modelRotation_.y, 360.0f);
+    const bool leftDrag = io.MouseDown[0];
+    const bool rightDrag = io.MouseDown[1];
+
+    if (!oceanMode_ && leftDrag)
+    {
+        modelRotation_.y -= io.MouseDelta.x * kDegreesPerPixel;
+        modelRotation_.x = std::clamp(modelRotation_.x + io.MouseDelta.y * kDegreesPerPixel, -89.0f, 89.0f);
+        modelRotation_.y = std::fmod(modelRotation_.y, 360.0f);
+    }
+    else if (rightDrag || (oceanMode_ && leftDrag))
+    {
+        // Mouse-look: drag right = turn right, drag down = look down (pitch > 0 looks down).
+        cameraRotation_.y = std::fmod(cameraRotation_.y + io.MouseDelta.x * kDegreesPerPixel, 360.0f);
+        cameraRotation_.x = std::clamp(cameraRotation_.x + io.MouseDelta.y * kDegreesPerPixel, -89.0f, 89.0f);
+    }
 }
 
 void Graphics::UpdateCamera(float deltaTime, const Input& input)
@@ -953,11 +966,11 @@ void Graphics::DrawImGuiPanel()
     ImGui::SeparatorText("Model Rotation");
     if (oceanMode_)
     {
-        ImGui::TextDisabled("Ocean Grid is fixed (rotation only for the bench plane)");
+        ImGui::TextDisabled("Ocean Grid stays level (drag = look around)");
     }
     else
     {
-        ImGui::TextDisabled("Left-drag on the viewport to rotate the plane");
+        ImGui::TextDisabled("Left-drag: rotate plane, right-drag: look around");
         ImGui::Text("Pitch %.1f  Yaw %.1f", modelRotation_.x, modelRotation_.y);
     }
     if (ImGui::Button("Reset Model Rotation"))
@@ -969,7 +982,7 @@ void Graphics::DrawImGuiPanel()
     ImGui::SliderFloat("FOV (deg)", &cameraFovDeg_, 30.0f, 120.0f);
     ImGui::SliderFloat("Move Speed", &cameraMoveSpeed_, 0.1f, 10.0f);
     ImGui::SliderFloat("Turn Speed (deg/sec)", &cameraTurnSpeed_, 30.0f, 360.0f);
-    ImGui::Text("WASD: move, Q/E: down/up, Arrows: rotate");
+    ImGui::Text("WASD: move, Q/E: down/up, Arrows or drag: look");
     if (ImGui::Button("Reset Camera"))
     {
         ApplyCameraShot(kDefaultShotIndex);

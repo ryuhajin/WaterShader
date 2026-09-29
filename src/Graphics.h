@@ -35,7 +35,7 @@ private:
     void DrawStatsOverlay();
     void UpdateFrameStats(float deltaTime);
     void UpdateCamera(float deltaTime, const Input& input);
-    void UpdateModelRotation();
+    void UpdateMouseDrag();
     void ApplyPreset(int index);
     void SaveCurrentPreset(int index);
     void LoadPresets();
