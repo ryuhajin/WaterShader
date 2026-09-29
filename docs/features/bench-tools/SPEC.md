@@ -1,6 +1,6 @@
 # bench-tools
 
-> Branch: `feature/bench-tools` (from `feature/water-polish`) · Status: in-progress · Updated: 2026-09-29
+> Branch: `feature/bench-tools` (from `feature/water-polish`) · Status: done · Updated: 2026-09-29
 
 ## 1. Goal
 
@@ -16,7 +16,7 @@
 | 3 | 카메라 프리셋 | 고정 샷 버튼(캡처와 같은 정의) + 저장 슬롯 4개(`assets/camera_presets.txt`) |
 | 4 | 프리셋별 cube map | Poly Haven CC0 tonemapped JPG → `tools/equirect_to_cube.ps1` → RGBA8 DDS cube. 프리셋 확장 키 `environment` |
 | 5 | Sunset 물이 흙색 | 원인 수치 검증 후 환경맵 + 몸체색 수정 → `TROUBLESHOOTING.md` |
-| 6 | 성능 오버레이 | 좌상단 접이식 "Stats": Time / CPU ms / GPU ms(timestamp query, 3프레임 링) / FPS, VSync 토글 |
+| 6 | 성능 오버레이 | 좌상단 접이식 "Stats": Time / CPU ms / GPU ms(timestamp query, 4프레임 링) / FPS, VSync 토글 |
 | 7 | C4244 경고 | `WideToUtf8`/`Utf8ToWide` 헬퍼 → `TROUBLESHOOTING.md` |
 | 8 | JPG 노멀맵 로드 실패 | COM 미초기화 가설 검증 → `CoInitializeEx` + `WIC_LOADER_IGNORE_SRGB` → `TROUBLESHOOTING.md` |
 
