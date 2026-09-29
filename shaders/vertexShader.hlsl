@@ -9,10 +9,16 @@
 // Normal (GPU Gems 1, ch.1): N = (−Σ D.x·kA·cos θ, 1 − Σ Q·kA·sin θ, −Σ D.y·kA·cos θ)
 void AccumulateGerstnerWave(
     WaveParams wave,
-    float2 positionXZ,
+    float2 positionXZ, float viewDistance,
     inout float3 offset, inout float3 normalSum)
 {
     if (wave.amplitude <= 0.0f || wave.wavelength <= 0.0f) return;
+
+    // Distance LOD: the ocean grid gets coarser with distance, so each wave fades out before the
+    // vertex spacing is too wide to sample it (short waves fade first). Far water becomes a calm mirror.
+    float fade = 1.0 - smoothstep(wave.wavelength * 8.0, wave.wavelength * 14.0, viewDistance);
+    if (fade <= 0.0) return;
+    wave.amplitude *= fade;
     float waveNumber = 6.2831853 / wave.wavelength;
     float phaseSpeed = waveNumber * wave.speed;
     float phase = dot(wave.direction, positionXZ) * waveNumber - phaseSpeed * g_WaterParams.x;
@@ -20,7 +26,7 @@ void AccumulateGerstnerWave(
     float cosPhase = cos(phase);
 
     // Q/(k·A·count) keeps the sum of all waves from looping over itself even at steepness 1.
-    float q = wave.steepness / (waveNumber * wave.amplitude * WAVE_COUNT);
+    float q = wave.steepness * fade / (waveNumber * wave.amplitude * WAVE_COUNT);
     float kA = waveNumber * wave.amplitude;
 
     offset.xz += q * wave.amplitude * wave.direction * cosPhase;
@@ -32,13 +38,16 @@ void AccumulateGerstnerWave(
 
 float3 GerstnerDisplace(float3 localPos, out float3 normalOut)
 {
+    float3 worldPos = mul(float4(localPos, 1.0), g_World).xyz;
+    float viewDistance = length(worldPos.xz - g_CameraPositionWS.xz);
+
     float3 offset = 0.0;
     float3 normalSum = float3(0.0, 1.0, 0.0);
 
     [unroll]
     for (int i = 0; i < WAVE_COUNT; ++i)
     {
-        AccumulateGerstnerWave(g_Waves[i], localPos.xz, offset, normalSum);
+        AccumulateGerstnerWave(g_Waves[i], localPos.xz, viewDistance, offset, normalSum);
     }
 
     normalOut = normalize(normalSum);

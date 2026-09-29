@@ -69,6 +69,7 @@ private:
         DirectX::XMFLOAT3 cameraRotation;
         float cameraFovDeg;
         float elapsedTime;
+        bool oceanMode;
     };
 
     std::unique_ptr<D3DClass> d3d_;
@@ -76,6 +77,7 @@ private:
     std::unique_ptr<Light> light_;
     std::unique_ptr<Texture> normalMap_;
     std::unique_ptr<Model> model_;
+    std::unique_ptr<Model> oceanGrid_;
     std::unique_ptr<ColorShader> colorShader_;
     std::unique_ptr<CubemapTexture> cubemap_;
     std::unique_ptr<Skybox> skybox_;
@@ -99,6 +101,7 @@ private:
     float ambientIntensity_ = 0.35f;
     float elapsedTime_ = 0.0f;
     bool skyboxVisible_ = true;
+    bool oceanMode_ = false;
     ColorShader::WaterParams water_;
     std::string normalMapStatus_;
     std::array<ShaderPreset, 3> presets_{};

@@ -3,6 +3,7 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
+#include <cmath>
 #include <filesystem>
 #include <vector>
 
@@ -68,7 +69,54 @@ bool Model::LoadObj(const std::wstring& path, std::vector<VertexType>& outVertic
 
 bool Model::Initialize(ID3D11Device* device, const std::wstring& objPath)
 {
-    return InitializeBuffers(device, objPath);
+    std::vector<VertexType> vertices;
+    std::vector<unsigned long> indices;
+    if (!LoadObj(objPath, vertices, indices))
+    {
+        return false;
+    }
+    return CreateBuffers(device, vertices, indices);
+}
+
+bool Model::InitializeGrid(ID3D11Device* device, int quadsPerSide, float halfExtent, float spacingGrowth)
+{
+    // t in [-1, 1] -> x = sign(t) * halfExtent * (e^(g|t|) - 1) / (e^g - 1)
+    const float denom = std::exp(spacingGrowth) - 1.0f;
+    auto remap = [&](float t)
+    {
+        const float x = halfExtent * (std::exp(spacingGrowth * std::fabs(t)) - 1.0f) / denom;
+        return t < 0.0f ? -x : x;
+    };
+
+    const int vertsPerSide = quadsPerSide + 1;
+    std::vector<VertexType> vertices;
+    vertices.reserve(static_cast<size_t>(vertsPerSide) * vertsPerSide);
+    for (int j = 0; j < vertsPerSide; ++j)
+    {
+        const float z = remap(-1.0f + 2.0f * j / quadsPerSide);
+        for (int i = 0; i < vertsPerSide; ++i)
+        {
+            const float x = remap(-1.0f + 2.0f * i / quadsPerSide);
+            // Same UV density as the OBJ plane: 1 UV unit per 2 world units.
+            vertices.push_back({ {x, 0.0f, z}, {0.0f, 1.0f, 0.0f}, {x * 0.5f + 0.5f, 0.5f - z * 0.5f} });
+        }
+    }
+
+    std::vector<unsigned long> indices;
+    indices.reserve(static_cast<size_t>(quadsPerSide) * quadsPerSide * 6);
+    for (int j = 0; j < quadsPerSide; ++j)
+    {
+        for (int i = 0; i < quadsPerSide; ++i)
+        {
+            const unsigned long v0 = static_cast<unsigned long>(j * vertsPerSide + i);
+            const unsigned long v1 = v0 + 1;
+            const unsigned long v2 = v0 + vertsPerSide;
+            const unsigned long v3 = v2 + 1;
+            indices.insert(indices.end(), { v0, v2, v1, v1, v2, v3 });
+        }
+    }
+
+    return CreateBuffers(device, vertices, indices);
 }
 
 void Model::Shutdown()
@@ -81,15 +129,8 @@ void Model::Render(ID3D11DeviceContext* deviceContext)
     RenderBuffers(deviceContext);
 }
 
-bool Model::InitializeBuffers(ID3D11Device* device, const std::wstring& objPath)
+bool Model::CreateBuffers(ID3D11Device* device, const std::vector<VertexType>& vertices, const std::vector<unsigned long>& indices)
 {
-    std::vector<VertexType> vertices;
-    std::vector<unsigned long> indices;
-    if (!LoadObj(objPath, vertices, indices))
-    {
-        return false;
-    }
-
     vertexCount_ = static_cast<int>(vertices.size());
     indexCount_ = static_cast<int>(indices.size());
 

@@ -10,7 +10,7 @@ $outDir = Join-Path $PSScriptRoot "compare"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
 $presets = @("basic", "sunset", "tropical")
-$shots = @("oblique", "top", "sunward")
+$shots = @("oblique", "top", "sunward", "ocean_sunward", "ocean_wide")
 $cellW = 480; $cellH = 270; $labelH = 28
 
 $jpeg = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq "image/jpeg" }

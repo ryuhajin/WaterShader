@@ -41,14 +41,18 @@ struct CaptureShot
     DirectX::XMFLOAT3 position;
     DirectX::XMFLOAT3 rotation; // x = pitch, y = yaw (deg)
     float fovDeg;
+    bool ocean; // true = large ocean grid, false = 2x2 bench plane
 };
 
-// Fixed camera shots for before/after comparison. Plane spans x,z in [-1, 1].
+// Fixed camera shots for before/after comparison. Bench plane spans x,z in [-1, 1].
 // "sunward" looks along the skybox sun (yaw ~33 deg) from a low angle to catch the glint path.
+// ocean_* shots use the large grid and only exist from step 6 on.
 constexpr CaptureShot kCaptureShots[] = {
-    { "oblique", {  0.00f, 1.00f, -2.20f }, { 24.0f,  0.0f, 0.0f }, 60.0f },
-    { "top",     {  0.00f, 2.40f,  0.00f }, { 89.9f,  0.0f, 0.0f }, 60.0f },
-    { "sunward", { -1.04f, 0.45f, -1.59f }, { 12.0f, 33.0f, 0.0f }, 60.0f },
+    { "oblique",       {  0.00f, 1.00f, -2.20f }, { 24.0f,  0.0f, 0.0f }, 60.0f, false },
+    { "top",           {  0.00f, 2.40f,  0.00f }, { 89.9f,  0.0f, 0.0f }, 60.0f, false },
+    { "sunward",       { -1.04f, 0.45f, -1.59f }, { 12.0f, 33.0f, 0.0f }, 60.0f, false },
+    { "ocean_sunward", { -0.90f, 0.55f, -1.40f }, {  6.0f, 34.5f, 0.0f }, 55.0f, true  },
+    { "ocean_wide",    {  0.00f, 1.60f, -3.00f }, { 14.0f, 10.0f, 0.0f }, 60.0f, true  },
 };
 
 constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical" };
@@ -128,6 +132,14 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
 
     model_ = std::make_unique<Model>();
     if (!model_->Initialize(d3d_->GetDevice(), GetAssetPath(L"models/32x32Plane.obj")))
+    {
+        return false;
+    }
+
+    // 1024x1024 quads out to +-400 units: ~0.012 spacing at the center, ~0.25 at 20 units, reaching
+    // near the horizon. Together with the wave fade in the VS this keeps >= 5 vertices per wavelength.
+    oceanGrid_ = std::make_unique<Model>();
+    if (!oceanGrid_->InitializeGrid(d3d_->GetDevice(), 1024, 400.0f, 6.0f))
     {
         return false;
     }
@@ -257,7 +269,7 @@ void Graphics::StartCaptureSet(const std::string& label, bool quitWhenDone)
     std::error_code ec;
     std::filesystem::create_directories(captureDir_, ec);
 
-    captureRestore_ = {MakePresetFromCurrent(), cameraPosition_, cameraRotation_, cameraFovDeg_, elapsedTime_};
+    captureRestore_ = {MakePresetFromCurrent(), cameraPosition_, cameraRotation_, cameraFovDeg_, elapsedTime_, oceanMode_};
     quitAfterCapture_ = quitWhenDone;
     captureStatus_ = "Capturing -> " + captureDir_.string();
 }
@@ -279,6 +291,7 @@ bool Graphics::BeginCaptureFrame()
     cameraPosition_ = shot.position;
     cameraRotation_ = shot.rotation;
     cameraFovDeg_ = shot.fovDeg;
+    oceanMode_ = shot.ocean;
     camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
     camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
 
@@ -324,6 +337,7 @@ void Graphics::EndCaptureFrame()
     cameraPosition_ = captureRestore_.cameraPosition;
     cameraRotation_ = captureRestore_.cameraRotation;
     cameraFovDeg_ = captureRestore_.cameraFovDeg;
+    oceanMode_ = captureRestore_.oceanMode;
     elapsedTime_ = captureRestore_.elapsedTime;
     captureStatus_ = "Saved -> " + captureDir_.string();
     captureFinishedQuit_ = quitAfterCapture_;
@@ -516,6 +530,12 @@ void Graphics::Shutdown()
         model_.reset();
     }
 
+    if (oceanGrid_)
+    {
+        oceanGrid_->Shutdown();
+        oceanGrid_.reset();
+    }
+
     if (normalMap_)
     {
         normalMap_->Shutdown();
@@ -646,10 +666,11 @@ bool Graphics::Render(float deltaTime)
     }
 
     d3d_->SetRasterizerWaterSurface();
-    model_->Render(d3d_->GetDeviceContext());
+    Model* waterMesh = oceanMode_ ? oceanGrid_.get() : model_.get();
+    waterMesh->Render(d3d_->GetDeviceContext());
     colorShader_->Render(
         d3d_->GetDeviceContext(),
-        model_->GetIndexCount(),
+        waterMesh->GetIndexCount(),
         world,
         view,
         projection,
@@ -776,6 +797,7 @@ void Graphics::DrawImGuiPanel()
 
     ImGui::SeparatorText("Environment");
     ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
+    ImGui::Checkbox("Ocean Grid (open water to the horizon)", &oceanMode_);
     ImGui::SliderFloat("Reflection Strength", &water_.reflectionStrength, 0.0f, 1.0f);
 
     ImGui::SeparatorText("Water");
