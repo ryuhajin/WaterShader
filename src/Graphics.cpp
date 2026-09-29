@@ -19,6 +19,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <type_traits>
 
 namespace
 {
@@ -94,11 +95,28 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("fresnelF0", preset.water.fresnelF0);
     fn("normalStrength", preset.water.normalStrength);
     fn("detailScale", preset.water.detailScale);
+    fn("environment", preset.environment);
 }
 
-// Measured from assets/textures/skybox.dds (sun disk on the +Z face, just above the horizon).
-constexpr float kSkyboxSunYawDeg = 34.5f;
-constexpr float kSkyboxSunElevationDeg = 4.0f;
+// Sky + reflection cube maps a preset can pick. Sun directions were measured from each panorama
+// (tools/equirect_to_cube.ps1). The sunset sky was rotated so its sun sits at yaw 34.5 like
+// skybox.dds (the fixed "sunward" shots face it); the beach was rotated so its open sea faces the
+// shots instead, which puts its sun behind the camera (yaw 236.4).
+struct Environment
+{
+    const wchar_t* file;
+    const char* name;
+    float sunYawDeg;
+    float sunElevationDeg;
+};
+
+constexpr Environment kEnvironments[] = {
+    { L"textures/skybox.dds",          "Meadow dusk (overcast)",                   34.5f,  4.0f },
+    { L"textures/env_sunset_fire.dds", "Sunset sea (PH: the_sky_is_on_fire)",      34.5f,  6.4f },
+    { L"textures/env_beach_day.dds",   "Beach day (PH: spiaggia_di_mondello)",    236.4f, 25.3f },
+};
+constexpr int kEnvironmentCount = static_cast<int>(std::size(kEnvironments));
+
 constexpr float kCaptureTime = 12.0f;
 } // namespace
 
@@ -113,6 +131,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --normal-map <path>    normal map relative to assets/, tried before the default DDS
     //   --shot <name>          start from a fixed camera shot (e.g. ocean_wide)
     //   --no-vsync             start uncapped (for FPS / GPU ms measurement)
+    //   --capture-feature <f>  captures go to docs/features/<f>/captures (default water-polish)
     std::wstring captureLabelArg;
     std::wstring normalMapArg;
     std::wstring shotArg;
@@ -130,6 +149,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--debug" && hasValue)      { captureDebugMode_ = _wtoi(argv[++i]); }
                 else if (arg == L"--normal-map" && hasValue) { normalMapArg = argv[++i]; }
                 else if (arg == L"--shot" && hasValue)       { shotArg = argv[++i]; }
+                else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
             }
             LocalFree(argv);
         }
@@ -214,14 +234,18 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         return false;
     }
 
-    cubemap_ = std::make_unique<CubemapTexture>();
-    const std::wstring cubemapPath = GetAssetPath(L"textures/skybox.dds");
-    std::wstring cubemapError;
-    if (!cubemap_->Initialize(d3d_->GetDevice(), cubemapPath.c_str(), &cubemapError))
+    for (const Environment& env : kEnvironments)
     {
-        const std::wstring msg = cubemapPath + L"\n\n" + cubemapError;
-        MessageBoxW(hwnd, msg.c_str(), L"WaterShader: cubemap load failed", MB_ICONERROR | MB_OK);
-        return false;
+        auto cubemap = std::make_unique<CubemapTexture>();
+        const std::wstring cubemapPath = GetAssetPath(env.file);
+        std::wstring cubemapError;
+        if (!cubemap->Initialize(d3d_->GetDevice(), cubemapPath.c_str(), &cubemapError))
+        {
+            const std::wstring msg = cubemapPath + L"\n\n" + cubemapError;
+            MessageBoxW(hwnd, msg.c_str(), L"WaterShader: cubemap load failed", MB_ICONERROR | MB_OK);
+            return false;
+        }
+        environments_.push_back(std::move(cubemap));
     }
 
     skybox_ = std::make_unique<Skybox>();
@@ -276,6 +300,7 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     lightIntensity_ = preset.lightIntensity;
     ambientColor_ = preset.ambientColor;
     ambientIntensity_ = preset.ambientIntensity;
+    environmentIndex_ = std::clamp(preset.environment, 0, kEnvironmentCount - 1);
     water_ = preset.water;
 }
 
@@ -288,6 +313,7 @@ Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
     preset.lightIntensity = lightIntensity_;
     preset.ambientColor = ambientColor_;
     preset.ambientIntensity = ambientIntensity_;
+    preset.environment = environmentIndex_;
     preset.water = water_;
     return preset;
 }
@@ -315,10 +341,10 @@ void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone)
         }
     }
 
-    // assets/ -> project root -> docs/features/water-polish/captures/<label>
+    // assets/ -> project root -> docs/features/<feature>/captures/<label>
     const std::filesystem::path projectRoot =
         std::filesystem::path(GetAssetPath(L"shader_presets.txt")).parent_path().parent_path();
-    captureDir_ = projectRoot / "docs" / "features" / "water-polish" / "captures" / label;
+    captureDir_ = projectRoot / "docs" / "features" / captureFeature_ / "captures" / label;
     std::error_code ec;
     std::filesystem::create_directories(captureDir_, ec);
 
@@ -553,11 +579,11 @@ void Graphics::LoadPresets()
         float value = 0.0f;
         while (in >> key >> value)
         {
-            ForEachExtraField(preset, [&](const char* name, float& field)
+            ForEachExtraField(preset, [&](const char* name, auto& field)
             {
                 if (key == name)
                 {
-                    field = value;
+                    field = static_cast<std::decay_t<decltype(field)>>(value);
                 }
             });
         }
@@ -605,7 +631,7 @@ void Graphics::SavePresets() const
                 << ' ' << wave.steepness;
         }
 
-        ForEachExtraField(preset, [&](const char* name, const float& field)
+        ForEachExtraField(preset, [&](const char* name, const auto& field)
         {
             file << ' ' << name << ' ' << field;
         });
@@ -636,11 +662,11 @@ void Graphics::Shutdown()
         skybox_.reset();
     }
 
-    if (cubemap_)
+    for (auto& cubemap : environments_)
     {
-        cubemap_->Shutdown();
-        cubemap_.reset();
+        cubemap->Shutdown();
     }
+    environments_.clear();
 
     if (colorShader_)
     {
@@ -804,7 +830,7 @@ bool Graphics::Render(float deltaTime)
             skybox_->GetIndexCount(),
             viewNoTrans,
             projection,
-            cubemap_->GetSRV(),
+            environments_[environmentIndex_]->GetSRV(),
             d3d_->GetSampler());
         d3d_->SetDepthDefault();
     }
@@ -824,7 +850,7 @@ bool Graphics::Render(float deltaTime)
         elapsedTime_,
         cameraPosWS,
         water_,
-        cubemap_->GetSRV(),
+        environments_[environmentIndex_]->GetSRV(),
         normalMap_->GetSRV(),
         d3d_->GetSampler(),
         d3d_->GetWrapSampler());
@@ -1018,11 +1044,12 @@ void Graphics::DrawImGuiPanel()
     ImGui::SeparatorText("Lighting");
     ImGui::SliderFloat("Sun Yaw (deg)", &sunYawDeg_, 0.0f, 360.0f);
     ImGui::SliderFloat("Sun Elevation (deg)", &sunElevationDeg_, 0.0f, 90.0f);
-    ImGui::TextDisabled("Skybox sun: yaw %.1f, elevation %.1f", kSkyboxSunYawDeg, kSkyboxSunElevationDeg);
+    const Environment& currentEnv = kEnvironments[environmentIndex_];
+    ImGui::TextDisabled("Sky sun: yaw %.1f, elevation %.1f", currentEnv.sunYawDeg, currentEnv.sunElevationDeg);
     if (ImGui::Button("Match Skybox Sun"))
     {
-        sunYawDeg_ = kSkyboxSunYawDeg;
-        sunElevationDeg_ = kSkyboxSunElevationDeg;
+        sunYawDeg_ = currentEnv.sunYawDeg;
+        sunElevationDeg_ = currentEnv.sunElevationDeg;
     }
     ImGui::ColorEdit3("Light Color", &lightColor_.x);
     ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 3.0f);
@@ -1033,7 +1060,7 @@ void Graphics::DrawImGuiPanel()
     ImGui::Text("Time: %.2fs", elapsedTime_);
     if (ImGui::Button("Reset Light"))
     {
-        sunYawDeg_ = kSkyboxSunYawDeg;
+        sunYawDeg_ = currentEnv.sunYawDeg;
         sunElevationDeg_ = 20.0f;
         lightColor_ = {1.0f, 1.0f, 1.0f};
         lightIntensity_ = 1.0f;
@@ -1046,6 +1073,17 @@ void Graphics::DrawImGuiPanel()
     ImGui::SliderFloat("Ambient Intensity", &ambientIntensity_, 0.0f, 1.0f);
 
     ImGui::SeparatorText("Environment");
+    if (ImGui::BeginCombo("Sky / Reflection", kEnvironments[environmentIndex_].name))
+    {
+        for (int i = 0; i < kEnvironmentCount; ++i)
+        {
+            if (ImGui::Selectable(kEnvironments[i].name, i == environmentIndex_))
+            {
+                environmentIndex_ = i;
+            }
+        }
+        ImGui::EndCombo();
+    }
     ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
     ImGui::Checkbox("Ocean Grid (open water to the horizon)", &oceanMode_);
     ImGui::SliderFloat("Reflection Strength", &water_.reflectionStrength, 0.0f, 1.0f);

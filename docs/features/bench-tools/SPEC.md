@@ -22,9 +22,9 @@
 
 ## 3. Acceptance Criteria
 
-- [ ] 빌드 경고 0 (Debug/Release)
-- [ ] 시작 시 sunward 구도, 좌클릭 드래그로 판 회전(Ocean Grid에선 안 됨)
-- [ ] 카메라 고정 샷 5개 + 슬롯 저장/불러오기(재시작 후 유지)
-- [ ] 프리셋 적용 시 하늘(스카이박스 + 반사) 전환, 캡처에도 반영
-- [ ] Stats 오버레이 접기/펴기, VSync off에서 FPS/GPU ms 측정값 기록
-- [ ] 5·7·8 문제/원인/해결/검증을 `TROUBLESHOOTING.md`에 기록
+- [x] 빌드 경고 0 (Debug/Release)
+- [x] 시작 시 sunward 구도, 좌클릭 드래그로 판 회전(Ocean Grid에선 안 됨) — 드래그는 사용자 수동 확인 필요
+- [x] 카메라 고정 샷 5개 + 슬롯 저장/불러오기(재시작 후 유지)
+- [x] 프리셋 적용 시 하늘(스카이박스 + 반사) 전환, 캡처에도 반영
+- [x] Stats 오버레이 접기/펴기, VSync off에서 FPS/GPU ms 측정값 기록 (`NOTES.md`)
+- [x] 5·7·8 문제/원인/해결/검증을 `TROUBLESHOOTING.md`에 기록 (+ 캡처 멈춤 A항목)

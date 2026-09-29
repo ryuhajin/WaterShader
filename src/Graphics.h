@@ -54,6 +54,7 @@ private:
         float lightIntensity = 1.0f;
         DirectX::XMFLOAT3 ambientColor = {0.10f, 0.14f, 0.18f};
         float ambientIntensity = 0.35f;
+        int environment = 0; // index into kEnvironments (sky + reflection cube map)
         ColorShader::WaterParams water;
     };
 
@@ -96,7 +97,8 @@ private:
     std::unique_ptr<Model> model_;
     std::unique_ptr<Model> oceanGrid_;
     std::unique_ptr<ColorShader> colorShader_;
-    std::unique_ptr<CubemapTexture> cubemap_;
+    std::vector<std::unique_ptr<CubemapTexture>> environments_; // one per kEnvironments entry
+    int environmentIndex_ = 0;
     std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<SkyboxShader> skyboxShader_;
 
@@ -148,6 +150,7 @@ private:
     bool quitAfterCapture_ = false;
     bool captureFinishedQuit_ = false;
     int captureDebugMode_ = 0;
+    std::wstring captureFeature_ = L"water-polish";
     char captureLabel_[64] = "manual";
     std::string captureStatus_;
 };
