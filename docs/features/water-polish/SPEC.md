@@ -16,10 +16,10 @@
 
 | 증상 | 원인 | 접근 |
 |---|---|---|
-| 반사광 없음 | `lightDir = (sin y·cos p, −sin p, …)`, 셰이더는 `−lightDir`를 광원 방향으로 사용 → 프리셋의 음수 pitch는 **태양이 수면 아래**. 스카이박스 태양(yaw≈33°, 고도≈17~24°)과도 무관 | 태양 고도(elevation, +=수평선 위)로 재정의하고 스카이박스 태양에 정렬 |
-| 1.0에서 잘리는 하이라이트 | LDR 합산 후 그대로 출력 | 반사벡터 기반 HDR sun glint + 셰이더 내 톤매핑 |
-| 페인트 색판 | Fresnel `F0 = 0.5` 고정, 채도 높은 Facing/Grazing 색 | Schlick `F0 ≈ 0.02`(파라미터), 어두운 deep 색, 노을은 하늘 반사로 |
-| 잔물결 뭉개짐 | 두 레이어 같은 스케일, 강도 파라미터 없음, `MaxAnisotropy = 1` | 레이어 B 스케일 배수 + normal strength + 거리 감쇠, anisotropic 16x |
+| 반사광 없음 | `lightDir = (sin y·cos p, −sin p, …)`, 셰이더는 `−lightDir`를 광원 방향으로 사용 → 프리셋의 음수 pitch는 **태양이 수면 아래**. 스카이박스 태양(yaw≈34.5°, 고도≈4°)과도 무관. **+ 노멀맵 DDS가 감마 디코딩되어 모든 노멀이 −X/−Z로 기울어 있었음** | 태양 고도(elevation, +=수평선 위)로 재정의하고 스카이박스 태양에 정렬, 노멀맵 `--ignore-srgb`로 재생성 |
+| 1.0에서 잘리는 하이라이트 | LDR 합산 후 그대로 출력 | 반사벡터 기반 HDR sun glint + 셰이더 내 하이라이트 롤오프 |
+| 페인트 색판 | Fresnel `F0 = 0.5` 고정, 채도 높은 Facing/Grazing 색 | Schlick `F0 = 0.05`(파라미터), 산란광 몸체 색, 노을은 하늘 반사로 |
+| 잔물결 뭉개짐 | 두 레이어 같은 스케일, 강도 파라미터 없음, `MaxAnisotropy = 1` | 레이어 B 스케일 배수 + whiteout blend + normal strength, anisotropic 16x |
 | 텐트 모양 | 2×2 plane 위 파장 2짜리 sine 2개 | Gerstner 4개, 짧은 파장/작은 진폭 |
 | 초원 위의 판 | 2×2 plane, 저고도 태양의 반사 지점이 판 밖 | 수평선까지 이어지는 ocean grid + 파도 거리 LOD |
 
@@ -29,7 +29,7 @@
 F        = F0 + (1 − F0)·(1 − N·V)^p                  // Schlick
 glint    = pow(saturate(dot(R, L)), glintPower) · glintIntensity   // R = reflect(−V, N)
 color    = lerp(body, sky, F) + glint·lightColor
-out      = ACES(color · exposure)
+out      = HighlightRolloff(color)   // 0.8 이하는 그대로 (LDR 스카이박스와 일치)
 Gerstner : P.xz += Q·A·D·cos(θ), P.y += A·sin(θ),  θ = k(D·xz) − ωt
 ```
 
@@ -38,9 +38,9 @@ Gerstner : P.xz += Q·A·D·cos(θ), P.y += A·sin(θ),  θ = k(D·xz) − ωt
 | 종류   | 이름                        | 비고                                   |
 |--------|-----------------------------|----------------------------------------|
 | CBuffer| `g_SpecularParams.zw`       | glint power, glint intensity           |
-| CBuffer| `g_SurfaceParams`           | F0, normal strength, layer B scale, exposure |
+| CBuffer| `g_SurfaceParams`           | F0, normal strength, layer B scale     |
 | ImGui  | Sun Elevation / Yaw         | 고도 + = 수평선 위                      |
-| Tool   | `--capture <label>`         | 프리셋 × 고정 샷을 PNG로 저장 후 종료   |
+| Tool   | `--capture <label>`         | 프리셋 × 고정 샷을 JPEG로 저장 후 종료 (`--debug <mode>` 선택) |
 
 ## 4. Acceptance Criteria
 
