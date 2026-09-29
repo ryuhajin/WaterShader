@@ -18,16 +18,20 @@ $encParams = New-Object System.Drawing.Imaging.EncoderParameters(1)
 $encParams.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, [long]90)
 
 foreach ($shot in $shots) {
-    $sheet = New-Object System.Drawing.Bitmap ($cellW * $Steps.Count), ($labelH + $cellH * $presets.Count)
+    # Only keep steps that captured this shot (ocean_* shots exist from step 6 on).
+    $shotSteps = @($Steps | Where-Object { Test-Path (Join-Path $root "$_\$($presets[0])_$shot.jpg") })
+    if ($shotSteps.Count -eq 0) { continue }
+
+    $sheet = New-Object System.Drawing.Bitmap ($cellW * $shotSteps.Count), ($labelH + $cellH * $presets.Count)
     $g = [System.Drawing.Graphics]::FromImage($sheet)
     $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $g.Clear([System.Drawing.Color]::FromArgb(24, 24, 24))
     $font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
 
-    for ($c = 0; $c -lt $Steps.Count; $c++) {
-        $g.DrawString($Steps[$c], $font, [System.Drawing.Brushes]::White, ($c * $cellW + 8), 4)
+    for ($c = 0; $c -lt $shotSteps.Count; $c++) {
+        $g.DrawString($shotSteps[$c], $font, [System.Drawing.Brushes]::White, ($c * $cellW + 8), 4)
         for ($r = 0; $r -lt $presets.Count; $r++) {
-            $path = Join-Path $root "$($Steps[$c])\$($presets[$r])_$shot.jpg"
+            $path = Join-Path $root "$($shotSteps[$c])\$($presets[$r])_$shot.jpg"
             if (-not (Test-Path $path)) { continue }
             $img = [System.Drawing.Image]::FromFile($path)
             $g.DrawImage($img, ($c * $cellW), ($labelH + $r * $cellH), $cellW, $cellH)

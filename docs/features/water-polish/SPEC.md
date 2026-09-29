@@ -1,6 +1,6 @@
 # water-polish
 
-> Branch: `feature/water-polish` · Status: in-progress · Updated: 2026-09-29
+> Branch: `feature/water-polish` · Status: done · Updated: 2026-09-29
 
 ## 1. Goal / Visual Target
 
@@ -21,6 +21,7 @@
 | 페인트 색판 | Fresnel `F0 = 0.5` 고정, 채도 높은 Facing/Grazing 색 | Schlick `F0 ≈ 0.02`(파라미터), 어두운 deep 색, 노을은 하늘 반사로 |
 | 잔물결 뭉개짐 | 두 레이어 같은 스케일, 강도 파라미터 없음, `MaxAnisotropy = 1` | 레이어 B 스케일 배수 + normal strength + 거리 감쇠, anisotropic 16x |
 | 텐트 모양 | 2×2 plane 위 파장 2짜리 sine 2개 | Gerstner 4개, 짧은 파장/작은 진폭 |
+| 초원 위의 판 | 2×2 plane, 저고도 태양의 반사 지점이 판 밖 | 수평선까지 이어지는 ocean grid + 파도 거리 LOD |
 
 **핵심 수식:**
 
@@ -43,9 +44,9 @@ Gerstner : P.xz += Q·A·D·cos(θ), P.y += A·sin(θ),  θ = k(D·xz) − ωt
 
 ## 4. Acceptance Criteria
 
-- [ ] `captures/before/` 저장 (셰이더 변경 전)
-- [ ] 단계별 캡처 + `NOTES.md`에 변경/이유/비교 기록
-- [ ] 저각 샷에서 태양 방향으로 반짝이는 glint 경로가 보임
-- [ ] 정면 샷에서 물 색은 어둡고, 수평 쪽은 하늘 반사가 지배
-- [ ] 기존 Debug Mode 1~4 정상, NaN/검은 픽셀 없음
-- [ ] 프리셋 3종 재조정 후 저장
+- [x] `captures/before/` 저장 (셰이더 변경 전)
+- [x] 단계별 캡처 + `NOTES.md`에 변경/이유/비교 기록
+- [x] 저각 샷에서 태양 방향으로 반짝이는 glint 경로가 보임 (`step6_ocean_grid/sunset_ocean_sunward.jpg`)
+- [x] 정면 샷에서 물 색은 어둡고, 수평 쪽은 하늘 반사가 지배
+- [x] 기존 Debug Mode 1~4 정상 + Mode 5(lighting terms) 추가, NaN/검은 픽셀 없음 (`final_breakdown/`)
+- [x] 프리셋 3종 재조정 후 저장 (v3)

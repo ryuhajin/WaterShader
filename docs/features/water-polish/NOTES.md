@@ -58,3 +58,63 @@ out      = HighlightRolloff(color)   // 0.8 이하는 그대로, 초과분은 1 
 - 파도 뒷면에서 반사 벡터가 수평선 아래를 향해 **초원(초록)이 비침**.
 - Fresnel `F0 = 0.5` 고정 → 정면에서도 하늘이 반쯤 비쳐 물 색이 뿌옇다. Sunset은 Grazing 색이 순수 빨강(1,0,0)이라 "빨간 비닐" 느낌.
 - 노멀맵 두 레이어가 같은 스케일 → 반복 패턴. 비스듬한 각도에서 블러(anisotropic 미사용).
+
+## Step 3 — 잔물결 디테일 (`captures/step3_ripple_detail/`)
+
+```
+uv2      = uv · normalScale · detailScale          // 레이어 B = 잔물결 (A의 3배 타일링)
+N_ts     = normalize( (n1.xy + n2.xy) · strength,  n1.z · n2.z )   // whiteout blend
+envDir   = (R.x, |R.y|, R.z)                        // 수평선 아래 반사 → 하늘로 접기
+```
+
+- **Whiteout blend:** 기존 `normalize(n1 + n2)`는 두 레이어의 기울기를 평균 내서 각각의 디테일이 절반으로 줄어든다. xy(기울기)는 더하고 z는 곱하면 두 레이어가 모두 살아 있다.
+- **레이어 B 스케일 분리** (`detailScale = 3`) → 같은 텍스처지만 반복 주기가 달라 타일링이 덜 보임. `normalStrength = 0.8`.
+- **Anisotropic 16x** (`D3DClass::CreateSampler` wrap 샘플러) — 수면은 거의 항상 비스듬히 보이므로 trilinear만으로는 잔물결이 뭉개진다.
+- **수평선 아래 반사 접기:** 스카이박스 아래쪽은 초원이라 파도 뒷면에 초록이 비쳤다. 실제 물 반사에 땅이 보일 일은 거의 없으므로 `|R.y|`로 하늘을 샘플링. 태양 글린트 계산은 원래 R을 그대로 사용.
+- 이 단계에서는 F0를 파라미터화만 하고 값은 0.5로 유지(색 변화와 분리해서 비교하려고).
+
+## Step 4 — 물의 몸체 색 (`captures/step4_water_body/`)
+
+- `F0 0.5 → 0.05`, `reflectionStrength → 1`, `fresnelPower → 5`(Schlick). 정면은 물 색, 수평 쪽은 하늘 반사가 지배.
+- **1차 시도 F0 = 0.02 + 어두운 deep 색 → 실패:** 위에서 보면 거의 검은 비닐. 이 셰이더는 물속 산란광(물 속에서 다시 올라오는 빛)을 모델링하지 않기 때문에, 물리적으로 맞는 F0만 쓰면 몸체가 지나치게 어둡다. → 몸체 색을 "산란광 색"으로 보고 밝게 올리고 F0를 0.05로 살짝 스타일라이즈.
+- Blinn-Phong 강도를 0.2~0.25로 낮춤 — 넓은 광택이 "은박지" 느낌의 주원인. 태양 하이라이트는 Step 2 글린트가 담당.
+- 프리셋 재정의 (노을 색은 물 색이 아니라 **하늘 반사**로 나오게):
+
+| 프리셋 | 성격 | Facing / Grazing | 태양 고도 | 글린트 |
+|---|---|---|---|---|
+| Basic | 맑은 호수 | 청록 (0.10,0.30,0.34) / (0.16,0.40,0.42) | 20° | 800 / 14 |
+| Sunset | 해 질 녘 | 어두운 보라 (0.14,0.12,0.20) / (0.22,0.17,0.24) | 5° | 500 / 22 (넓고 강한 빛의 길) |
+| Tropical | 얕은 열대 바다 | 터쿼이즈 (0.05,0.55,0.55) / (0.20,0.70,0.65) | 32° | 1000 / 14 |
+
+## Step 5 — Gerstner 파도 4개 (`captures/step5_gerstner/`)
+
+```
+P.xz += Q·A·D·cos θ,   P.y += A·sin θ,   θ = k(D·xz) − ωt
+N     = (−Σ D.x·kA·cos θ,  1 − Σ Q·kA·sin θ,  −Σ D.y·kA·cos θ)      // GPU Gems 1, ch.1
+Q_i   = steepness_i / (k_i · A_i · N_waves)                          // 루프(겹침) 방지
+```
+
+- 기존: 2×2 plane 위에 파장 2짜리 sine 2개 → 판 전체가 텐트 하나처럼 휨.
+- 변경: 파장 1.6 / 1.05 / 0.62 / 0.41 (≈1.5배 간격), 방향을 바람 방향 주변 ±40°로 분산, steepness 0.55~0.7. 정점이 마루 쪽으로 모여 **마루는 뾰족, 골은 넓고 평평**해진다.
+- cbuffer `WaveParams`의 padding 자리에 `steepness`를 넣어 레지스터 2개(32B) 레이아웃 유지, `static_assert`로 C++ 쪽 크기 고정. 프리셋 v3.
+
+## Step 6 — 수평선까지 이어지는 수면 (`captures/step6_ocean_grid/`)
+
+- **문제:** 2×2 판이 초원 위에 떠 있어서 셰이더가 좋아져도 "물"이 아니라 "소품"으로 보인다. 또 태양 고도가 4°라 거울 반사 지점이 카메라에서 ~6 유닛 밖 → 판 위에는 빛의 길이 생길 자리가 없음.
+- **Ocean grid** (`Model::InitializeGrid`): 1024² quad, 좌표를 `x = sign(t)·R·(e^{g|t|} − 1)/(e^g − 1)`로 매핑(R = 400, g = 6) → 중심 간격 ≈ 0.012, 20 유닛에서 ≈ 0.25. UV는 OBJ 판과 같은 밀도(2 유닛당 1).
+- **파도 거리 LOD:** 멀수록 격자가 성겨지므로 파도마다 `1 − smoothstep(8λ, 14λ, dist)`로 페이드 → 파장당 정점 ≥ 5개 유지. 처음 512² / 10λ~18λ로 했을 때 중거리에서 모아레가 생겨 계산으로 조건을 맞춤. 먼 수면은 잔잔한 거울이 되어 수평선의 나무·언덕이 자연스럽게 비친다.
+- 스카이박스의 초원이 수면에 가려지고 먼 나무 줄이 "건너편 호숫가"가 됨 → 에셋 교체 없이 장면이 성립.
+- ImGui `Ocean Grid` 토글, 캡처 샷 `ocean_sunward`(태양 쪽 저각) / `ocean_wide` 추가.
+
+## 결과 정리
+
+- 비교 시트: `compare/oblique.jpg`, `compare/sunward.jpg`, `compare/top.jpg` (before → step2 → step4 → step6), `compare/ocean_sunward.jpg`, `compare/ocean_wide.jpg` (최종).
+- Breakdown용 디버그 뷰 (Tropical): `captures/final_breakdown/mode{0,1,2,3,5}_tropical_{oblique,ocean_wide}.jpg` — 0 렌더, 1 노멀맵 샘플, 2 월드 노멀, 3 UV, 5 라이팅 항.
+
+## 다음 후보
+
+- 마루 산란광(fake SSS): `worldPos.y` 기반 crest mask × 역광 각도 → 역광 샷에서 파도 마루가 청록으로 비침.
+- `feature/foam-mask` 재개: Gerstner 마루(수평 수렴 = Jacobian < 1)를 foam 마스크로 쓰면 SPEC의 높이 기반보다 정확.
+- 거리 기반 노멀 강도 감쇠 / 두 번째 노멀맵(현재 한 장을 두 스케일로 재사용).
+- sRGB 스왑체인 + 선형 공간 라이팅 (현재는 감마 공간 합산).
+
