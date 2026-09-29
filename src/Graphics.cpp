@@ -308,6 +308,12 @@ void Graphics::EndCaptureFrame()
     // WIC needs COM; S_FALSE / RPC_E_CHANGED_MODE just mean it is already initialized.
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
+    // Delete first, then write a new file. Overwriting a batch of existing JPEGs in place from a
+    // freshly built exe gets the whole process tree frozen mid-write (ransomware-style heuristic,
+    // see docs/features/bench-tools/TROUBLESHOOTING.md); delete + create does not.
+    std::error_code removeError;
+    std::filesystem::remove(pendingCapturePath_, removeError);
+
     // JPEG keeps each step's capture set ~2MB in git instead of ~11MB as PNG.
     const auto backBuffer = d3d_->GetBackBuffer();
     const HRESULT hr = DirectX::SaveWICTextureToFile(
