@@ -33,11 +33,14 @@ public:
         float specularSharpness  = 64.0f;
         float sunGlintPower      = 800.0f;  // reflect(-V, N) vs sun direction lobe
         float sunGlintIntensity  = 12.0f;   // HDR multiplier, >1 so glints survive the rolloff
+        float fresnelF0          = 0.5f;    // reflectance at normal incidence (water ~0.02)
+        float normalStrength     = 1.0f;    // tangent-space XY multiplier
+        float detailScale        = 1.0f;    // layer B tiling relative to layer A
         Wave waves[2] = {
             { { 1.0f, 0.0f}, 0.05f, 2.0f, 0.5f },
             { { 0.7f, 0.7f}, 0.03f, 1.3f, 0.7f },
         };
-        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face
+        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face, 5=lighting terms
     };
 
     bool Initialize(ID3D11Device* device);

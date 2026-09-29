@@ -266,11 +266,12 @@ bool D3DClass::CreateSampler()
     ThrowIfFailed(device_->CreateSamplerState(&desc, &defaultSampler_), "CreateSamplerState failed.");
 
     D3D11_SAMPLER_DESC wrapDesc = {};
-    wrapDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    // Anisotropic: the water is mostly seen at grazing angles, where trilinear blurs the ripples.
+    wrapDesc.Filter = D3D11_FILTER_ANISOTROPIC;
     wrapDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
     wrapDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
     wrapDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-    wrapDesc.MaxAnisotropy = 1;
+    wrapDesc.MaxAnisotropy = 16;
     wrapDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
     wrapDesc.MinLOD = 0;
     wrapDesc.MaxLOD = D3D11_FLOAT32_MAX;

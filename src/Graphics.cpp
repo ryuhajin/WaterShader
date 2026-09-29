@@ -62,6 +62,9 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
 {
     fn("sunGlintPower", preset.water.sunGlintPower);
     fn("sunGlintIntensity", preset.water.sunGlintIntensity);
+    fn("fresnelF0", preset.water.fresnelF0);
+    fn("normalStrength", preset.water.normalStrength);
+    fn("detailScale", preset.water.detailScale);
 }
 
 // Measured from assets/textures/skybox.dds (sun disk on the +Z face, just above the horizon).
@@ -776,7 +779,10 @@ void Graphics::DrawImGuiPanel()
     ImGui::SliderFloat("Fresnel Power", &water_.fresnelPower, 1.0f, 8.0f);
     ImGui::ColorEdit3("Facing Color", &water_.facingColor.x);
     ImGui::ColorEdit3("Grazing Color", &water_.grazingColor.x);
+    ImGui::SliderFloat("Fresnel F0", &water_.fresnelF0, 0.0f, 0.6f);
     ImGui::SliderFloat("Normal Scale (tile)", &water_.normalScale, 0.1f, 5.0f);
+    ImGui::SliderFloat("Normal Strength", &water_.normalStrength, 0.0f, 3.0f);
+    ImGui::SliderFloat("Detail Layer Scale (B / A)", &water_.detailScale, 1.0f, 6.0f);
     ImGui::TextDisabled("Normal map UV scroll velocity (2 layers blended)");
     ImGui::SliderFloat("Layer A - U speed (per sec)", &water_.normalScroll1.x, -0.2f, 0.2f);
     ImGui::SliderFloat("Layer A - V speed (per sec)", &water_.normalScroll1.y, -0.2f, 0.2f);
@@ -817,7 +823,7 @@ void Graphics::DrawImGuiPanel()
 
     // Debug View — keep this section last so new ImGui controls always go above it.
     ImGui::SeparatorText("Debug View");
-    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face" };
+    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
     ImGui::TextWrapped("Normal Map Loader: %s", normalMapStatus_.c_str());
 

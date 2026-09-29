@@ -45,6 +45,9 @@ struct PerFrameCB
 
     WaveParams waves[2];
     DirectX::XMFLOAT4 debugParams; // x = debug mode
+
+    // x = Fresnel F0, y = normal strength, z = detail layer scale, w unused
+    DirectX::XMFLOAT4 surfaceParams;
 };
 
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
@@ -338,6 +341,11 @@ void ColorShader::RenderShader(
             data->waves[i].padding[0] = data->waves[i].padding[1] = data->waves[i].padding[2] = 0.0f;
         }
         data->debugParams = DirectX::XMFLOAT4(static_cast<float>(water.debugMode), 0.0f, 0.0f, 0.0f);
+        data->surfaceParams = DirectX::XMFLOAT4(
+            water.fresnelF0,
+            water.normalStrength,
+            water.detailScale,
+            0.0f);
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
