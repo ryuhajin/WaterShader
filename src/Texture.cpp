@@ -42,7 +42,14 @@ bool Texture::Initialize(ID3D11Device* device, const wchar_t* path, std::wstring
     }
     else
     {
-        hr = DirectX::CreateWICTextureFromFile(device, path, nullptr, textureView_.GetAddressOf());
+        // Textures loaded here are data (normal maps), not colors. Photoshop JPGs carry sRGB
+        // metadata, which by default makes WIC create an _SRGB texture and the GPU gamma-decodes
+        // every sample (flat 128 -> 55). IGNORE_SRGB keeps the stored values as-is.
+        hr = DirectX::CreateWICTextureFromFileEx(
+            device, path, 0,
+            D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE, 0, 0,
+            DirectX::WIC_LOADER_IGNORE_SRGB,
+            nullptr, textureView_.GetAddressOf());
     }
 
     if (FAILED(hr))

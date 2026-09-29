@@ -38,7 +38,7 @@ private:
     void SavePresets() const;
 
     // Before/after capture: renders preset x fixed camera shots at a fixed time and saves JPEGs.
-    void StartCaptureSet(const std::string& label, bool quitWhenDone);
+    void StartCaptureSet(const std::wstring& label, bool quitWhenDone);
     bool BeginCaptureFrame();
     void EndCaptureFrame();
 

@@ -39,7 +39,7 @@
 
 ---
 
-## B. (8번) JPG 노멀맵 로드 실패 원인 — COM 초기화 가설 검증 (진행 중)
+## B. (8번) JPG 노멀맵 로드 실패 원인 — COM 초기화 가설 검증
 
 이전 기록(`water-normal-map/NOTES.md`)은 "Photoshop JPG의 Adobe APP14 마커 + ICC 프로필 때문에 WIC가 거부"로 추정했다.
 
@@ -54,5 +54,52 @@
 
 - 해석: 메인 스레드는 COM을 초기화한 적이 없지만, **D3D/드라이버가 만든 스레드가 프로세스에 MTA를 만들어 두어서** 메인 스레드가 "암묵적 MTA"로 취급되고 `CoCreateInstance`(WIC 팩토리)가 우연히 성공한다.
 - 즉 COM 미초기화는 **실제로 있는 결함**이고, 동작 여부가 드라이버 내부 구현에 달려 있다(로드 순서가 바뀌거나 D3D 생성 전에 WIC를 쓰면 실패).
+- 예전 실패의 정확한 HRESULT는 기록이 남지 않아 **재현 불가**. 당시 코드 순서/드라이버 상태에 따라 암묵적 MTA가 없었다면 `CO_E_NOTINITIALIZED`로 실패했을 것으로 보는 것이 가장 그럴듯하다.
 
-(수정·검증 결과는 이어서 기록)
+**숨어 있던 두 번째 버그 — JPG도 감마 디코딩됨**
+- `--normal-map textures/water_normal.jpg --debug 1`로 JPG를 강제 로드해 노멀맵 샘플을 캡처, 화면 평균을 DDS와 비교:
+
+| 로드 경로 | 평균 RGB | 판정 |
+|---|---|---|
+| DDS (`--ignore-srgb`로 재생성한 것) | (127.6, 127.4, 251.0) | 정상 |
+| JPG, 기본 `CreateWICTextureFromFile` | **(55.5, 56.8, 247.0)** | sRGB로 디코딩됨 |
+| JPG, `WIC_LOADER_IGNORE_SRGB` | (127.6, 127.4, 251.0) | 정상 |
+
+- 원인: Photoshop JPG의 sRGB 메타데이터 → DirectXTK WIC 로더가 `R8G8B8A8_UNORM_SRGB`로 텍스처를 만듦 → 샘플링 시 GPU가 sRGB→linear 변환. water-polish Step 1의 DDS 버그와 **같은 원인이 다른 경로에 또 있었던 것**. JPG 폴백이 실제로 쓰였다면 노멀이 똑같이 −X/−Z로 기울었을 것.
+
+**해결**
+- `main.cpp`: `wWinMain` 시작에서 `CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)`, 종료 시 `CoUninitialize`. `EndCaptureFrame`의 임시 `CoInitializeEx(MTA)` 제거.
+- `Texture.cpp`: `CreateWICTextureFromFileEx(..., WIC_LOADER_IGNORE_SRGB, ...)` — 이 클래스는 노멀맵(데이터 텍스처) 전용.
+- `--normal-map <path>` 옵션 추가(assets 기준 경로, 기본 DDS보다 먼저 시도) — 로더 경로별 검증용.
+
+**검증**
+- 위 표의 세 번째 행. COM 초기화 후에도 캡처(WIC JPEG 저장) 15장 정상.
+
+**교훈**
+- "되니까 괜찮다"가 아니라 **왜 되는지**를 확인해야 한다. COM은 드라이버 덕에 우연히 동작하고 있었고, JPG 경로는 로드는 성공하지만 값이 틀린 상태였다.
+- 데이터 텍스처(노멀·마스크·높이)는 모든 로드 경로(DDS 변환, WIC, 엔진 임포터)에서 **색 공간 변환을 끄는 옵션**을 명시해야 한다. 한 경로만 고치면 다른 경로에서 재발한다.
+- 로더 상태 문자열(`[OK]/[FAIL]`)만으로는 부족하다. **로드된 값의 평균**을 한 번 찍어 보는 것이 가장 빠른 검증.
+
+---
+
+## C. (7번) C4244 — `wstring` → `string` 변환 경고
+
+**증상**
+- 빌드 시 `xutility(4813): warning C4244: 'wchar_t'에서 'char'(으)로 변환하면서 데이터가 손실될 수 있습니다`. 경고 위치가 STL 헤더라 원인 코드가 바로 안 보임.
+
+**원인**
+- `Graphics.cpp`의 `std::string s(ws.begin(), ws.end())` 패턴 3곳(노멀맵 로그의 경로·에러 문자열, `--capture` 라벨). 반복자 생성자가 `wchar_t`(UTF-16)를 **한 글자씩 `char`로 잘라** 넣는다.
+- ASCII만 쓰면 멀쩡해 보이지만 한글 경로/라벨은 깨진다. 예: `--capture 테스트_한글` → 폴더 이름이 깨짐.
+- 같은 계열 문제: `std::filesystem::path::string()`은 시스템 코드 페이지(CP949)로 변환하는데, ImGui는 UTF-8을 기대 → 한글 경로가 ImGui에서 깨져 보임.
+
+**해결**
+- `WideToUtf8` / `Utf8ToWide` 헬퍼(`WideCharToMultiByte` / `MultiByteToWideChar`, `CP_UTF8`).
+- `StartCaptureSet`이 `std::wstring` 라벨을 받도록 변경. ImGui `InputText`(UTF-8) → `Utf8ToWide`, 표시용 경로는 `WideToUtf8(path.wstring())`, 디버그 출력은 `OutputDebugStringW`.
+- 명령줄 파싱을 `Initialize` 앞부분 한 곳으로 모음(`--capture`, `--debug`, `--normal-map`).
+
+**검증**
+- 빌드 경고 0. `--capture 테스트_한글` → `captures/테스트_한글/` 폴더에 15장 정상 생성.
+
+**교훈**
+- STL 내부에서 뜨는 경고도 호출 지점을 추적할 것. "기존 코드에도 있던 경고"가 실제 버그(한글 경로)를 가리키고 있었다.
+- Windows에서 문자열 경계는 셋: Win32(UTF-16) / 파일시스템 path(wide) / UI·로그(UTF-8). 경계마다 명시적으로 변환한다.

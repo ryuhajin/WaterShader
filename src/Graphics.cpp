@@ -35,6 +35,26 @@ std::wstring GetAssetPath(const wchar_t* relativePath)
 #endif
 }
 
+// std::string(ws.begin(), ws.end()) truncates each wchar_t to one byte (C4244) and mangles any
+// non-ASCII path. ImGui and our logs expect UTF-8, so convert explicitly.
+std::string WideToUtf8(const std::wstring& text)
+{
+    if (text.empty()) return {};
+    const int size = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    std::string result(static_cast<size_t>(size), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), size, nullptr, nullptr);
+    return result;
+}
+
+std::wstring Utf8ToWide(const std::string& text)
+{
+    if (text.empty()) return {};
+    const int size = MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+    std::wstring result(static_cast<size_t>(size), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), size);
+    return result;
+}
+
 struct CaptureShot
 {
     const char* name;
@@ -82,6 +102,27 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     screenWidth_ = static_cast<unsigned int>(screenWidth);
     screenHeight_ = static_cast<unsigned int>(screenHeight);
 
+    // Command line:
+    //   --capture <label>      save every preset x shot, then quit
+    //   --debug <mode>         debug view used for the capture set
+    //   --normal-map <path>    normal map relative to assets/, tried before the default DDS
+    std::wstring captureLabelArg;
+    std::wstring normalMapArg;
+    {
+        int argc = 0;
+        if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc))
+        {
+            for (int i = 1; i + 1 < argc; ++i)
+            {
+                const std::wstring arg = argv[i];
+                if (arg == L"--capture")         { captureLabelArg = argv[++i]; }
+                else if (arg == L"--debug")      { captureDebugMode_ = _wtoi(argv[++i]); }
+                else if (arg == L"--normal-map") { normalMapArg = argv[++i]; }
+            }
+            LocalFree(argv);
+        }
+    }
+
     d3d_ = std::make_unique<D3DClass>();
     if (!d3d_->Initialize(screenWidth, screenHeight, VSYNC_ENABLED, hwnd, FULL_SCREEN, SCREEN_DEPTH, SCREEN_NEAR))
     {
@@ -98,18 +139,22 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
 
     normalMap_ = std::make_unique<Texture>();
     {
-        struct Attempt { const wchar_t* relPath; const char* label; };
-        const Attempt attempts[] = {
+        struct Attempt { std::wstring relPath; const char* label; };
+        std::vector<Attempt> attempts = {
             { L"textures/water_normal.dds", "DDS" },
             { L"textures/water_normal.png", "PNG" },
             { L"textures/water_normal.jpg", "JPG" },
         };
+        if (!normalMapArg.empty())
+        {
+            attempts.insert(attempts.begin(), { normalMapArg, "--normal-map" });
+        }
         std::string statusLog;
         bool loaded = false;
         for (const auto& a : attempts)
         {
-            const std::wstring path = GetAssetPath(a.relPath);
-            const std::string pathUtf8(path.begin(), path.end());
+            const std::wstring path = GetAssetPath(a.relPath.c_str());
+            const std::string pathUtf8 = WideToUtf8(path);
             std::wstring err;
             if (normalMap_->Initialize(d3d_->GetDevice(), path.c_str(), &err))
             {
@@ -117,8 +162,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 loaded = true;
                 break;
             }
-            const std::string errUtf8(err.begin(), err.end());
-            statusLog += std::string("[FAIL] ") + a.label + " " + errUtf8 + " -> " + pathUtf8 + "\n";
+            statusLog += std::string("[FAIL] ") + a.label + " " + WideToUtf8(err) + " -> " + pathUtf8 + "\n";
         }
         if (!loaded)
         {
@@ -181,23 +225,9 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     LoadPresets();
     ApplyPreset(0);
 
-    // WaterShader.exe --capture <label> : save every preset x shot, then quit.
-    int argc = 0;
-    if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc))
+    if (!captureLabelArg.empty())
     {
-        for (int i = 1; i + 1 < argc; ++i)
-        {
-            if (std::wstring(argv[i]) == L"--capture")
-            {
-                const std::wstring label = argv[i + 1];
-                StartCaptureSet(std::string(label.begin(), label.end()), true);
-            }
-            else if (std::wstring(argv[i]) == L"--debug")
-            {
-                captureDebugMode_ = _wtoi(argv[i + 1]);
-            }
-        }
-        LocalFree(argv);
+        StartCaptureSet(captureLabelArg, true);
     }
 
     return true;
@@ -251,7 +281,7 @@ void Graphics::SaveCurrentPreset(int index)
     SavePresets();
 }
 
-void Graphics::StartCaptureSet(const std::string& label, bool quitWhenDone)
+void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone)
 {
     captureQueue_.clear();
     for (int preset = 0; preset < static_cast<int>(presets_.size()); ++preset)
@@ -271,7 +301,7 @@ void Graphics::StartCaptureSet(const std::string& label, bool quitWhenDone)
 
     captureRestore_ = {MakePresetFromCurrent(), cameraPosition_, cameraRotation_, cameraFovDeg_, elapsedTime_, oceanMode_};
     quitAfterCapture_ = quitWhenDone;
-    captureStatus_ = "Capturing -> " + captureDir_.string();
+    captureStatus_ = "Capturing -> " + WideToUtf8(captureDir_.wstring());
 }
 
 bool Graphics::BeginCaptureFrame()
@@ -305,9 +335,6 @@ bool Graphics::BeginCaptureFrame()
 
 void Graphics::EndCaptureFrame()
 {
-    // WIC needs COM; S_FALSE / RPC_E_CHANGED_MODE just mean it is already initialized.
-    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-
     // Delete first, then write a new file. Overwriting a batch of existing JPEGs in place from a
     // freshly built exe gets the whole process tree frozen mid-write (ransomware-style heuristic,
     // see docs/features/bench-tools/TROUBLESHOOTING.md); delete + create does not.
@@ -332,7 +359,7 @@ void Graphics::EndCaptureFrame()
             value.fltVal = 0.95f;
             props->Write(1, &option, &value);
         });
-    OutputDebugStringA(((SUCCEEDED(hr) ? "[Capture] saved " : "[Capture] FAILED ") + pendingCapturePath_.string() + "\n").c_str());
+    OutputDebugStringW(((SUCCEEDED(hr) ? L"[Capture] saved " : L"[Capture] FAILED ") + pendingCapturePath_.wstring() + L"\n").c_str());
 
     if (!captureQueue_.empty())
     {
@@ -345,7 +372,7 @@ void Graphics::EndCaptureFrame()
     cameraFovDeg_ = captureRestore_.cameraFovDeg;
     oceanMode_ = captureRestore_.oceanMode;
     elapsedTime_ = captureRestore_.elapsedTime;
-    captureStatus_ = "Saved -> " + captureDir_.string();
+    captureStatus_ = "Saved -> " + WideToUtf8(captureDir_.wstring());
     captureFinishedQuit_ = quitAfterCapture_;
 }
 
@@ -845,7 +872,7 @@ void Graphics::DrawImGuiPanel()
     ImGui::InputText("Label", captureLabel_, sizeof(captureLabel_));
     if (ImGui::Button("Capture Set (presets x shots)"))
     {
-        StartCaptureSet(captureLabel_, false);
+        StartCaptureSet(Utf8ToWide(captureLabel_), false);
     }
     ImGui::TextDisabled("Fixed time %.1fs, UI hidden. Saves to docs/features/water-polish/captures/<label>", kCaptureTime);
     if (!captureStatus_.empty())
