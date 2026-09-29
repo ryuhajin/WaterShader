@@ -53,7 +53,7 @@ constexpr CaptureShot kCaptureShots[] = {
 
 constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical" };
 
-constexpr int kPresetFileVersion = 2;
+constexpr int kPresetFileVersion = 3;
 
 // Optional "key value" pairs appended after the fixed preset fields. Missing keys keep the
 // code defaults and unknown keys are skipped, so new parameters don't need a format bump.
@@ -366,7 +366,8 @@ void Graphics::LoadPresets()
         return;
     }
 
-    // v2: second field is sun elevation (> 0 above the horizon). v1 stored an inverted pitch, so it is ignored.
+    // v2: second field is sun elevation (> 0 above the horizon); v1 stored an inverted pitch.
+    // v3: 4 Gerstner waves (dir.x dir.y amplitude wavelength speed steepness). Older files are ignored.
     std::string line;
     std::getline(file, line);
     std::istringstream headerStream(line);
@@ -408,7 +409,8 @@ void Graphics::LoadPresets()
                 >> wave.direction.x >> wave.direction.y
                 >> wave.amplitude
                 >> wave.wavelength
-                >> wave.speed;
+                >> wave.speed
+                >> wave.steepness;
         }
 
         std::string key;
@@ -463,7 +465,8 @@ void Graphics::SavePresets() const
                 << ' ' << wave.direction.x << ' ' << wave.direction.y
                 << ' ' << wave.amplitude
                 << ' ' << wave.wavelength
-                << ' ' << wave.speed;
+                << ' ' << wave.speed
+                << ' ' << wave.steepness;
         }
 
         ForEachExtraField(preset, [&](const char* name, const float& field)
@@ -789,7 +792,7 @@ void Graphics::DrawImGuiPanel()
     ImGui::SliderFloat("Layer B - U speed (per sec)", &water_.normalScroll2.x, -0.2f, 0.2f);
     ImGui::SliderFloat("Layer B - V speed (per sec)", &water_.normalScroll2.y, -0.2f, 0.2f);
 
-    for (int i = 0; i < 2; ++i)
+    for (int i = 0; i < ColorShader::kWaveCount; ++i)
     {
         char label[32];
         std::snprintf(label, sizeof(label), "Wave %d", i);
@@ -805,6 +808,7 @@ void Graphics::DrawImGuiPanel()
             ImGui::SliderFloat("Amplitude", &w.amplitude, 0.0f, 0.3f);
             ImGui::SliderFloat("Wavelength", &w.wavelength, 0.2f, 8.0f);
             ImGui::SliderFloat("Speed", &w.speed, 0.0f, 3.0f);
+            ImGui::SliderFloat("Steepness (Gerstner Q)", &w.steepness, 0.0f, 1.0f);
             ImGui::TreePop();
         }
     }

@@ -19,7 +19,8 @@ struct WaveParams
     float amplitude;
     float wavelength;
     float speed;
-    float padding[3];
+    float steepness;
+    float padding[2];
 };
 
 struct PerFrameCB
@@ -43,12 +44,14 @@ struct PerFrameCB
     // x = strength, y = sharpness, z = sun glint power, w = sun glint intensity
     DirectX::XMFLOAT4 specularParams;
 
-    WaveParams waves[2];
+    WaveParams waves[ColorShader::kWaveCount];
     DirectX::XMFLOAT4 debugParams; // x = debug mode
 
     // x = Fresnel F0, y = normal strength, z = detail layer scale, w unused
     DirectX::XMFLOAT4 surfaceParams;
 };
+static_assert(sizeof(WaveParams) == 32, "WaveParams must match the 2-register HLSL layout");
+static_assert(sizeof(PerFrameCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
 
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
 {
@@ -332,13 +335,14 @@ void ColorShader::RenderShader(
             water.specularSharpness,
             water.sunGlintPower,
             water.sunGlintIntensity);
-        for (int i = 0; i < 2; ++i)
+        for (int i = 0; i < kWaveCount; ++i)
         {
             data->waves[i].direction  = water.waves[i].direction;
             data->waves[i].amplitude  = water.waves[i].amplitude;
             data->waves[i].wavelength = water.waves[i].wavelength;
             data->waves[i].speed      = water.waves[i].speed;
-            data->waves[i].padding[0] = data->waves[i].padding[1] = data->waves[i].padding[2] = 0.0f;
+            data->waves[i].steepness  = water.waves[i].steepness;
+            data->waves[i].padding[0] = data->waves[i].padding[1] = 0.0f;
         }
         data->debugParams = DirectX::XMFLOAT4(static_cast<float>(water.debugMode), 0.0f, 0.0f, 0.0f);
         data->surfaceParams = DirectX::XMFLOAT4(

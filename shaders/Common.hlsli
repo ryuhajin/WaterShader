@@ -7,7 +7,8 @@ struct WaveParams
     float  amplitude;
     float  wavelength;
     float  speed;
-    float3 padding;
+    float  steepness;  // Gerstner Q (0 = plain sine)
+    float2 padding;
 };
 
 cbuffer PerFrameCB : register(b0)
@@ -28,7 +29,7 @@ cbuffer PerFrameCB : register(b0)
     float4 g_WaterParams;      // x=time, y=reflectionStrength, z=fresnelPower, w=normalScale
     float4 g_SpecularParams;   // x=strength, y=sharpness, z=sun glint power, w=sun glint intensity
 
-    WaveParams g_Waves[2];
+    WaveParams g_Waves[4];
     float4 g_DebugParams;      // x = debug mode: 0 render, 1 normal map, 2 world N, 3 UV, 4 front/back face, 5 lighting terms
     float4 g_SurfaceParams;    // x = Fresnel F0, y = normal strength, z = detail layer scale, w unused
 };

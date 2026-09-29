@@ -1,33 +1,48 @@
 #include "Common.hlsli"
 
-// 파도 하나가 현재 정점 위치에 만드는 높이와 기울기를 계산해서 누적
-void AccumulateSineWave(
-    float2 waveDir, float amplitude, float wavelength, float speed,
+#define WAVE_COUNT 4
+
+// Gerstner wave: the vertex moves in a circle instead of only up/down.
+// steepness(Q) = 0 is the old sine wave; larger Q pulls vertices toward the crest, so crests get
+// sharp and troughs get wide/flat like real water.
+//   P.xz += Q·A·D·cos(θ),  P.y += A·sin(θ),  θ = k(D·xz) − ωt,  k = 2π/λ, ω = k·speed
+// Normal (GPU Gems 1, ch.1): N = (−Σ D.x·kA·cos θ, 1 − Σ Q·kA·sin θ, −Σ D.y·kA·cos θ)
+void AccumulateGerstnerWave(
+    WaveParams wave,
     float2 positionXZ,
-    inout float heightSum, inout float slopeX, inout float slopeZ)
+    inout float3 offset, inout float3 normalSum)
 {
-    if (amplitude <= 0.0f || wavelength <= 0.0f) return;
-    float waveNumber = 6.2831853 / wavelength;
-    float phaseSpeed = waveNumber * speed;
-    float phase = dot(waveDir, positionXZ) * waveNumber - phaseSpeed * g_WaterParams.x;
+    if (wave.amplitude <= 0.0f || wave.wavelength <= 0.0f) return;
+    float waveNumber = 6.2831853 / wave.wavelength;
+    float phaseSpeed = waveNumber * wave.speed;
+    float phase = dot(wave.direction, positionXZ) * waveNumber - phaseSpeed * g_WaterParams.x;
     float sinPhase = sin(phase);
     float cosPhase = cos(phase);
-    heightSum += amplitude * sinPhase;
-    slopeX += waveDir.x * waveNumber * amplitude * cosPhase;
-    slopeZ += waveDir.y * waveNumber * amplitude * cosPhase;
+
+    // Q/(k·A·count) keeps the sum of all waves from looping over itself even at steepness 1.
+    float q = wave.steepness / (waveNumber * wave.amplitude * WAVE_COUNT);
+    float kA = waveNumber * wave.amplitude;
+
+    offset.xz += q * wave.amplitude * wave.direction * cosPhase;
+    offset.y  += wave.amplitude * sinPhase;
+
+    normalSum.xz -= wave.direction * kA * cosPhase;
+    normalSum.y  -= q * kA * sinPhase;
 }
 
-float3 SineDisplace(float3 localPos, out float3 normalOut)
+float3 GerstnerDisplace(float3 localPos, out float3 normalOut)
 {
-    float waveHeight = 0.0;
-    float slopeX = 0.0;
-    float slopeZ = 0.0;
+    float3 offset = 0.0;
+    float3 normalSum = float3(0.0, 1.0, 0.0);
 
-    AccumulateSineWave(g_Waves[0].direction, g_Waves[0].amplitude, g_Waves[0].wavelength, g_Waves[0].speed, localPos.xz, waveHeight, slopeX, slopeZ);
-    AccumulateSineWave(g_Waves[1].direction, g_Waves[1].amplitude, g_Waves[1].wavelength, g_Waves[1].speed, localPos.xz, waveHeight, slopeX, slopeZ);
+    [unroll]
+    for (int i = 0; i < WAVE_COUNT; ++i)
+    {
+        AccumulateGerstnerWave(g_Waves[i], localPos.xz, offset, normalSum);
+    }
 
-    normalOut = normalize(float3(-slopeX, 1.0, -slopeZ));
-    return float3(localPos.x, localPos.y + waveHeight, localPos.z);
+    normalOut = normalize(normalSum);
+    return localPos + offset;
 }
 
 PSInput VSMain(VSInput input)
@@ -35,7 +50,7 @@ PSInput VSMain(VSInput input)
     PSInput output;
 
     float3 waveNormal;
-    float3 displacedLocalPos = SineDisplace(input.position, waveNormal);
+    float3 displacedLocalPos = GerstnerDisplace(input.position, waveNormal);
     float4 worldPos = mul(float4(displacedLocalPos, 1.0), g_World);
 
     output.position = mul(mul(worldPos, g_View), g_Projection);

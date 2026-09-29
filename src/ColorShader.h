@@ -18,7 +18,10 @@ public:
         float amplitude  = 0.05f;
         float wavelength = 2.0f;
         float speed      = 0.5f;
+        float steepness  = 0.0f; // Gerstner Q: 0 = sine, 1 = sharpest crest before looping
     };
+
+    static constexpr int kWaveCount = 4;
 
     struct WaterParams
     {
@@ -36,9 +39,12 @@ public:
         float fresnelF0          = 0.5f;    // reflectance at normal incidence (water ~0.02)
         float normalStrength     = 1.0f;    // tangent-space XY multiplier
         float detailScale        = 1.0f;    // layer B tiling relative to layer A
-        Wave waves[2] = {
-            { { 1.0f, 0.0f}, 0.05f, 2.0f, 0.5f },
-            { { 0.7f, 0.7f}, 0.03f, 1.3f, 0.7f },
+        // Wavelengths spread ~1.5x apart and directions fanned around the wind so no single crest dominates.
+        Wave waves[kWaveCount] = {
+            { { 0.940f,  0.342f}, 0.030f, 1.60f, 0.55f, 0.55f },
+            { { 0.966f, -0.259f}, 0.018f, 1.05f, 0.45f, 0.60f },
+            { { 0.574f,  0.819f}, 0.010f, 0.62f, 0.35f, 0.65f },
+            { { 0.766f, -0.643f}, 0.006f, 0.41f, 0.28f, 0.70f },
         };
         int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face, 5=lighting terms
     };
