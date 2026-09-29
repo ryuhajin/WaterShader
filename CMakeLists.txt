@@ -15,6 +15,8 @@ add_executable(WaterShader WIN32
     src/CubemapTexture.h
     src/D3DClass.cpp
     src/D3DClass.h
+    src/GpuTimer.cpp
+    src/GpuTimer.h
     src/Graphics.cpp
     src/Graphics.h
     src/Input.cpp

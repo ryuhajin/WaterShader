@@ -12,6 +12,7 @@
 #include <wincodec.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -110,31 +111,46 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --capture <label>      save every preset x shot, then quit
     //   --debug <mode>         debug view used for the capture set
     //   --normal-map <path>    normal map relative to assets/, tried before the default DDS
+    //   --shot <name>          start from a fixed camera shot (e.g. ocean_wide)
+    //   --no-vsync             start uncapped (for FPS / GPU ms measurement)
     std::wstring captureLabelArg;
     std::wstring normalMapArg;
+    std::wstring shotArg;
+    bool vsyncArg = VSYNC_ENABLED;
     {
         int argc = 0;
         if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc))
         {
-            for (int i = 1; i + 1 < argc; ++i)
+            for (int i = 1; i < argc; ++i)
             {
                 const std::wstring arg = argv[i];
-                if (arg == L"--capture")         { captureLabelArg = argv[++i]; }
-                else if (arg == L"--debug")      { captureDebugMode_ = _wtoi(argv[++i]); }
-                else if (arg == L"--normal-map") { normalMapArg = argv[++i]; }
+                const bool hasValue = i + 1 < argc;
+                if (arg == L"--no-vsync")                    { vsyncArg = false; }
+                else if (arg == L"--capture" && hasValue)    { captureLabelArg = argv[++i]; }
+                else if (arg == L"--debug" && hasValue)      { captureDebugMode_ = _wtoi(argv[++i]); }
+                else if (arg == L"--normal-map" && hasValue) { normalMapArg = argv[++i]; }
+                else if (arg == L"--shot" && hasValue)       { shotArg = argv[++i]; }
             }
             LocalFree(argv);
         }
     }
 
     d3d_ = std::make_unique<D3DClass>();
-    if (!d3d_->Initialize(screenWidth, screenHeight, VSYNC_ENABLED, hwnd, FULL_SCREEN, SCREEN_DEPTH, SCREEN_NEAR))
+    if (!d3d_->Initialize(screenWidth, screenHeight, vsyncArg, hwnd, FULL_SCREEN, SCREEN_DEPTH, SCREEN_NEAR))
     {
         return false;
     }
 
     camera_ = std::make_unique<Camera>();
-    ApplyCameraShot(kDefaultShotIndex);
+    int startShot = kDefaultShotIndex;
+    for (int i = 0; i < static_cast<int>(std::size(kCaptureShots)); ++i)
+    {
+        if (shotArg == Utf8ToWide(kCaptureShots[i].name))
+        {
+            startShot = i;
+        }
+    }
+    ApplyCameraShot(startShot);
     LoadCameraSlots();
 
     light_ = std::make_unique<Light>();
@@ -225,6 +241,9 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         return false;
     }
     imguiInitialized_ = true;
+
+    // Timing is a debugging aid; a device without timestamp queries just shows "n/a".
+    gpuTimer_.Initialize(d3d_->GetDevice());
 
     LoadPresets();
     ApplyPreset(0);
@@ -597,6 +616,8 @@ void Graphics::SavePresets() const
 
 void Graphics::Shutdown()
 {
+    gpuTimer_.Shutdown();
+
     if (imguiInitialized_)
     {
         ImGui_ImplDX11_Shutdown();
@@ -725,6 +746,7 @@ bool Graphics::Render(float deltaTime)
     using namespace DirectX;
 
     const auto now = std::chrono::steady_clock::now();
+    UpdateFrameStats(deltaTime);
     colorShader_->CheckHotReload(d3d_->GetDevice(), now);
     skyboxShader_->CheckHotReload(d3d_->GetDevice(), now);
 
@@ -770,6 +792,7 @@ bool Graphics::Render(float deltaTime)
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
+    gpuTimer_.Begin(d3d_->GetDeviceContext());
     d3d_->BeginScene(0.02f, 0.08f, 0.11f, 1.0f);
 
     if (skyboxVisible_)
@@ -809,24 +832,89 @@ bool Graphics::Render(float deltaTime)
 
     if (!capturing)
     {
+        DrawStatsOverlay();
         DrawImGuiPanel();
     }
 
     ImGui::Render();
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+    gpuTimer_.End(d3d_->GetDeviceContext());
 
     if (capturing)
     {
         EndCaptureFrame();
     }
 
+    // CPU cost of this frame, excluding the Present / vsync wait below.
+    cpuFrameMs_ = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - now).count();
+
     d3d_->EndScene();
 
     return !captureFinishedQuit_;
 }
 
+void Graphics::UpdateFrameStats(float deltaTime)
+{
+    // Values shown in the overlay are averaged over 0.5 s so they are readable.
+    frameMsHistory_[frameHistoryIndex_] = deltaTime * 1000.0f;
+    frameHistoryIndex_ = (frameHistoryIndex_ + 1) % kFrameHistory;
+
+    statsAccumTime_ += deltaTime;
+    statsAccumCpuMs_ += cpuFrameMs_;
+    ++statsAccumFrames_;
+    if (statsAccumTime_ >= 0.5f)
+    {
+        displayedFps_ = statsAccumFrames_ / statsAccumTime_;
+        displayedCpuMs_ = statsAccumCpuMs_ / statsAccumFrames_;
+        displayedGpuMs_ = gpuTimer_.GetLastMs();
+        statsAccumTime_ = 0.0f;
+        statsAccumCpuMs_ = 0.0f;
+        statsAccumFrames_ = 0;
+    }
+}
+
+void Graphics::DrawStatsOverlay()
+{
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.75f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
+    // The title-bar arrow collapses / expands it.
+    if (ImGui::Begin("Stats", nullptr, flags))
+    {
+        ImGui::Text("Time    %8.2f s", elapsedTime_);
+        ImGui::Text("FPS     %8.1f", displayedFps_);
+        ImGui::Text("Frame   %8.2f ms", displayedFps_ > 0.0f ? 1000.0f / displayedFps_ : 0.0f);
+        ImGui::Text("CPU     %8.2f ms", displayedCpuMs_);
+        if (displayedGpuMs_ >= 0.0f)
+        {
+            ImGui::Text("GPU     %8.2f ms", displayedGpuMs_);
+        }
+        else
+        {
+            ImGui::Text("GPU          n/a");
+        }
+        ImGui::PlotLines("##frametime", frameMsHistory_.data(), kFrameHistory, frameHistoryIndex_,
+            "frame ms", 0.0f, FLT_MAX, ImVec2(200.0f, 40.0f)); // FLT_MAX = auto-scale
+
+        bool vsync = d3d_->GetVSync();
+        if (ImGui::Checkbox("VSync", &vsync))
+        {
+            d3d_->SetVSync(vsync);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled(vsync ? "(FPS capped by display)" : "(uncapped)");
+        ImGui::Text("Mesh: %s", oceanMode_ ? "ocean grid 1024^2" : "bench plane 32^2");
+    }
+    ImGui::End();
+}
+
 void Graphics::DrawImGuiPanel()
 {
+    // Default to the right edge so it never covers the Stats overlay (imgui.ini overrides after first run).
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 10.0f, 10.0f), ImGuiCond_FirstUseEver, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(360.0f, io.DisplaySize.y - 20.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("Shader Bench");
 
     const std::string& shaderError = colorShader_->GetLastError();

@@ -4,6 +4,7 @@
 #include "ColorShader.h"
 #include "CubemapTexture.h"
 #include "D3DClass.h"
+#include "GpuTimer.h"
 #include "Light.h"
 #include "Model.h"
 #include "Skybox.h"
@@ -31,6 +32,8 @@ public:
 private:
     bool Render(float deltaTime);
     void DrawImGuiPanel();
+    void DrawStatsOverlay();
+    void UpdateFrameStats(float deltaTime);
     void UpdateCamera(float deltaTime, const Input& input);
     void UpdateModelRotation();
     void ApplyPreset(int index);
@@ -120,6 +123,19 @@ private:
     ColorShader::WaterParams water_;
     std::string normalMapStatus_;
     std::array<ShaderPreset, 3> presets_{};
+
+    // Stats overlay (top-left). CPU ms = Render() start to just before Present (excludes vsync wait).
+    GpuTimer gpuTimer_;
+    float cpuFrameMs_ = 0.0f;
+    float displayedFps_ = 0.0f;
+    float displayedCpuMs_ = 0.0f;
+    float displayedGpuMs_ = 0.0f;
+    float statsAccumTime_ = 0.0f;
+    int statsAccumFrames_ = 0;
+    float statsAccumCpuMs_ = 0.0f;
+    static constexpr int kFrameHistory = 120;
+    std::array<float, kFrameHistory> frameMsHistory_{};
+    int frameHistoryIndex_ = 0;
 
     static constexpr int kCameraSlotCount = 4;
     std::array<CameraView, kCameraSlotCount> cameraSlots_{};
