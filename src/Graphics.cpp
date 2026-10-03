@@ -13,6 +13,7 @@
 #include <wincodec.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -169,6 +170,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --normal-map <path>    extra normal map (relative to assets/), used for both layers
     //   --normal-a / --normal-b <index>  normal map per layer (kNormalMaps), overrides the presets
     //   --shot <name>          start from a fixed camera shot (e.g. ocean_wide)
+    //   --ui <view|light|water|all>  open settings windows at start (screenshots; keys 1/2/3 otherwise)
     //   --no-vsync             start uncapped (for FPS / GPU ms measurement)
     //   --capture-feature <f>  captures go to docs/features/<f>/captures (default water-polish)
     //   --tonemap <none|reinhard|aces|aces-hue>  tone curve for this run
@@ -192,6 +194,13 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--normal-a" && hasValue)   { normalOverrideA_ = _wtoi(argv[++i]); }
                 else if (arg == L"--normal-b" && hasValue)   { normalOverrideB_ = _wtoi(argv[++i]); }
                 else if (arg == L"--shot" && hasValue)       { shotArg = argv[++i]; }
+                else if (arg == L"--ui" && hasValue)
+                {
+                    const std::wstring ui = argv[++i];
+                    showViewWindow_ = ui == L"view" || ui == L"all";
+                    showLightWindow_ = ui == L"light" || ui == L"all";
+                    showWaterWindow_ = ui == L"water" || ui == L"all";
+                }
                 else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
                 else if (arg == L"--exposure" && hasValue)   { exposureOverrideEv_ = static_cast<float>(_wtof(argv[++i])); hasExposureOverride_ = true; }
                 else if (arg == L"--tonemap" && hasValue)
@@ -774,9 +783,26 @@ void Graphics::Shutdown()
 bool Graphics::Frame(float deltaTime, const Input& input)
 {
     elapsedTime_ += deltaTime;
+    UpdateWindowToggles(input);
     UpdateMouseDrag(); // before UpdateCamera, which pushes cameraRotation_ to the camera
     UpdateCamera(deltaTime, input);
     return Render(deltaTime);
+}
+
+void Graphics::UpdateWindowToggles(const Input& input)
+{
+    // Toggle on the press, not while held. Digits typed into a text field (capture label) are text.
+    const bool typing = imguiInitialized_ && ImGui::GetIO().WantTextInput;
+    bool* windows[] = { &showViewWindow_, &showLightWindow_, &showWaterWindow_ };
+    for (int i = 0; i < 3; ++i)
+    {
+        const bool down = input.IsKeyDown('1' + i) || input.IsKeyDown(VK_NUMPAD1 + i);
+        if (down && !toggleKeyWasDown_[i] && !typing)
+        {
+            *windows[i] = !*windows[i];
+        }
+        toggleKeyWasDown_[i] = down;
+    }
 }
 
 void Graphics::UpdateMouseDrag()
@@ -965,7 +991,9 @@ bool Graphics::Render(float deltaTime)
     if (!capturing)
     {
         DrawStatsOverlay();
-        DrawImGuiPanel();
+        DrawViewWindow();
+        DrawLightWindow();
+        DrawWaterWindow();
     }
 
     ImGui::Render();
@@ -1032,51 +1060,166 @@ void Graphics::DrawStatsOverlay()
         ImGui::SameLine();
         ImGui::TextDisabled(vsync ? "(FPS capped by display)" : "(uncapped)");
         ImGui::Text("Mesh: %s", oceanMode_ ? "ocean grid 1024^2" : "bench plane 32^2");
+        ImGui::Separator();
+        ImGui::TextDisabled("Keys: [1] View  [2] Light  [3] Water");
     }
     ImGui::End();
 }
 
-void Graphics::DrawImGuiPanel()
+namespace
 {
-    // Default to the right edge so it never covers the Stats overlay (imgui.ini overrides after first run).
+// Water window style: the name sits above a full-width control, so it can be a plain description
+// instead of a squeezed abbreviation next to the slider.
+bool LabeledSlider(const char* label, float* value, float minValue, float maxValue,
+    const char* format = "%.3f", ImGuiSliderFlags flags = 0)
+{
+    ImGui::TextWrapped("%s", label);
+    ImGui::PushID(label);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    const bool changed = ImGui::SliderFloat("##value", value, minValue, maxValue, format, flags);
+    ImGui::PopID();
+    return changed;
+}
+
+bool LabeledColor(const char* label, float* rgb)
+{
+    ImGui::TextUnformatted(label);
+    ImGui::PushID(label);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    const bool changed = ImGui::ColorEdit3("##color", rgb);
+    ImGui::PopID();
+    return changed;
+}
+
+// Direction of travel on the water as the camera sees it, in degrees: 0 = away from the camera,
+// +90 = across the screen to the right, 180 = toward the camera. worldDeg uses the wave convention
+// (0 = +X, 90 = +Z); cameraYawDeg is cameraRotation_.y (forward = (sin yaw, cos yaw) in x/z).
+float ViewRelativeDeg(float worldDeg, float cameraYawDeg)
+{
+    const float d = DirectX::XMConvertToRadians(worldDeg);
+    const float yaw = DirectX::XMConvertToRadians(cameraYawDeg);
+    const float dx = std::cos(d), dz = std::sin(d);
+    const float alongForward = dx * std::sin(yaw) + dz * std::cos(yaw);
+    const float alongRight = dx * std::cos(yaw) - dz * std::sin(yaw); // UpdateCamera's right vector
+    return DirectX::XMConvertToDegrees(std::atan2(alongRight, alongForward));
+}
+
+const char* DescribeViewDirection(float relativeDeg)
+{
+    // 8 sectors of 45 degrees, centered on the 4 main directions.
+    const char* names[] = {
+        "away from camera",
+        "away, to the right",
+        "left -> right",
+        "toward, to the right",
+        "toward camera",
+        "toward, to the left",
+        "right -> left",
+        "away, to the left",
+    };
+    const float wrapped = std::fmod(relativeDeg + 360.0f + 22.5f, 360.0f);
+    return names[static_cast<int>(wrapped / 45.0f) % 8];
+}
+
+// Small dial on the current line: the camera always looks "up" on it (tick at the top), the arrow
+// is the direction of travel relative to that. Reads like the screen: up = away, right = right.
+void DrawDirectionDial(float relativeDeg)
+{
+    const float size = ImGui::GetFrameHeight();
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const ImVec2 center(origin.x + size * 0.5f, origin.y + size * 0.5f);
+    const float radius = size * 0.5f - 1.0f;
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const ImU32 rimColor = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    const ImU32 arrowColor = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
+
+    drawList->AddCircle(center, radius, rimColor, 24);
+    drawList->AddTriangleFilled(ImVec2(center.x, center.y - radius), ImVec2(center.x - 3.0f, center.y - radius + 4.0f),
+        ImVec2(center.x + 3.0f, center.y - radius + 4.0f), rimColor);
+
+    const float r = DirectX::XMConvertToRadians(relativeDeg);
+    const ImVec2 dir(std::sin(r), -std::cos(r));
+    const ImVec2 tip(center.x + dir.x * (radius - 2.0f), center.y + dir.y * (radius - 2.0f));
+    const ImVec2 tail(center.x - dir.x * (radius - 4.0f), center.y - dir.y * (radius - 4.0f));
+    drawList->AddLine(tail, tip, arrowColor, 2.0f);
+    const ImVec2 side(-dir.y * 3.5f, dir.x * 3.5f);
+    const ImVec2 back(tip.x - dir.x * 5.0f, tip.y - dir.y * 5.0f);
+    drawList->AddTriangleFilled(tip, ImVec2(back.x + side.x, back.y + side.y), ImVec2(back.x - side.x, back.y - side.y), arrowColor);
+
+    ImGui::Dummy(ImVec2(size, size));
+}
+
+// Normal map scroll shown as "which way the ripples drift + how fast". The stored value stays the
+// UV velocity the shader adds to the sample position. The plane UVs run u = +X, v = -Z (Model.cpp),
+// and sampling at uv + velocity * t moves the pattern by -velocity, so in world terms the ripples
+// drift along (-u, +v). The value is only rewritten when a slider moves, so presets round-trip exactly.
+void FlowControls(DirectX::XMFLOAT2& velocity, float& rememberedDeg, float cameraYawDeg)
+{
+    float speed = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+    if (speed > 0.0f)
+    {
+        rememberedDeg = DirectX::XMConvertToDegrees(std::atan2(velocity.y, -velocity.x));
+    }
+    float directionDeg = rememberedDeg;
+    const float relativeDeg = ViewRelativeDeg(directionDeg, cameraYawDeg);
+
+    ImGui::TextUnformatted("Flow direction (deg, 0 = +X, 90 = +Z)");
+    DrawDirectionDial(relativeDeg);
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("%s", DescribeViewDirection(relativeDeg));
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    bool changed = ImGui::SliderFloat("##flowDirection", &directionDeg, -180.0f, 180.0f, "%.0f");
+    changed |= LabeledSlider("Flow speed", &speed, 0.0f, 0.2f, "%.3f");
+    if (changed)
+    {
+        rememberedDeg = directionDeg;
+        const float r = DirectX::XMConvertToRadians(directionDeg);
+        velocity = { -std::cos(r) * speed, std::sin(r) * speed };
+    }
+}
+} // namespace
+
+void Graphics::DrawViewWindow()
+{
+    if (!showViewWindow_)
+    {
+        return;
+    }
+    // Left side, under the Stats overlay (imgui.ini keeps the user's layout after the first run).
     const ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 10.0f, 10.0f), ImGuiCond_FirstUseEver, ImVec2(1.0f, 0.0f));
-    ImGui::SetNextWindowSize(ImVec2(360.0f, io.DisplaySize.y - 20.0f), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Shader Bench");
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 190.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(340.0f, io.DisplaySize.y - 200.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("View Settings  [1]", &showViewWindow_))
+    {
+        ImGui::End();
+        return;
+    }
+    ImGui::PushItemWidth(-100.0f); // room for the labels on the right
 
-    const std::string& shaderError = colorShader_->GetLastError();
-    if (!shaderError.empty())
+    ImGui::SeparatorText("Presets");
+    ImGui::TextDisabled("Sky, lights and water together");
+    const char* presetNames[] = { "Basic", "Sunset", "Tropical" };
+    for (int i = 0; i < 3; ++i)
     {
-        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Compile error:");
-        ImGui::TextWrapped("%s", shaderError.c_str());
-    }
-    else
-    {
-        const std::string& reloadStamp = colorShader_->GetLastReloadStamp();
-        ImGui::Text("Shader: reloaded %s", reloadStamp.empty() ? "ready" : reloadStamp.c_str());
-    }
-    ImGui::Separator();
-
-    ImGui::SeparatorText("Model Rotation");
-    if (oceanMode_)
-    {
-        ImGui::TextDisabled("Ocean Grid stays level (drag = look around)");
-    }
-    else
-    {
-        ImGui::TextDisabled("Left-drag: rotate plane, right-drag: look around");
-        ImGui::Text("Pitch %.1f  Yaw %.1f", modelRotation_.x, modelRotation_.y);
-    }
-    if (ImGui::Button("Reset Model Rotation"))
-    {
-        modelRotation_ = {0.0f, 0.0f, 0.0f};
+        ImGui::PushID(i);
+        if (ImGui::Button(presetNames[i], ImVec2(80.0f, 0.0f)))
+        {
+            ApplyPreset(i);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Save Current"))
+        {
+            SaveCurrentPreset(i);
+        }
+        ImGui::PopID();
     }
 
     ImGui::SeparatorText("Camera");
+    ImGui::TextDisabled("WASD move, Q/E down/up, arrows or drag: look");
     ImGui::SliderFloat("FOV (deg)", &cameraFovDeg_, 30.0f, 120.0f);
     ImGui::SliderFloat("Move Speed", &cameraMoveSpeed_, 0.1f, 10.0f);
-    ImGui::SliderFloat("Turn Speed (deg/sec)", &cameraTurnSpeed_, 30.0f, 360.0f);
-    ImGui::Text("WASD: move, Q/E: down/up, Arrows or drag: look");
+    ImGui::SliderFloat("Turn Speed", &cameraTurnSpeed_, 30.0f, 360.0f, "%.0f deg/s");
     if (ImGui::Button("Reset Camera"))
     {
         ApplyCameraShot(kDefaultShotIndex);
@@ -1097,7 +1240,7 @@ void Graphics::DrawImGuiPanel()
             ApplyCameraShot(i);
         }
     }
-    ImGui::TextDisabled("Slots (saved to assets/camera_presets.txt)");
+    ImGui::TextDisabled("Slots (assets/camera_presets.txt)");
     for (int i = 0; i < kCameraSlotCount; ++i)
     {
         ImGui::PushID(i);
@@ -1118,148 +1261,24 @@ void Graphics::DrawImGuiPanel()
         ImGui::EndDisabled();
         ImGui::PopID();
     }
-    ImGui::Text("Pos (%.2f, %.2f, %.2f)  Pitch %.1f Yaw %.1f",
+    ImGui::TextDisabled("Pos (%.2f, %.2f, %.2f)  Pitch %.1f  Yaw %.1f",
         cameraPosition_.x, cameraPosition_.y, cameraPosition_.z, cameraRotation_.x, cameraRotation_.y);
 
-    ImGui::SeparatorText("Settings");
-    const char* presetNames[] = { "Basic", "Sunset", "Tropical" };
-    for (int i = 0; i < 3; ++i)
-    {
-        char applyLabel[32];
-        std::snprintf(applyLabel, sizeof(applyLabel), "Apply %s", presetNames[i]);
-        if (ImGui::Button(applyLabel))
-        {
-            ApplyPreset(i);
-        }
-
-        ImGui::SameLine();
-
-        char saveLabel[40];
-        std::snprintf(saveLabel, sizeof(saveLabel), "Save Current##%s", presetNames[i]);
-        if (ImGui::Button(saveLabel))
-        {
-            SaveCurrentPreset(i);
-        }
-    }
-
-    ImGui::SeparatorText("Lighting");
-    ImGui::SliderFloat("Sun Yaw (deg)", &sunYawDeg_, 0.0f, 360.0f);
-    ImGui::SliderFloat("Sun Elevation (deg)", &sunElevationDeg_, 0.0f, 90.0f);
-    const Environment& currentEnv = kEnvironments[environmentIndex_];
-    ImGui::TextDisabled("Sky sun: yaw %.1f, elevation %.1f", currentEnv.sunYawDeg, currentEnv.sunElevationDeg);
-    ImGui::BeginDisabled(!currentEnv.hdr);
-    if (ImGui::Button("Calibrate Lights From Sky"))
-    {
-        // Sun direction, sun light, ambient and exposure as measured from the HDR sky.
-        sunYawDeg_ = currentEnv.sunYawDeg;
-        sunElevationDeg_ = currentEnv.sunElevationDeg;
-        SplitLinearLight(currentEnv.sunLight, lightColor_, lightIntensity_);
-        SplitLinearLight(currentEnv.ambientLight, ambientColor_, ambientIntensity_);
-        exposureEv_ = currentEnv.keyExposureEv;
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Match Skybox Sun"))
-    {
-        sunYawDeg_ = currentEnv.sunYawDeg;
-        sunElevationDeg_ = currentEnv.sunElevationDeg;
-    }
-    ImGui::ColorEdit3("Light Color", &lightColor_.x);
-    ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 5.0f);
-    ImGui::SliderFloat("Specular Strength", &water_.specularStrength, 0.0f, 2.0f);
-    ImGui::SliderFloat("Specular Sharpness", &water_.specularSharpness, 16.0f, 256.0f);
-    ImGui::SliderFloat("Sun Glint Power", &water_.sunGlintPower, 64.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
-    ImGui::SliderFloat("Sun Glint Intensity", &water_.sunGlintIntensity, 0.0f, 50.0f);
-    ImGui::Text("Time: %.2fs", elapsedTime_);
-    if (ImGui::Button("Reset Light"))
-    {
-        sunYawDeg_ = currentEnv.sunYawDeg;
-        sunElevationDeg_ = 20.0f;
-        lightColor_ = {1.0f, 1.0f, 1.0f};
-        lightIntensity_ = 1.0f;
-        ambientColor_ = {0.10f, 0.14f, 0.18f};
-        ambientIntensity_ = 0.35f;
-    }
-
-    ImGui::SeparatorText("Ambient");
-    ImGui::ColorEdit3("Ambient Color", &ambientColor_.x);
-    ImGui::SliderFloat("Ambient Intensity", &ambientIntensity_, 0.0f, 1.0f);
-
-    ImGui::SeparatorText("Environment");
-    if (ImGui::BeginCombo("Sky / Reflection", kEnvironments[environmentIndex_].name))
-    {
-        for (int i = 0; i < kEnvironmentCount; ++i)
-        {
-            if (ImGui::Selectable(kEnvironments[i].name, i == environmentIndex_))
-            {
-                environmentIndex_ = i;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
+    ImGui::SeparatorText("Scene");
     ImGui::Checkbox("Ocean Grid (open water to the horizon)", &oceanMode_);
-    ImGui::SliderFloat("Reflection Strength", &water_.reflectionStrength, 0.0f, 1.0f);
-
-    ImGui::SeparatorText("Water");
-    ImGui::SliderFloat("Fresnel Power", &water_.fresnelPower, 1.0f, 8.0f);
-    ImGui::ColorEdit3("Facing Color", &water_.facingColor.x);
-    ImGui::ColorEdit3("Grazing Color", &water_.grazingColor.x);
-    ImGui::SliderFloat("Fresnel F0", &water_.fresnelF0, 0.0f, 0.6f);
-    ImGui::SliderFloat("Normal Scale (tile)", &water_.normalScale, 0.1f, 5.0f);
-    ImGui::SliderFloat("Normal Strength", &water_.normalStrength, 0.0f, 3.0f);
-    ImGui::SliderFloat("Detail Layer Scale (B / A)", &water_.detailScale, 1.0f, 6.0f);
-    const auto normalMapCombo = [this](const char* label, int& index) {
-        if (ImGui::BeginCombo(label, normalMapNames_[index].c_str()))
-        {
-            for (int i = 0; i < static_cast<int>(normalMapNames_.size()); ++i)
-            {
-                if (ImGui::Selectable(normalMapNames_[i].c_str(), i == index))
-                {
-                    index = i;
-                }
-            }
-            ImGui::EndCombo();
-        }
-    };
-    normalMapCombo("Normal Map A (broad)", normalMapA_);
-    normalMapCombo("Normal Map B (detail)", normalMapB_);
-    ImGui::TextDisabled("Normal map UV scroll velocity (2 layers blended)");
-    ImGui::SliderFloat("Layer A - U speed (per sec)", &water_.normalScroll1.x, -0.2f, 0.2f);
-    ImGui::SliderFloat("Layer A - V speed (per sec)", &water_.normalScroll1.y, -0.2f, 0.2f);
-    ImGui::SliderFloat("Layer B - U speed (per sec)", &water_.normalScroll2.x, -0.2f, 0.2f);
-    ImGui::SliderFloat("Layer B - V speed (per sec)", &water_.normalScroll2.y, -0.2f, 0.2f);
-
-    for (int i = 0; i < ColorShader::kWaveCount; ++i)
+    ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
+    if (oceanMode_)
     {
-        char label[32];
-        std::snprintf(label, sizeof(label), "Wave %d", i);
-        if (ImGui::TreeNode(label))
+        ImGui::TextDisabled("Ocean grid stays level (drag = look around)");
+    }
+    else
+    {
+        ImGui::TextDisabled("Left-drag: rotate plane (pitch %.0f, yaw %.0f)", modelRotation_.x, modelRotation_.y);
+        if (ImGui::Button("Reset Plane Rotation"))
         {
-            auto& w = water_.waves[i];
-            float angleDeg = DirectX::XMConvertToDegrees(std::atan2(w.direction.y, w.direction.x));
-            if (ImGui::SliderFloat("Direction (deg)", &angleDeg, -180.0f, 180.0f))
-            {
-                const float r = DirectX::XMConvertToRadians(angleDeg);
-                w.direction = { std::cos(r), std::sin(r) };
-            }
-            ImGui::SliderFloat("Amplitude", &w.amplitude, 0.0f, 0.3f);
-            ImGui::SliderFloat("Wavelength", &w.wavelength, 0.2f, 8.0f);
-            ImGui::SliderFloat("Speed", &w.speed, 0.0f, 3.0f);
-            ImGui::SliderFloat("Steepness (Gerstner Q)", &w.steepness, 0.0f, 1.0f);
-            ImGui::TreePop();
+            modelRotation_ = {0.0f, 0.0f, 0.0f};
         }
     }
-
-    ImGui::SeparatorText("Tonemapping");
-    const char* operatorNames[] = { "None (clamp)", "Reinhard", "ACES (per channel)", "ACES (hue-preserving)" };
-    int op = static_cast<int>(tonemapOperator_);
-    if (ImGui::Combo("Tone Curve", &op, operatorNames, IM_ARRAYSIZE(operatorNames)))
-    {
-        tonemapOperator_ = static_cast<TonemapShader::Operator>(op);
-    }
-    ImGui::SliderFloat("Exposure (EV)", &exposureEv_, -4.0f, 4.0f, "%+.2f");
-    ImGui::TextDisabled("x%.3f linear, saved with the preset", std::exp2(exposureEv_));
 
     ImGui::SeparatorText("Capture");
     ImGui::InputText("Label", captureLabel_, sizeof(captureLabel_));
@@ -1292,13 +1311,205 @@ void Graphics::DrawImGuiPanel()
         ImGui::TextWrapped("%s", captureStatus_.c_str());
     }
 
-    // Debug View — keep this section last so new ImGui controls always go above it.
     ImGui::SeparatorText("Debug View");
     const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
+    const std::string& shaderError = colorShader_->GetLastError();
+    if (!shaderError.empty())
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Shader compile error:");
+        ImGui::TextWrapped("%s", shaderError.c_str());
+    }
+    else
+    {
+        const std::string& reloadStamp = colorShader_->GetLastReloadStamp();
+        ImGui::TextDisabled("Shader hot reload: %s", reloadStamp.empty() ? "ready" : reloadStamp.c_str());
+    }
     if (!normalMapStatus_.empty())
     {
-        ImGui::TextWrapped("Normal map load failed:\n%s", normalMapStatus_.c_str());
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Normal map load failed:");
+        ImGui::TextWrapped("%s", normalMapStatus_.c_str());
+    }
+
+    ImGui::PopItemWidth();
+    ImGui::End();
+}
+
+void Graphics::DrawLightWindow()
+{
+    if (!showLightWindow_)
+    {
+        return;
+    }
+    // Right side, left of the Water window.
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 380.0f, 10.0f), ImGuiCond_FirstUseEver, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(340.0f, 0.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Light Settings  [2]", &showLightWindow_))
+    {
+        ImGui::End();
+        return;
+    }
+    ImGui::PushItemWidth(-110.0f); // room for the labels on the right
+
+    const Environment& currentEnv = kEnvironments[environmentIndex_];
+    ImGui::SeparatorText("Sky / Environment");
+    ImGui::TextDisabled("Seen in the background and in reflections");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::BeginCombo("##sky", currentEnv.name))
+    {
+        for (int i = 0; i < kEnvironmentCount; ++i)
+        {
+            if (ImGui::Selectable(kEnvironments[i].name, i == environmentIndex_))
+            {
+                environmentIndex_ = i;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::BeginDisabled(!currentEnv.hdr);
+    if (ImGui::Button("Calibrate From Sky"))
+    {
+        // Sun direction, sun light, ambient and exposure as measured from the HDR sky.
+        sunYawDeg_ = currentEnv.sunYawDeg;
+        sunElevationDeg_ = currentEnv.sunElevationDeg;
+        SplitLinearLight(currentEnv.sunLight, lightColor_, lightIntensity_);
+        SplitLinearLight(currentEnv.ambientLight, ambientColor_, ambientIntensity_);
+        exposureEv_ = currentEnv.keyExposureEv;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Sky Sun Direction Only"))
+    {
+        sunYawDeg_ = currentEnv.sunYawDeg;
+        sunElevationDeg_ = currentEnv.sunElevationDeg;
+    }
+    ImGui::TextDisabled("Sun in this sky: yaw %.1f, elevation %.1f", currentEnv.sunYawDeg, currentEnv.sunElevationDeg);
+
+    ImGui::SeparatorText("Sun");
+    ImGui::SliderFloat("Yaw (deg)", &sunYawDeg_, 0.0f, 360.0f, "%.1f");
+    ImGui::SliderFloat("Elevation (deg)", &sunElevationDeg_, 0.0f, 90.0f, "%.1f");
+    ImGui::ColorEdit3("Color", &lightColor_.x);
+    ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 5.0f);
+
+    ImGui::SeparatorText("Sun Glint (sun mirrored on the water)");
+    ImGui::SliderFloat("Sharpness", &water_.sunGlintPower, 64.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Strength", &water_.sunGlintIntensity, 0.0f, 5.0f, "%.2f");
+    ImGui::TextDisabled("Strength 1 = physically based");
+
+    ImGui::SeparatorText("Ambient (light from the whole sky)");
+    ImGui::ColorEdit3("Color##ambient", &ambientColor_.x);
+    ImGui::SliderFloat("Intensity##ambient", &ambientIntensity_, 0.0f, 2.0f);
+
+    ImGui::SeparatorText("Tonemapping");
+    const char* operatorNames[] = { "None (clamp)", "Reinhard", "ACES (per channel)", "ACES (hue-preserving)" };
+    int op = static_cast<int>(tonemapOperator_);
+    if (ImGui::Combo("Tone Curve", &op, operatorNames, IM_ARRAYSIZE(operatorNames)))
+    {
+        tonemapOperator_ = static_cast<TonemapShader::Operator>(op);
+    }
+    ImGui::SliderFloat("Exposure (EV)", &exposureEv_, -4.0f, 4.0f, "%+.2f");
+    ImGui::TextDisabled("x%.3f brightness, saved with the preset", std::exp2(exposureEv_));
+
+    ImGui::PopItemWidth();
+    ImGui::End();
+}
+
+void Graphics::DrawWaterWindow()
+{
+    if (!showWaterWindow_)
+    {
+        return;
+    }
+    // Right edge, full height.
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 10.0f, 10.0f), ImGuiCond_FirstUseEver, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(360.0f, io.DisplaySize.y - 20.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Water Settings  [3]", &showWaterWindow_))
+    {
+        ImGui::End();
+        return;
+    }
+
+    ImGui::SeparatorText("Water Color");
+    LabeledColor("Color looking straight down", &water_.facingColor.x);
+    LabeledColor("Color at a low angle", &water_.grazingColor.x);
+
+    ImGui::SeparatorText("Reflection");
+    LabeledSlider("Reflection strength", &water_.reflectionStrength, 0.0f, 1.0f, "%.2f");
+    LabeledSlider("Reflectivity head-on (F0, real water = 0.02)", &water_.fresnelF0, 0.0f, 0.6f, "%.3f");
+    LabeledSlider("Fresnel curve (5 = physical; higher = mirror only at low angles)", &water_.fresnelPower, 1.0f, 8.0f, "%.1f");
+
+    // Two textures of small ripples scrolled across the surface; they change the lighting only,
+    // the mesh itself is moved by the Waves below.
+    ImGui::SeparatorText("Normal Map");
+    ImGui::TextDisabled("Small ripples on the surface (lighting only)");
+    LabeledSlider("Ripple strength (bumpiness)", &water_.normalStrength, 0.0f, 3.0f, "%.2f");
+    const auto textureCombo = [this](int& index) {
+        ImGui::TextUnformatted("Texture");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::BeginCombo("##texture", normalMapNames_[index].c_str()))
+        {
+            for (int i = 0; i < static_cast<int>(normalMapNames_.size()); ++i)
+            {
+                if (ImGui::Selectable(normalMapNames_[i].c_str(), i == index))
+                {
+                    index = i;
+                }
+            }
+            ImGui::EndCombo();
+        }
+    };
+    if (ImGui::TreeNodeEx("Large ripples (layer A)", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::PushID("A");
+        textureCombo(normalMapA_);
+        LabeledSlider("Normal map scale (repeats per 2 units; higher = smaller)", &water_.normalScale, 0.1f, 5.0f, "%.2f");
+        FlowControls(water_.normalScroll1, flowDirectionDeg_[0], cameraRotation_.y);
+        ImGui::PopID();
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNodeEx("Small ripples (layer B)", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::PushID("B");
+        textureCombo(normalMapB_);
+        LabeledSlider("Size (times smaller than the large ripples)", &water_.detailScale, 1.0f, 6.0f, "%.1f x");
+        FlowControls(water_.normalScroll2, flowDirectionDeg_[1], cameraRotation_.y);
+        ImGui::PopID();
+        ImGui::TreePop();
+    }
+
+    // Gerstner waves move the mesh vertices. The presets order them big -> small.
+    ImGui::SeparatorText("Waves (geometry)");
+    ImGui::TextDisabled("Moving swells that shape the mesh. Arrow = travel\ndirection as seen from the camera (up = away).");
+    const char* waveNames[ColorShader::kWaveCount] = { "Wave 1 - Big swell", "Wave 2 - Medium swell", "Wave 3 - Small waves", "Wave 4 - Ripples" };
+    for (int i = 0; i < ColorShader::kWaveCount; ++i)
+    {
+        auto& w = water_.waves[i];
+        float angleDeg = DirectX::XMConvertToDegrees(std::atan2(w.direction.y, w.direction.x));
+        const float relativeDeg = ViewRelativeDeg(angleDeg, cameraRotation_.y);
+
+        ImGui::PushID(i);
+        ImGui::AlignTextToFramePadding();
+        const bool open = ImGui::TreeNode("##wave", "%s", waveNames[i]);
+        ImGui::SameLine(185.0f);
+        DrawDirectionDial(relativeDeg);
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", DescribeViewDirection(relativeDeg));
+        if (open)
+        {
+            if (LabeledSlider("Direction (deg, 0 = +X, 90 = +Z)", &angleDeg, -180.0f, 180.0f, "%.0f"))
+            {
+                const float r = DirectX::XMConvertToRadians(angleDeg);
+                w.direction = { std::cos(r), std::sin(r) };
+            }
+            LabeledSlider("Height", &w.amplitude, 0.0f, 0.3f, "%.3f");
+            LabeledSlider("Length (crest to crest)", &w.wavelength, 0.2f, 8.0f, "%.2f");
+            LabeledSlider("Speed", &w.speed, 0.0f, 3.0f, "%.2f");
+            LabeledSlider("Sharpness (0 = round, 1 = pointed crests)", &w.steepness, 0.0f, 1.0f, "%.2f");
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
     }
 
     ImGui::End();

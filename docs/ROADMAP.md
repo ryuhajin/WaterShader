@@ -77,7 +77,7 @@
 - [ ] 폭포 ribbon 메시 (Blender plane + 약간 굽음) export
 - [ ] 폭포용 셰이더 (UV scroll 빠르게 + foam at edges)
 - [ ] 메인 비주얼 목표 고정 (참고 이미지 references/ 저장)
-- [ ] 색상/분위기 preset 2개
+- [x] 색상/분위기 preset 2개 — Basic / Sunset / Tropical (프리셋별 하늘, `feature/bench-tools` ~ `feature/basic-sky`)
 
 **완료 기준:** 물 + 폭포가 한 씬에 함께 보이며 아트 방향이 잡힘. 포트폴리오 대표 스크린샷 1장 캡처 가능.
 
@@ -85,7 +85,7 @@
 
 ## Day 7 — 2026-05-05 화 — 안정화 + ImGui Polish + 텍스처 다듬기 → `feature/polish`
 
-- [ ] 셰이더 파라미터 ImGui 노출 정리 (속도/색상/fresnel/foam/ripple 한 패널에 정돈)
+- [x] 셰이더 파라미터 ImGui 노출 정리 (속도/색상/fresnel/foam/ripple 한 패널에 정돈) — `feature/ui-panels`에서 3창으로 정리
 - [ ] 텍스처/마스크 에셋 다듬기 (foam, noise, surface detail)
 - [ ] 렌더링 문제 수정 (깨짐, NaN, edge case)
 - [ ] 데모 영상용 파라미터 조절 시퀀스 준비
@@ -128,6 +128,18 @@
 - [ ] `feature/color-presets` — 분위기 preset 2개. 미착수.
 - [ ] `feature/water-detail-normal` — Macro + Detail 2-layer normal map (사실적 ocean 표준 패턴). 미착수.
 - [ ] `feature/ue5-port` — UE5 머티리얼 포팅 (보너스).
+
+### 완료 (2026-09-29 ~ 10-03, 포트폴리오 퀄리티업)
+
+각 feature 폴더의 `NOTES.md`에 문제/해결/과정/검증 기록.
+
+- [x] `feature/water-polish` — 노멀맵 감마 버그·태양 방향 수정, 태양 글린트, whiteout 2-scale 노멀, Fresnel F0, Gerstner 4파, ocean 그리드 + 거리 LOD ([NOTES](features/water-polish/NOTES.md))
+- [x] `feature/bench-tools` — 마우스 회전/시점, 카메라 프리셋·슬롯, 프리셋별 하늘, Stats(GPU 타이머), COM 초기화 ([NOTES](features/bench-tools/NOTES.md))
+- [x] `feature/linear-hdr` — 리니어 워크플로, float16 HDR 타깃, 노출 + 톤매핑(hue-preserving ACES), 무인 실행 모드 ([NOTES](features/linear-hdr/NOTES.md))
+- [x] `feature/hdr-env` — HDR 하늘 큐브맵(BC6H), 태양 분리 + 하늘에서 조명 보정, 에너지 정규화 글린트 ([NOTES](features/hdr-env/NOTES.md))
+- [x] `feature/basic-sky` — Basic 하늘을 한낮 들판 HDR로 교체 ([NOTES](features/basic-sky/NOTES.md))
+- [x] `feature/normal-select` — 레이어별 노멀맵 선택 + 프리셋 저장 (`water-detail-normal`의 2-layer 분리를 포함) ([NOTES](features/normal-select/NOTES.md))
+- [x] `feature/ui-panels` — 설정 UI를 View/Light/Water 3창 + 1/2/3 단축키로, 초보자용 Water UI ([NOTES](features/ui-panels/NOTES.md))
 
 ---
 
