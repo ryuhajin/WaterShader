@@ -32,11 +32,15 @@ public:
 
 private:
     bool Render(float deltaTime);
-    void DrawImGuiPanel();
+    // Settings windows, toggled with keys 1 / 2 / 3 (UpdateWindowToggles).
+    void DrawViewWindow();  // presets, camera, scene, capture, debug view
+    void DrawLightWindow(); // sky, sun, glint, ambient, tonemapping
+    void DrawWaterWindow(); // water color, reflection, normal maps, waves
     void DrawStatsOverlay();
     void UpdateFrameStats(float deltaTime);
     void UpdateCamera(float deltaTime, const Input& input);
     void UpdateMouseDrag();
+    void UpdateWindowToggles(const Input& input);
     void ApplyPreset(int index);
     void SaveCurrentPreset(int index);
     void LoadPresets();
@@ -166,5 +170,13 @@ private:
     int captureDebugMode_ = 0;
     std::wstring captureFeature_ = L"water-polish";
     char captureLabel_[64] = "manual";
+
+    // Settings windows (closed at start; --ui opens them for screenshots).
+    bool showViewWindow_ = false;
+    bool showLightWindow_ = false;
+    bool showWaterWindow_ = false;
+    std::array<bool, 3> toggleKeyWasDown_ = {}; // edge detection for keys 1 / 2 / 3
+    // Last flow direction per normal layer, so the direction slider keeps its value at speed 0.
+    std::array<float, 2> flowDirectionDeg_ = {0.0f, 0.0f};
     std::string captureStatus_;
 };

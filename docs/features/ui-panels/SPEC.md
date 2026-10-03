@@ -1,6 +1,6 @@
 # ui-panels
 
-> Branch: `feature/ui-panels` (from `feature/normal-select`) · Status: in progress · Updated: 2026-10-03
+> Branch: `feature/ui-panels` (from `feature/normal-select`) · Status: done · Updated: 2026-10-03
 
 ## 1. Goal
 
@@ -22,8 +22,8 @@
 
 ## 3. Acceptance Criteria
 
-- [ ] 1/2/3 키(숫자패드 포함)로 창 토글, X 버튼과 동기화, 텍스트 입력 중 무시
-- [ ] Water 창: 대분류 + 슬라이더 위 라벨, 흐름은 방향/속도, 파도는 역할 이름 + 나침반 + 시점 기준 설명
-- [ ] 렌더 결과 픽셀 동일(회귀), 프리셋 저장 값 왕복 동일
-- [ ] UI before/after 스크린샷 + NOTES
-- [ ] Debug/Release 경고 0
+- [x] 1/2/3 키(숫자패드 포함)로 창 토글, X 버튼과 동기화, 텍스트 입력 중 무시
+- [x] Water 창: 대분류 + 슬라이더 위 라벨, 흐름은 방향/속도, 파도는 역할 이름 + 나침반 + 시점 기준 설명
+- [x] 렌더 결과 픽셀 동일(회귀), 프리셋 저장 값 왕복 동일
+- [x] UI before/after 스크린샷 + NOTES
+- [x] Debug/Release 경고 0
