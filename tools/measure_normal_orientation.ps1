@@ -4,9 +4,9 @@
 #   .dds files are converted to PNG first with assets/textures/texconv.exe (what the renderer loads),
 #   other formats are read directly. Images are box-downsampled to 512^2 for speed.
 #
-# Two estimates, both as an axis angle in world terms (0 = +X, 90 = +Z, mod 180) for the ocean grid
-# mapping (u = +X, v = -Z; the bench plane OBJ has v = +Z, which mirrors the angles; PixelShader TBN:
-# normal.x -> +X, normal.y -> +Z):
+# Two estimates, both as an axis angle in world terms (0 = +X, 90 = +Z, mod 180) for the water mesh
+# mapping (bench plane and ocean grid both run u = +X, v = +Z; PixelShader TBN: normal.x -> +X,
+# normal.y -> +Z):
 #   slope   - structure tensor of the stored slopes (n.xy): the axis the lighting tilts along.
 #   pattern - structure tensor of the spatial gradients of n.x / n.y: the axis across the visible stripes.
 # For a consistent normal map the two agree; that axis is the ripples' travel axis.
@@ -76,12 +76,12 @@ foreach ($file in $Files)
             $a = $sx[$i] - $mx; $b = $sz[$i] - $mz
             $sxx += $a * $a; $sxz += $a * $b; $szz += $b * $b
 
-            # Central differences, wrapping (the maps tile). Image +x = +X, image +y (down) = +v = -Z.
+            # Central differences, wrapping (the maps tile). Image +x = +X, image +y (down) = +v = +Z.
             $xr = ($x + 1) % $n; $xl = ($x + $n - 1) % $n; $yd = ($y + 1) % $n; $yu = ($y + $n - 1) % $n
             foreach ($ch in @($sx, $sz))
             {
                 $gX = 0.5 * ($ch[$y * $n + $xr] - $ch[$y * $n + $xl])
-                $gZ = -0.5 * ($ch[$yd * $n + $x] - $ch[$yu * $n + $x])
+                $gZ = 0.5 * ($ch[$yd * $n + $x] - $ch[$yu * $n + $x])
                 $pxx += $gX * $gX; $pxz += $gX * $gZ; $pzz += $gZ * $gZ
             }
         }

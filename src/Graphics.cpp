@@ -116,17 +116,16 @@ struct NormalMapEntry
 {
     const wchar_t* file;
     const char* name;
-    // Travel axis of the ripples as laid on the ocean grid (0 = +X, 90 = +Z, mod 180; the bench plane
-    // mirrors it, its uv v runs the other way). "Align to wind" rotates
-    // the map by (wind - this). Measured by tools/measure_normal_orientation.ps1 (pattern axis).
+    // Travel axis of the ripples as laid on the water (0 = +X, 90 = +Z, mod 180). "Align to wind"
+    // rotates the map by (wind - this). Measured by tools/measure_normal_orientation.ps1 (pattern axis).
     float rippleAxisDeg;
 };
 constexpr NormalMapEntry kNormalMaps[] = {
-    { L"textures/water_normal.dds",  "0 Diagonal ripples (water_normal)",  76.0f },
-    { L"textures/water_normal1.dds", "1 Soft swell (water_normal1)",      -84.0f },
-    { L"textures/water_normal2.dds", "2 Soft chop (water_normal2)",       -70.0f },
-    { L"textures/water_normal3.dds", "3 Long streaks (water_normal3)",    -89.0f },
-    { L"textures/water_normal4.dds", "4 Fine chop (water_normal4)",       -67.0f },
+    { L"textures/water_normal.dds",  "0 Diagonal ripples (water_normal)", -76.0f },
+    { L"textures/water_normal1.dds", "1 Soft swell (water_normal1)",       84.0f },
+    { L"textures/water_normal2.dds", "2 Soft chop (water_normal2)",        70.0f },
+    { L"textures/water_normal3.dds", "3 Long streaks (water_normal3)",     89.0f },
+    { L"textures/water_normal4.dds", "4 Fine chop (water_normal4)",        67.0f },
 };
 
 // Rotation (cos, sin) that turns a normal map whose ripples travel along axisDeg so they travel along
@@ -1009,13 +1008,10 @@ bool Graphics::Render(float deltaTime)
     water_.farWaveNormals = farWaveNormals_ ? 1.0f : 0.0f; // a renderer switch, not part of the presets
     {
         // "Align to wind" follows Wave 1 as rendered (also right when the waves were edited in Advanced).
-        // The measured axes are for the ocean grid (v = -Z); the bench plane's v = +Z mirrors them.
-        water_.uvVSign = oceanMode_ ? -1.0f : 1.0f;
         const DirectX::XMFLOAT2& wind = water_.waves[0].direction;
         const float windDeg = DirectX::XMConvertToDegrees(std::atan2(wind.y, wind.x));
         const auto rotation = [&](bool align, int map) {
-            const float axisDeg = oceanMode_ ? normalMapAxisDeg_[map] : -normalMapAxisDeg_[map];
-            return align ? RippleRotation(windDeg, axisDeg) : DirectX::XMFLOAT2(1.0f, 0.0f);
+            return align ? RippleRotation(windDeg, normalMapAxisDeg_[map]) : DirectX::XMFLOAT2(1.0f, 0.0f);
         };
         const DirectX::XMFLOAT2 a = rotation(rippleAlignA_, normalMapA_);
         const DirectX::XMFLOAT2 b = rotation(rippleAlignB_, normalMapB_);
@@ -1216,15 +1212,15 @@ void DrawDirectionDial(float relativeDeg)
 }
 
 // Normal map scroll shown as "which way the ripples drift + how fast". The stored value stays the
-// UV velocity the shader adds to the sample position. The plane UVs run u = +X, v = -Z (Model.cpp),
+// UV velocity the shader adds to the sample position. Both water meshes run u = +X, v = +Z (Model.cpp),
 // and sampling at uv + velocity * t moves the pattern by -velocity, so in world terms the ripples
-// drift along (-u, +v). The value is only rewritten when a slider moves, so presets round-trip exactly.
+// drift along (-u, -v). The value is only rewritten when a slider moves, so presets round-trip exactly.
 void FlowControls(DirectX::XMFLOAT2& velocity, float& rememberedDeg, float cameraYawDeg)
 {
     float speed = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
     if (speed > 0.0f)
     {
-        rememberedDeg = DirectX::XMConvertToDegrees(std::atan2(velocity.y, -velocity.x));
+        rememberedDeg = DirectX::XMConvertToDegrees(std::atan2(-velocity.y, -velocity.x));
     }
     float directionDeg = rememberedDeg;
     const float relativeDeg = ViewRelativeDeg(directionDeg, cameraYawDeg);
@@ -1241,7 +1237,7 @@ void FlowControls(DirectX::XMFLOAT2& velocity, float& rememberedDeg, float camer
     {
         rememberedDeg = directionDeg;
         const float r = DirectX::XMConvertToRadians(directionDeg);
-        velocity = { -std::cos(r) * speed, std::sin(r) * speed };
+        velocity = { -std::cos(r) * speed, -std::sin(r) * speed };
     }
 }
 } // namespace

@@ -87,14 +87,11 @@ float WidenExponent(float exponent, float slopeVariance)
 }
 
 // "Align to wind": turn a normal map on the water by angle a (cos, sin; world XZ, 0 = +X, 90 = +Z).
-// Sampling at R(-a)·P puts what was at P0 at R(a)·P0. u runs along +X on both meshes but v runs along
-// +Z on the bench plane and -Z on the ocean grid (vSign), so the uv is taken to world-aligned
-// (X, Z) = (u, vSign·v), rotated, and taken back. (1, 0) leaves the uv unchanged.
-float2 RotateRippleUv(float2 uv, float2 rotation, float vSign)
+// Sampling at R(-a)·P puts what was at P0 at R(a)·P0. Both water meshes run u = +X, v = +Z, so the uv
+// is already world-aligned (X, Z). (1, 0) leaves the uv unchanged.
+float2 RotateRippleUv(float2 uv, float2 rotation)
 {
-    float2 xz = float2(uv.x, vSign * uv.y);
-    xz = float2(rotation.x * xz.x + rotation.y * xz.y, -rotation.y * xz.x + rotation.x * xz.y);
-    return float2(xz.x, vSign * xz.y);
+    return float2(rotation.x * uv.x + rotation.y * uv.y, -rotation.y * uv.x + rotation.x * uv.y);
 }
 
 // The sampled slopes are in the turned map's frame: rotate them by +a back into the plane's X / Z.
@@ -121,9 +118,8 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // Layer A = broad ripples, layer B = finer chop at a different tiling, so the repeat is harder to spot.
     // Each layer has its own normal map; with two different maps the B layer no longer repeats A's shapes.
     // "Align to wind" turns only the pattern; the scroll stays in plane uv, so Flow direction keeps its meaning.
-    float uvVSign = g_MeshParams.x;
-    float2 uv1 = RotateRippleUv(input.uv * normalScale, g_NormalRotation.xy, uvVSign) + g_NormalScroll.xy * time;
-    float2 uv2 = RotateRippleUv(input.uv * normalScale * detailScale, g_NormalRotation.zw, uvVSign) + g_NormalScroll.zw * time;
+    float2 uv1 = RotateRippleUv(input.uv * normalScale, g_NormalRotation.xy) + g_NormalScroll.xy * time;
+    float2 uv2 = RotateRippleUv(input.uv * normalScale * detailScale, g_NormalRotation.zw) + g_NormalScroll.zw * time;
     // rgb [0~1] -> normal vector [-1~1] 범위로 만들기 위해 * 2.0 - 1.0
     float3 n1 = g_NormalMap.Sample(g_NormalSampler, uv1).xyz * 2.0 - 1.0;
     float3 n2 = g_NormalMapB.Sample(g_NormalSampler, uv2).xyz * 2.0 - 1.0;

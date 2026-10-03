@@ -97,8 +97,10 @@ bool Model::InitializeGrid(ID3D11Device* device, int quadsPerSide, float halfExt
         for (int i = 0; i < vertsPerSide; ++i)
         {
             const float x = remap(-1.0f + 2.0f * i / quadsPerSide);
-            // Same UV density as the OBJ plane: 1 UV unit per 2 world units.
-            vertices.push_back({ {x, 0.0f, z}, {0.0f, 1.0f, 0.0f}, {x * 0.5f + 0.5f, 0.5f - z * 0.5f} });
+            // Same UV layout as the OBJ plane: 1 UV unit per 2 world units, u along +X, v along +Z.
+            // (v used to run along -Z here, which laid every normal map mirrored front-to-back and
+            // flipped its Z slopes against the shader's TBN.)
+            vertices.push_back({ {x, 0.0f, z}, {0.0f, 1.0f, 0.0f}, {x * 0.5f + 0.5f, 0.5f + z * 0.5f} });
         }
     }
 

@@ -52,7 +52,6 @@ struct PerFrameCB
     // x = Fresnel F0, y = normal strength, z = detail layer scale, w = far wave normals (0/1)
     DirectX::XMFLOAT4 surfaceParams;
     DirectX::XMFLOAT4 normalRotation; // xy = cos/sin layer A, zw = layer B
-    DirectX::XMFLOAT4 meshParams;     // x = uv v direction on the water (+1 = +Z, -1 = -Z)
 };
 static_assert(sizeof(WaveParams) == 32, "WaveParams must match the 2-register HLSL layout");
 static_assert(sizeof(PerFrameCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
@@ -360,7 +359,6 @@ void ColorShader::RenderShader(
             water.detailScale,
             water.farWaveNormals);
         data->normalRotation = water.normalRotation;
-        data->meshParams = DirectX::XMFLOAT4(water.uvVSign, 0.0f, 0.0f, 0.0f);
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
