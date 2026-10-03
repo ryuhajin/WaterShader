@@ -182,6 +182,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --tonemap <none|reinhard|aces|aces-hue>  tone curve for this run
     //   --exposure <ev>        overrides every preset's exposure (operator comparisons)
     //   --far-waves <on|off>   pixel-shader wave slopes past the mesh wave fade (default on)
+    //   --preset-file <path>   load/save presets from this file instead of assets/shader_presets.txt
+    //                          (captures with fixed values while the working presets keep changing)
     std::wstring captureLabelArg;
     std::wstring normalMapArg;
     std::wstring shotArg;
@@ -209,6 +211,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                     showWaterWindow_ = ui == L"water" || ui == L"all";
                 }
                 else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
+                else if (arg == L"--preset-file" && hasValue) { presetFileOverride_ = argv[++i]; }
                 else if (arg == L"--far-waves" && hasValue)  { farWaveNormals_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--exposure" && hasValue)   { exposureOverrideEv_ = static_cast<float>(_wtof(argv[++i])); hasExposureOverride_ = true; }
                 else if (arg == L"--tonemap" && hasValue)
@@ -574,6 +577,11 @@ void Graphics::SaveCameraSlots() const
     }
 }
 
+std::filesystem::path Graphics::PresetFilePath() const
+{
+    return presetFileOverride_.empty() ? std::filesystem::path(GetAssetPath(L"shader_presets.txt")) : presetFileOverride_;
+}
+
 void Graphics::LoadPresets()
 {
     presets_[0] = ShaderPreset{};
@@ -604,7 +612,7 @@ void Graphics::LoadPresets()
     presets_[2].water.specularStrength = 0.30f;
     presets_[2].water.specularSharpness = 96.0f;
 
-    const std::filesystem::path presetPath = GetAssetPath(L"shader_presets.txt");
+    const std::filesystem::path presetPath = PresetFilePath();
     std::ifstream file(presetPath);
     if (!file)
     {
@@ -683,7 +691,7 @@ void Graphics::LoadPresets()
 
 void Graphics::SavePresets() const
 {
-    const std::filesystem::path presetPath = GetAssetPath(L"shader_presets.txt");
+    const std::filesystem::path presetPath = PresetFilePath();
     std::filesystem::create_directories(presetPath.parent_path());
 
     std::ofstream file(presetPath);
@@ -1331,7 +1339,7 @@ void Graphics::DrawViewWindow()
     }
 
     ImGui::SeparatorText("Debug View");
-    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel)" };
+    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
     const std::string& shaderError = colorShader_->GetLastError();
     if (!shaderError.empty())

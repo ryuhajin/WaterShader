@@ -14,14 +14,28 @@ float4 DebugOut(float3 value)
     return float4(SrgbToLinear(saturate(value)), 1.0);
 }
 
-// Far-field wave slopes. The vertex shader fades each Gerstner wave out with distance (its height and
-// its normal together), so far water would only show the normal maps, whose stripes follow the texture
-// instead of the wind. Here the same waves add back the slope the mesh dropped, (1 - vertex fade),
-// evaluated per pixel, so the lighting keeps the wind-driven crests out to where a wave shrinks to
-// 8 -> 4 px. (Fading at the 2 px Nyquist limit left high-contrast moire at the horizon: the sun glint
-// and Fresnel react sharply to the normal.) Same terms as AccumulateGerstnerWave with fade = w:
-// q·kA = steepness·w / WAVE_COUNT. Returns the (local-space) normal delta to add to the vertex normal.
-float3 FarWaveNormalDelta(float3 restPosLocal, out float vertexWeight, out float pixelWeight)
+// Far-field waves, in three bands per wave (debug mode 6 shows them as R / G / B):
+//   mesh   - near: the vertex shader displaces the mesh and supplies the normal (weight = vertex fade).
+//   pixel  - the mesh LOD dropped the wave but a pixel still resolves it: its slope is added here per
+//            pixel, so lit crests keep following the wind (weight = (1 - vertex fade) * pixel fade).
+//   rough  - too small for a pixel: drawing it as crests only aliases (moire, lattice of crossing waves),
+//            so its slope becomes variance instead and widens the glint and blurs the reflection, the way
+//            unresolved waves look on a real sea (Bruneton et al. 2010, "seamless transitions from
+//            geometry to BRDF"; same idea as Toksvig / LEAN mapping).
+// The pixel band ends early (16 -> 8 px per wavelength): at 4 -> 2 px the four crossing sine stripes read
+// as a regular lattice and the glint turns them into moire.
+static const float kPixelFadeStart = 1.0 / 16.0; // footprint (wavelengths per pixel) where the fade starts
+static const float kPixelFadeEnd   = 1.0 / 8.0;
+
+struct FarWaves
+{
+    float3 normalDelta;   // local space, added to the vertex normal. Same terms as AccumulateGerstnerWave
+                          // with fade = w: q·kA = steepness·w / WAVE_COUNT
+    float slopeVariance;  // σ² of the unresolved slopes: a sine of slope amplitude kA has mean square (kA)²/2
+    float3 bandWeights;   // average over the waves: x = mesh, y = pixel, z = rough
+};
+
+FarWaves EvaluateFarWaves(float3 restPosLocal)
 {
     float3 restPosWS = mul(float4(restPosLocal, 1.0), g_World).xyz;
     float viewDistance = length(restPosWS.xz - g_CameraPositionWS.xz);
@@ -29,9 +43,10 @@ float3 FarWaveNormalDelta(float3 restPosLocal, out float vertexWeight, out float
     float2 dx = ddx(restPosLocal.xz);
     float2 dy = ddy(restPosLocal.xz);
 
-    float3 delta = 0.0;
-    vertexWeight = 0.0;
-    pixelWeight = 0.0;
+    FarWaves result;
+    result.normalDelta = 0.0;
+    result.slopeVariance = 0.0;
+    result.bandWeights = 0.0;
     float activeWaves = 0.0;
 
     [unroll]
@@ -44,22 +59,31 @@ float3 FarWaveNormalDelta(float3 restPosLocal, out float vertexWeight, out float
         // How many wavelengths one pixel spans along the travel direction: crests running toward the
         // camera stay resolvable much farther than crests running across the view.
         float footprint = max(abs(dot(dx, wave.direction)), abs(dot(dy, wave.direction))) / wave.wavelength;
-        float w = (1.0 - vertexFade) * (1.0 - smoothstep(0.125, 0.25, footprint));
+        float pixelFade = 1.0 - smoothstep(kPixelFadeStart, kPixelFadeEnd, footprint);
+        float w = (1.0 - vertexFade) * pixelFade;
+        float rough = (1.0 - vertexFade) * (1.0 - pixelFade);
 
         float waveNumber = 6.2831853 / wave.wavelength;
         float phase = dot(wave.direction, restPosLocal.xz) * waveNumber - waveNumber * wave.speed * g_WaterParams.x;
-        float kA = waveNumber * wave.amplitude * w;
-        delta.xz -= wave.direction * kA * cos(phase);
-        delta.y  -= wave.steepness * w / WAVE_COUNT * sin(phase);
+        float slopeAmplitude = waveNumber * wave.amplitude;
+        result.normalDelta.xz -= wave.direction * slopeAmplitude * w * cos(phase);
+        result.normalDelta.y  -= wave.steepness * w / WAVE_COUNT * sin(phase);
+        result.slopeVariance += rough * slopeAmplitude * slopeAmplitude * 0.5;
 
-        vertexWeight += vertexFade;
-        pixelWeight += w;
+        result.bandWeights += float3(vertexFade, w, rough);
         activeWaves += 1.0;
     }
 
-    vertexWeight /= max(activeWaves, 1.0);
-    pixelWeight /= max(activeWaves, 1.0);
-    return delta;
+    result.bandWeights /= max(activeWaves, 1.0);
+    return result;
+}
+
+// Phong-style exponent widened by a slope variance: 1/n' = 1/n + σ² (a lobe of width ~1/n convolved
+// with the extra spread, approximately). σ² = 0 returns n bit-exactly: the GPU divides through an
+// approximate reciprocal, so n / 1 is not always n, and the near field must not change.
+float WidenExponent(float exponent, float slopeVariance)
+{
+    return slopeVariance > 0.0 ? exponent / (1.0 + exponent * slopeVariance) : exponent;
 }
 
 // SV_IsFrontFace = rasterizer stage에서 결정되는 system value. 픽셀이 front face에 속하면 true.
@@ -89,10 +113,10 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     blendedNormalTS = normalize(blendedNormalTS);
 
     // Plane TBN: tangent = world X, bitangent = world Z, normal = vertex normal (+ far-field wave slopes).
-    float vertexWaveWeight, pixelWaveWeight;
-    float3 farWaveDelta = FarWaveNormalDelta(input.restPosLocal, vertexWaveWeight, pixelWaveWeight);
-    float farWaveNormals = g_SurfaceParams.w;
-    float3 baseNormalWS = normalize(input.normalWS + farWaveNormals * mul(farWaveDelta, (float3x3)g_World));
+    FarWaves farWaves = EvaluateFarWaves(input.restPosLocal);
+    float farWaveNormals = g_SurfaceParams.w; // 0 = off: no far normals, no roughness (renders as before)
+    float slopeVariance = farWaves.slopeVariance * farWaveNormals;
+    float3 baseNormalWS = normalize(input.normalWS + farWaveNormals * mul(farWaves.normalDelta, (float3x3)g_World));
     float3 tangentWS  = normalize(mul(float3(1, 0, 0), (float3x3)g_World));
     float3 bitangentWS  = normalize(mul(float3(0, 0, 1), (float3x3)g_World));
     float3 finalNormalWS  = normalize(blendedNormalTS.x * tangentWS + blendedNormalTS.y * bitangentWS + blendedNormalTS.z * baseNormalWS);
@@ -103,7 +127,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // 2 = final world-space normal
     // 3 = mesh UV
     // 4 = front/back face
-    // 6 = wave LOD: R = mesh (vertex) wave weight, G = pixel-shader wave weight (avg over waves)
+    // 6 = wave LOD (avg over waves): R = mesh waves, G = pixel-shader wave normals, B = roughness
     // Debug values are data, not light: DebugOut pre-decodes them so the final LinearToSrgb in the
     // tonemap pass (forced to "no tone curve" while debugging) gives back exactly these numbers.
     int debugMode = (int)g_DebugParams.x;
@@ -111,7 +135,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     if (debugMode == 2) { return DebugOut(finalNormalWS * 0.5 + 0.5); }
     if (debugMode == 3) { return DebugOut(float3(frac(input.uv), 0.0)); }
     if (debugMode == 4) { return DebugOut(isFrontFace ? float3(0.1, 0.9, 0.2) : float3(0.9, 0.1, 0.1)); }
-    if (debugMode == 6) { return DebugOut(float3(vertexWaveWeight, pixelWaveWeight * farWaveNormals, 0.0)); }
+    if (debugMode == 6) { return DebugOut(farWaves.bandWeights * float3(1.0, farWaveNormals, farWaveNormals)); }
 
     float3 viewDirWS = normalize(g_CameraPositionWS.xyz - input.worldPos);
     float  viewFacingAmount = saturate(dot(finalNormalWS, viewDirWS));
@@ -123,7 +147,11 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float3 waterBaseColor = lerp(g_GrazingColor.rgb, g_FacingColor.rgb, viewFacingAmount);
     float3 ambientLight = waterBaseColor * g_AmbientColor.rgb * g_AmbientColor.a; // ambientColor.a = 환경광 세기
     float3 diffuseLight = waterBaseColor * g_LightColor.rgb * g_LightColor.a * diffuseAmount;
-    float specular = SpecularFactor(finalNormalWS, lightDirWS, viewDirWS, specularSharpness) * specularStrength * g_LightColor.a;
+    // Unresolved far waves widen the highlight; (n' + 2) / (n + 2) keeps its energy instead of its peak.
+    float roughSpecularSharpness = WidenExponent(specularSharpness, slopeVariance);
+    float specularEnergy = slopeVariance > 0.0 ? (roughSpecularSharpness + 2.0) / (specularSharpness + 2.0) : 1.0;
+    float specular = SpecularFactor(finalNormalWS, lightDirWS, viewDirWS, roughSpecularSharpness)
+        * specularEnergy * specularStrength * g_LightColor.a;
     float3 litWaterColor = ambientLight + diffuseLight + specular.xxx;
 
     float reflectionByViewAngle = ViewFresnelFactor(viewFacingAmount, fresnelPower, fresnelF0);
@@ -133,6 +161,13 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // Mirror it back into the sky instead (the ground is not really visible in a water reflection).
     float3 envLookupDirWS = float3(reflectionDirWS.x, abs(reflectionDirWS.y), reflectionDirWS.z);
     float3 reflectedSceneColor = SampleEnv(envLookupDirWS);
+    // Rough (unresolved) water reflects a blurred sky: the reflected ray spreads by about twice the
+    // slope deviation. The hardware mip is taken outside the branch (it needs derivatives).
+    float envAutoLod = EnvAutoLod(envLookupDirWS);
+    if (slopeVariance > 0.0)
+    {
+        reflectedSceneColor = SampleEnvBlurred(envLookupDirWS, 2.0 * sqrt(slopeVariance), envAutoLod);
+    }
 
     float reflectionAmount = saturate(reflectionByViewAngle * reflectionStrength);
     if (debugMode == 5) { return DebugOut(float3(diffuseAmount, specular, reflectionAmount)); }
@@ -144,7 +179,8 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // so the reflected sun energy is F * E_sun whatever the lobe width. g_LightColor holds E_sun / pi
     // (Lambert convention), hence pi * (n + 2) / (2 pi) = (n + 2) / 2.
     // sunGlintIntensity is now a multiplier on that physical value (1 = physically based).
-    float sunGlintPower = g_SpecularParams.z;
+    // Unresolved far waves widen the lobe (and the normalization dims it to match): a broad glitter path.
+    float sunGlintPower = WidenExponent(g_SpecularParams.z, slopeVariance);
     float sunGlintIntensity = g_SpecularParams.w;
     float lobe = SunGlintFactor(reflectionDirWS, lightDirWS, sunGlintPower) * (sunGlintPower + 2.0) * 0.5;
     finalColor += lobe * sunGlintIntensity * reflectionAmount * g_LightColor.rgb * g_LightColor.a;

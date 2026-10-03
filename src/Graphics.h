@@ -44,6 +44,7 @@ private:
     void UpdateWindowToggles(const Input& input);
     void ApplyPreset(int index);
     void SaveCurrentPreset(int index);
+    std::filesystem::path PresetFilePath() const; // --preset-file, else assets/shader_presets.txt
     void LoadPresets();
     void SavePresets() const;
 
@@ -173,6 +174,7 @@ private:
     bool captureFinishedQuit_ = false;
     int captureDebugMode_ = 0;
     std::wstring captureFeature_ = L"water-polish";
+    std::filesystem::path presetFileOverride_; // --preset-file
     char captureLabel_[64] = "manual";
 
     // Settings windows (closed at start; --ui opens them for screenshots).
