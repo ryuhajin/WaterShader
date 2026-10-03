@@ -70,10 +70,10 @@ direction_i  = (cos angle_i, sin angle_i)
 
 ## 4. Acceptance Criteria / Test Plan
 
-- [ ] Debug/Release 빌드 경고 0
-- [ ] `WaveMacroTest` 통과: 기본값 재현, Generate→Estimate 왕복, 경계값에서 NaN 없음·sharpness ≤ 1·파장 ≥ 0.2·방향 단위벡터
-- [ ] 렌더 회귀: `--capture` 15장이 변경 전과 픽셀 차이 0 (로드 시 파도 불변)
-- [ ] Water 창: Simple 6개 + 상태 줄(Generated / Custom), Advanced(기본 닫힘) 안에 기존 슬롯 그대로
+- [x] Debug/Release 빌드 경고 0
+- [x] `WaveMacroTest` 통과: 기본값 재현, Generate→Estimate 왕복, 경계값에서 NaN 없음·sharpness ≤ 1·파장 ≥ 0.2·방향 단위벡터
+- [x] 렌더 회귀: `--capture` 15장이 변경 전과 픽셀 차이 0 (로드 시 파도 불변)
+- [x] Water 창: Simple 6개 + 상태 줄(Generated / Custom), Advanced(기본 닫힘) 안에 기존 슬롯 그대로
 - [ ] Advanced 수정 → Custom 표시 → Simple 슬라이더 이동 시 재생성
 - [ ] 프리셋 전환 시 Simple 값이 프리셋별로 바뀜, Save 후 재시작해도 유지
-- [ ] UI before/after 스크린샷 + NOTES
+- [x] UI before/after 스크린샷 + NOTES

@@ -40,7 +40,12 @@ add_executable(WaterShader WIN32
     src/Texture.h
     src/Timer.cpp
     src/Timer.h
+    src/WaveMacro.h
 )
+
+# Console check for the Simple wave generator (header-only, no D3D device needed).
+add_executable(WaveMacroTest tests/wave_macro_test.cpp)
+target_include_directories(WaveMacroTest PRIVATE src)
 
 find_package(directxtk CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
