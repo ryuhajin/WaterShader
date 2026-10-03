@@ -86,8 +86,10 @@ void D3DClass::Resize(unsigned int width, unsigned int height)
 
 void D3DClass::BeginScene(float red, float green, float blue, float alpha)
 {
-    const float color[4] = {red, green, blue, alpha};
-    deviceContext_->ClearRenderTargetView(renderTargetView_.Get(), color);
+    // The previous frame's tonemap pass left the back buffer bound; the scene goes to the HDR target.
+    deviceContext_->OMSetRenderTargets(1, hdrRTV_.GetAddressOf(), depthStencilView_.Get());
+    const float color[4] = {red, green, blue, alpha}; // linear
+    deviceContext_->ClearRenderTargetView(hdrRTV_.Get(), color);
     if (depthStencilView_)
     {
         deviceContext_->ClearDepthStencilView(depthStencilView_.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
@@ -201,7 +203,11 @@ bool D3DClass::CreateRenderTarget()
     ThrowIfFailed(swapChain_->GetBuffer(0, IID_PPV_ARGS(&backBuffer)), "GetBuffer failed.");
     ThrowIfFailed(device_->CreateRenderTargetView(backBuffer.Get(), nullptr, &renderTargetView_), "CreateRenderTargetView failed.");
 
-    deviceContext_->OMSetRenderTargets(1, renderTargetView_.GetAddressOf(), depthStencilView_.Get());
+    if (!CreateHdrTarget())
+    {
+        return false;
+    }
+    deviceContext_->OMSetRenderTargets(1, hdrRTV_.GetAddressOf(), depthStencilView_.Get());
 
     D3D11_VIEWPORT viewport = {};
     viewport.Width = static_cast<float>(screenWidth_);
@@ -211,6 +217,32 @@ bool D3DClass::CreateRenderTarget()
     deviceContext_->RSSetViewports(1, &viewport);
 
     return true;
+}
+
+bool D3DClass::CreateHdrTarget()
+{
+    // Linear scene radiance. float16 keeps values above 1.0 (sun glint, bright sky) until the
+    // tonemap pass and has no _SRGB variant: float formats are linear by definition.
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = screenWidth_;
+    desc.Height = screenHeight_;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+
+    ThrowIfFailed(device_->CreateTexture2D(&desc, nullptr, &hdrTexture_), "HDR target creation failed.");
+    ThrowIfFailed(device_->CreateRenderTargetView(hdrTexture_.Get(), nullptr, &hdrRTV_), "HDR RTV creation failed.");
+    ThrowIfFailed(device_->CreateShaderResourceView(hdrTexture_.Get(), nullptr, &hdrSRV_), "HDR SRV creation failed.");
+    return true;
+}
+
+void D3DClass::BindBackBuffer()
+{
+    // No depth: the tonemap pass is a fullscreen triangle and ImGui draws on top of it.
+    deviceContext_->OMSetRenderTargets(1, renderTargetView_.GetAddressOf(), nullptr);
 }
 
 bool D3DClass::CreateRasterizerState()
@@ -312,6 +344,9 @@ void D3DClass::ReleaseRenderTarget()
 
     depthStencilView_.Reset();
     depthTexture_.Reset();
+    hdrSRV_.Reset();
+    hdrRTV_.Reset();
+    hdrTexture_.Reset();
     renderTargetView_.Reset();
 }
 

@@ -1,5 +1,6 @@
 ﻿#include "Graphics.h"
 
+#include "ColorSpace.h"
 #include "Input.h"
 #include "SystemConfig.h"
 
@@ -255,6 +256,12 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
 
     skyboxShader_ = std::make_unique<SkyboxShader>();
     if (!skyboxShader_->Initialize(d3d_->GetDevice()))
+    {
+        return false;
+    }
+
+    tonemapShader_ = std::make_unique<TonemapShader>();
+    if (!tonemapShader_->Initialize(d3d_->GetDevice()))
     {
         return false;
     }
@@ -649,6 +656,12 @@ void Graphics::Shutdown()
         imguiInitialized_ = false;
     }
 
+    if (tonemapShader_)
+    {
+        tonemapShader_->Shutdown();
+        tonemapShader_.reset();
+    }
+
     if (skyboxShader_)
     {
         skyboxShader_->Shutdown();
@@ -787,6 +800,7 @@ bool Graphics::Render(float deltaTime)
     UpdateFrameStats(deltaTime);
     colorShader_->CheckHotReload(d3d_->GetDevice(), now);
     skyboxShader_->CheckHotReload(d3d_->GetDevice(), now);
+    tonemapShader_->CheckHotReload(d3d_->GetDevice(), now);
 
     const bool capturing = BeginCaptureFrame();
 
@@ -831,7 +845,8 @@ bool Graphics::Render(float deltaTime)
     ImGui::NewFrame();
 
     gpuTimer_.Begin(d3d_->GetDeviceContext());
-    d3d_->BeginScene(0.02f, 0.08f, 0.11f, 1.0f);
+    // Clear color is the old sRGB background, converted because the HDR target holds linear values.
+    d3d_->BeginScene(SrgbToLinear(0.02f), SrgbToLinear(0.08f), SrgbToLinear(0.11f), 1.0f);
 
     if (skyboxVisible_)
     {
@@ -866,6 +881,18 @@ bool Graphics::Render(float deltaTime)
         normalMap_->GetSRV(),
         d3d_->GetSampler(),
         d3d_->GetWrapSampler());
+    d3d_->SetRasterizerDefault();
+
+    // HDR scene -> sRGB back buffer. Debug views carry data, not light, so they skip exposure and the
+    // tone curve (their values were pre-decoded in the pixel shader and come back out unchanged).
+    d3d_->BindBackBuffer();
+    d3d_->SetRasterizerDoubleSided(); // the fullscreen triangle is clockwise; don't let it get culled
+    const bool debugView = water_.debugMode != 0;
+    tonemapShader_->Render(
+        d3d_->GetDeviceContext(),
+        d3d_->GetHdrSRV(),
+        debugView ? 1.0f : exposure_,
+        debugView ? TonemapShader::None : tonemapOperator_);
     d3d_->SetRasterizerDefault();
 
     if (!capturing)

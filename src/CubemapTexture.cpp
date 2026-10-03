@@ -6,9 +6,18 @@
 
 bool CubemapTexture::Initialize(ID3D11Device* device, const wchar_t* ddsPath, std::wstring* outError)
 {
-    const HRESULT hr = DirectX::CreateDDSTextureFromFile(
+    // Sky textures hold sRGB-encoded colors (photos). FORCE_SRGB creates the *_SRGB view
+    // (R8G8B8A8_UNORM_SRGB / BC7_UNORM_SRGB), so the sampler decodes to linear before filtering
+    // and the skybox and water reflections receive linear radiance.
+    const HRESULT hr = DirectX::CreateDDSTextureFromFileEx(
         device,
         ddsPath,
+        0,
+        D3D11_USAGE_DEFAULT,
+        D3D11_BIND_SHADER_RESOURCE,
+        0,
+        0,
+        DirectX::DDS_LOADER_FORCE_SRGB,
         nullptr,
         srv_.GetAddressOf());
 

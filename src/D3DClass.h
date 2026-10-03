@@ -28,12 +28,17 @@ public:
     ID3D11SamplerState* GetSampler() const { return defaultSampler_.Get(); }
     ID3D11SamplerState* GetWrapSampler() const { return wrapSampler_.Get(); }
     Microsoft::WRL::ComPtr<ID3D11Texture2D> GetBackBuffer() const;
+
+    // Scene renders into a linear float16 HDR target; the tonemap pass resolves it into the back buffer.
+    ID3D11ShaderResourceView* GetHdrSRV() const { return hdrSRV_.Get(); }
+    void BindBackBuffer();
     bool GetVSync() const { return vsyncEnabled_; }
     void SetVSync(bool enabled) { vsyncEnabled_ = enabled; }
 
 private:
     bool CreateDeviceAndSwapChain(int screenWidth, int screenHeight, HWND hwnd, bool fullscreen);
     bool CreateRenderTarget();
+    bool CreateHdrTarget();
     bool CreateDepthStencil();
     bool CreateRasterizerState();
     bool CreateDepthStates();
@@ -49,7 +54,10 @@ private:
     Microsoft::WRL::ComPtr<IDXGISwapChain> swapChain_;
     Microsoft::WRL::ComPtr<ID3D11Device> device_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> deviceContext_;
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> renderTargetView_;
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> renderTargetView_; // back buffer (sRGB-encoded output)
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> hdrTexture_;
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> hdrRTV_;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> hdrSRV_;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> depthTexture_;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView_;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState_;

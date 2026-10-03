@@ -33,6 +33,9 @@ add_executable(WaterShader WIN32
     src/System.cpp
     src/System.h
     src/SystemConfig.h
+    src/TonemapShader.cpp
+    src/TonemapShader.h
+    src/ColorSpace.h
     src/Texture.cpp
     src/Texture.h
     src/Timer.cpp
@@ -84,6 +87,12 @@ add_custom_command(TARGET WaterShader POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${SHADER_SOURCE_DIR}/skybox.hlsl"
         "${SHADER_OUTPUT_DIR}/skybox.hlsl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_SOURCE_DIR}/tonemap.hlsl"
+        "${SHADER_OUTPUT_DIR}/tonemap.hlsl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_SOURCE_DIR}/Color.hlsli"
+        "${SHADER_OUTPUT_DIR}/Color.hlsli"
 )
 
 set(ASSETS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")

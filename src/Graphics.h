@@ -9,6 +9,7 @@
 #include "Model.h"
 #include "Skybox.h"
 #include "SkyboxShader.h"
+#include "TonemapShader.h"
 #include "Texture.h"
 
 #include <DirectXMath.h>
@@ -101,6 +102,11 @@ private:
     int environmentIndex_ = 0;
     std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<SkyboxShader> skyboxShader_;
+    std::unique_ptr<TonemapShader> tonemapShader_;
+
+    // Final pass settings. Step 1 of linear-hdr: no tone curve, exposure 1 (pure linear -> sRGB).
+    float exposure_ = 1.0f;
+    TonemapShader::Operator tonemapOperator_ = TonemapShader::None;
 
     bool imguiInitialized_ = false;
     unsigned int screenWidth_ = 0;
