@@ -1,6 +1,6 @@
 # WaterShader
 
-> 엔진이나 머티리얼 그래프 없이 DirectX 11 + raw HLSL로 작성한 수면 셰이더. 리니어 HDR 파이프라인, HDR 하늘에서 측정한 조명, Gerstner 파도. 모든 파라미터를 ImGui로 실시간 조절
+> 엔진 없이 DirectX 11과 HLSL만으로 만든 물 셰이더입니다. 파도가 출렁이고, 하늘이 비치고, 햇빛이 물결 위에서 반짝입니다. 모든 값은 실행 중에 바로 바꿔 볼 수 있습니다.
 
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
 ![DirectX 11](https://img.shields.io/badge/DirectX-11-107C10)
@@ -13,25 +13,28 @@
 
 ## 프로젝트 개요
 
-정점 셰이더의 Gerstner 파도 4개로 수면 형태를 만들고, 픽셀 셰이더에서 두 겹의 노멀맵, 태양·하늘 조명, Fresnel 반사, 태양 글린트로 질감을 표현하는 포트폴리오 프로젝트입니다.
-조명은 **리니어 공간 + float16 HDR 렌더 타깃**에서 계산하고, 마지막 패스에서 노출·톤매핑·sRGB 인코딩을 한 번만 합니다.
-하늘은 HDR 원본(.hdr → BC6H 큐브맵)을 쓰고, 그 하늘에서 태양 방향·색·조도와 하늘 ambient를 측정해 조명값으로 연결했습니다.
-외부 엔진 없이 DirectX 11 초기화, 메시·텍스처 로딩, 상수버퍼, 셰이더 핫 리로드, 캡처·비교 도구를 직접 만들었습니다.
+"진짜 물처럼 보이려면 무엇이 필요할까?"에서 출발한 프로젝트입니다. 언리얼이나 유니티 같은 엔진의 도움 없이 화면을 띄우는 일부터 직접 만들었고, 물이 그럴듯해 보이는 이유를 하나씩 셰이더로 옮겼습니다.
+
+- **물의 모양**: 바다의 너울은 단순히 위아래로 흔들리지 않습니다. 물이 작은 원을 그리며 움직여서 마루는 뾰족하고 골은 넓어집니다. 이 움직임을 크기가 다른 파도 4개로 겹쳐 수면을 실제로 출렁이게 했습니다.
+- **물의 질감**: 파도 위의 잔물결은 텍스처 두 장을 서로 다른 크기와 방향으로 흘려 표현했습니다.
+- **물의 색과 반사**: 물은 위에서 내려다보면 속이 비치고, 멀리 비스듬히 보면 거울처럼 하늘을 비춥니다. 보는 각도에 따라 이 둘이 자연스럽게 바뀌도록 했습니다.
+- **빛**: 실제 하늘을 찍은 HDR 사진에서 해의 위치, 햇빛의 색과 세기, 하늘빛을 재서 조명으로 그대로 옮겼습니다. 그래서 하늘을 바꾸면 물에 닿는 빛도 함께 바뀝니다.
+- **화면에 담기**: 빛은 실제 밝기 그대로 계산하고, 마지막에 카메라처럼 노출을 맞춰 화면에 담습니다. 햇빛이 반사되는 아주 밝은 부분도 하얗게 뭉개지지 않습니다.
 
 | 한눈에 보기 | |
 |---|---|
-| 분야 | 실시간 셰이더 · 수면 렌더링 |
-| 핵심 기술 | Gerstner 파도 4개 + 거리 LOD, 레이어별 노멀맵(whiteout blend), Schlick Fresnel(F0 = 0.02), 에너지 정규화 태양 글린트, 리니어 워크플로 + HDR + 톤매핑(hue-preserving ACES), HDR 큐브맵 + 하늘 기반 조명 보정 |
-| 렌더 방식 | 벤치 평면(OBJ 32²) / 오션 그리드(1024², 지수 간격) + VS/PS, 큐브맵 스카이박스 + 해석적 태양 원반, 풀스크린 톤매핑 패스 |
-| 개발 도구 | 셰이더 핫 리로드, View / Light / Water 설정 창(키 1·2·3), 고정 샷 캡처 + before/after 비교 시트, GPU 타이머 Stats, 무인 실행 모드 |
-| 상태 | 퀄리티업 완료(2026-10). 거품(foam) 등은 향후 계획 |
+| 분야 | 실시간 그래픽스 · 물 셰이더 |
+| 핵심 기술 | 마루가 뾰족한 실제 바다 같은 파도(Gerstner 파도 4개 겹침). 보는 각도에 따라 물속과 하늘 반사가 바뀌는 표면(Fresnel). 햇빛이 물결마다 반짝이는 빛의 길(태양 글린트). 실제 하늘 사진에서 잰 빛으로 하는 조명(HDR 하늘). 밝은 부분까지 살리는 카메라식 노출(톤매핑) |
+| 렌더 방식 | 가까이 놓고 보는 작은 물 평면과 지평선까지 펼쳐지는 바다, 두 가지로 볼 수 있습니다. 바다는 멀어질수록 격자를 듬성듬성하게 하고, 멀리 있는 작은 파도는 자연스럽게 잦아들게 해서 지평선이 지저분해지지 않게 했습니다. 하늘의 해는 셰이더가 직접 그려, 물에 비친 해와 하늘의 해가 같은 빛이 되게 했습니다 |
+| 개발 도구 | 셰이더 파일을 저장하면 실행 중인 화면에 바로 반영됩니다. 숫자 키 1·2·3으로 여는 설정 창 세 개(보기·빛·물)에서 값을 바꿉니다. 같은 장면을 같은 시각에 자동으로 찍어 수정 전후를 나란히 비교하는 캡처 도구가 있습니다. 화면 구석에서 프레임 시간을 확인할 수 있습니다 |
+| 상태 | 기본 기능 완성. 물보라(foam), 폭포 등은 계획 중 |
 
 ## 스크린샷
 
 | | |
 |---|---|
 | ![프리셋 비교](docs/images/presets.jpg) | ![2026-05 vs 2026-10](docs/images/before-after.jpg) |
-| **프리셋**: Basic / Sunset / Tropical (오션 그리드) | **업데이트 전후**: 2026-05 마감 버전 vs 2026-10 |
+| **프리셋**: Basic / Sunset / Tropical (오션 그리드) | **업데이트 전후**: 2026-05 기존 버전 vs 2026-10 |
 | ![디버그 뷰](docs/images/debug-views.jpg) | ![설정 창 3개](docs/images/ui-panels.jpg) |
 | **디버그 뷰**: 최종 / 노멀맵 / 월드 법선 / 조명 항 | **설정 창**: View [1] · Light [2] · Water [3] |
 
@@ -82,21 +85,40 @@ tonemap.hlsl — 풀스크린 삼각형, 노출 · 톤 커브 · sRGB 인코딩 
 
 ## 업데이트 내역
 
-### 2026-10 — 포트폴리오 퀄리티업
+### 2026-09 ~ 10
 
-feature 브랜치 단위로 진행했고, 각 기능마다 문제 원인·해결 과정·검증 수치를 before/after 캡처와 함께 기록했습니다.
+모든 작업은 기능 단위 브랜치로 나눠 진행했습니다. 무엇이 문제였고 어떻게 찾아서 고쳤는지는 수정 전후 캡처, 측정값과 함께 각 기록 문서에 남겼습니다.
 
-| 기능 | 내용 | 기록 |
+#### 버그 수정
+
+| 증상 | 원인과 해결 | 기록 |
 |---|---|---|
-| water-polish | 노멀맵 감마 버그·태양 방향 반전 수정, 태양 글린트, 2-scale whiteout 노멀, Fresnel F0, Sine 2개 → Gerstner 4개, 오션 그리드 + 거리 LOD | [NOTES](docs/features/water-polish/NOTES.md) |
-| bench-tools | 마우스 드래그 회전·시점, 카메라 고정 샷·슬롯, 프리셋별 하늘, Stats(GPU 타이머), COM 초기화·C4244 수정 | [NOTES](docs/features/bench-tools/NOTES.md) |
-| linear-hdr | 리니어 워크플로, float16 HDR 렌더 타깃, 노출 + 톤 커브 4종, 무인 실행 모드 | [NOTES](docs/features/linear-hdr/NOTES.md) |
-| hdr-env | HDR 하늘(BC6H), 태양 분리 + 하늘에서 조명 측정·보정, 에너지 정규화 글린트, Blinn-Phong 제거 | [NOTES](docs/features/hdr-env/NOTES.md) |
-| basic-sky | Basic 하늘을 노을에서 한낮 들판 HDR로 교체(반사의 붉은 기운 제거) | [NOTES](docs/features/basic-sky/NOTES.md) |
-| normal-select | 노멀맵 5종, 레이어 A/B를 따로 선택해 프리셋에 저장 | [NOTES](docs/features/normal-select/NOTES.md) |
-| ui-panels | 설정 UI를 View / Light / Water 창으로 분리(키 1·2·3), 초보자용 이름·흐름 방향·파도 방향 다이얼 | [NOTES](docs/features/ui-panels/NOTES.md) |
+| 물 표면 전체가 한쪽으로 기울어 보이고, 해를 수면 아래에 둬야 반사가 보임 | 노멀맵을 DDS로 변환할 때 사진용 색 보정(감마)이 잘못 적용돼, 평평해야 할 값 128이 55로 바뀌어 있었습니다. 색 변환 없이 다시 변환했습니다 | [water-polish](docs/features/water-polish/NOTES.md) |
+| 해의 방향이 거꾸로 계산됨 | 위 버그와 서로 맞물려 그럭저럭 밝아 보이는 바람에 늦게 발견했습니다. 해의 위치를 방위각·고도로 다시 정의했습니다 | [water-polish](docs/features/water-polish/NOTES.md) |
+| 물결 뒷면에 하늘 대신 땅이 비침 | 반사 방향이 수평선 아래로 꺾이는 경우를 하늘 쪽으로 접었습니다 | [water-polish](docs/features/water-polish/NOTES.md) |
+| 자동 캡처 중 프로그램이 "응답 없음"으로 멈춤 | 기존 이미지를 덮어쓰는 순간 외부(보안 프로그램으로 추정)에서 프로세스를 통째로 정지시켰습니다. 기존 파일을 지운 뒤 새로 저장하도록 바꿨습니다 | [TROUBLESHOOTING A](docs/features/bench-tools/TROUBLESHOOTING.md) |
+| JPG 노멀맵을 읽지 못함 | 예전엔 파일 형식 문제로 추정했지만, 실제로는 Windows의 이미지 로더(WIC)가 쓰는 COM이 초기화되지 않은 것이었습니다 | [TROUBLESHOOTING B](docs/features/bench-tools/TROUBLESHOOTING.md) |
+| 한글 경로·라벨이 깨지고 빌드 경고(C4244) | 유니코드 문자열을 한 글자씩 잘라 변환하고 있었습니다. UTF-8 변환 함수로 바꿨습니다 | [TROUBLESHOOTING C](docs/features/bench-tools/TROUBLESHOOTING.md) |
+| Sunset 물이 노을빛이 아니라 흙탕물처럼 보임 | 비치는 하늘이 붉지 않은 데다 물 색이 갈색 영역에 있었습니다. 노을 하늘을 따로 두고 물 색을 다시 잡았습니다 | [TROUBLESHOOTING D](docs/features/bench-tools/TROUBLESHOOTING.md) |
+| 버튼을 누른 뒤 WASD로 카메라가 안 움직임 | UI의 키보드 탐색 기능이 키 입력을 가져가고 있었습니다 | [TROUBLESHOOTING E](docs/features/bench-tools/TROUBLESHOOTING.md) |
+| 해가 두 번, 세 번 더해져 너무 밝음 | 하늘 사진 속 해, 반짝임, 하이라이트가 같은 해를 각각 더하고 있었습니다. 하늘에서 해를 잘라내고 셰이더가 그리는 해 하나로 합쳤습니다 | [hdr-env](docs/features/hdr-env/NOTES.md) |
+| Capture 버튼을 실수로 누르면 기록이 덮어써질 위험 | 확인 창을 띄우고, 같은 이름의 폴더가 있으면 번호를 붙여 새로 만들도록 했습니다 | [hdr-env](docs/features/hdr-env/NOTES.md) |
+| Basic 바다에 노을의 붉은빛이 섞임 | Basic 하늘 자체가 노을 사진이었습니다. 한낮 들판 하늘로 바꿨습니다 | [basic-sky](docs/features/basic-sky/NOTES.md) |
+| 잔물결 흐름 속도의 부호가 실제 흐르는 방향과 반대 | 텍스처를 읽는 위치를 밀면 무늬는 반대로 움직여 보입니다. UI에서 실제 흐르는 방향과 속도로 보여주도록 바꿨습니다 | [ui-panels](docs/features/ui-panels/NOTES.md) |
 
-### 2026-05 — 마감 버전
+#### 퀄리티 업
+
+| 내용 | 기록 |
+|---|---|
+| **물 표현**: 햇빛이 물결마다 반짝이는 빛의 길, 크기가 다른 잔물결 두 겹, 실제 물에 맞춘 반사율, 위아래로만 흔들리던 파도 2개를 마루가 뾰족한 파도 4개로 교체, 지평선까지 이어지는 바다 | [water-polish](docs/features/water-polish/NOTES.md) |
+| **작업 도구**: 마우스로 평면 돌리기와 시점 회전, 같은 구도를 다시 찾는 카메라 위치 5개와 저장 슬롯, 프레임 시간 표시, 프리셋마다 다른 하늘 | [bench-tools](docs/features/bench-tools/NOTES.md) |
+| **빛 계산 방식**: 빛을 실제 밝기 그대로 더하는 방식(리니어)으로 바꾸고, 밝은 부분까지 담는 노출과 톤매핑을 넣었습니다. 자동 캡처가 작업 중인 키보드·마우스를 가로채지 않게 했습니다 | [linear-hdr](docs/features/linear-hdr/NOTES.md) |
+| **하늘과 조명**: 실제 밝기가 담긴 HDR 하늘로 바꾸고, 그 하늘에서 해의 위치·색·세기와 하늘빛을 재서 조명으로 옮겼습니다 | [hdr-env](docs/features/hdr-env/NOTES.md) |
+| **Basic 하늘**: 한낮 들판 하늘(belfast_farmhouse) | [basic-sky](docs/features/basic-sky/NOTES.md) |
+| **잔물결 텍스처 선택**: 5종 중 두 겹을 따로 골라 프리셋에 저장 | [normal-select](docs/features/normal-select/NOTES.md) |
+| **설정 화면 정리**: 한 창에 몰려 있던 설정을 보기·빛·물 세 창으로 나눴습니다(키 1·2·3). 처음 보는 사람도 알 수 있는 이름으로 바꾸고, 파도가 화면에서 어느 쪽으로 가는지 보여주는 방향 표시를 넣었습니다 | [ui-panels](docs/features/ui-panels/NOTES.md) |
+
+### 2026-05 — 기존 버전
 
 DirectX 11 기반 구축(dx11-setup, shader-hot-reload, asset-pipeline), 조명(scene-lighting), 큐브맵(env-cubemap), Sine wave 수면(water-base), 노멀맵(water-normal-map).
 
@@ -176,7 +198,7 @@ WaterShader/
 ## 문서
 
 - [프로젝트 개요](docs/OVERVIEW.md) — 목적과 평가 포인트
-- [로드맵](docs/ROADMAP.md) — 일정, 완료 목록, 마감 이후 backlog
+- [로드맵](docs/ROADMAP.md) — 일정, 완료 목록, 앞으로 할 일
 - [작업 규칙](docs/CONVENTIONS.md) — 문서 규칙과 기능 단위 브랜치 워크플로
 - [기술 결정 기록](docs/decisions.md)
 - [기능별 SPEC / NOTES](docs/features/) — 2026-05: dx11-setup, shader-hot-reload, asset-pipeline, scene-lighting, env-cubemap, water-base, water-normal-map, foam-mask / 2026-10: water-polish, bench-tools, linear-hdr, hdr-env, basic-sky, normal-select, ui-panels
