@@ -100,6 +100,8 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("exposureEV", preset.exposureEv);
     fn("normalMapA", preset.normalMapA);
     fn("normalMapB", preset.normalMapB);
+    fn("rippleAlignA", preset.rippleAlignA);
+    fn("rippleAlignB", preset.rippleAlignB);
     fn("waveWindDeg", preset.waveMacro.windDeg);
     fn("waveSpreadDeg", preset.waveMacro.spreadDeg);
     fn("waveSize", preset.waveMacro.size);
@@ -114,14 +116,29 @@ struct NormalMapEntry
 {
     const wchar_t* file;
     const char* name;
+    // Travel axis of the ripples as laid on the ocean grid (0 = +X, 90 = +Z, mod 180; the bench plane
+    // mirrors it, its uv v runs the other way). "Align to wind" rotates
+    // the map by (wind - this). Measured by tools/measure_normal_orientation.ps1 (pattern axis).
+    float rippleAxisDeg;
 };
 constexpr NormalMapEntry kNormalMaps[] = {
-    { L"textures/water_normal.dds",  "0 Diagonal ripples (water_normal)" },
-    { L"textures/water_normal1.dds", "1 Soft swell (water_normal1)" },
-    { L"textures/water_normal2.dds", "2 Soft chop (water_normal2)" },
-    { L"textures/water_normal3.dds", "3 Long streaks (water_normal3)" },
-    { L"textures/water_normal4.dds", "4 Fine chop (water_normal4)" },
+    { L"textures/water_normal.dds",  "0 Diagonal ripples (water_normal)",  76.0f },
+    { L"textures/water_normal1.dds", "1 Soft swell (water_normal1)",      -84.0f },
+    { L"textures/water_normal2.dds", "2 Soft chop (water_normal2)",       -70.0f },
+    { L"textures/water_normal3.dds", "3 Long streaks (water_normal3)",    -89.0f },
+    { L"textures/water_normal4.dds", "4 Fine chop (water_normal4)",       -67.0f },
 };
+
+// Rotation (cos, sin) that turns a normal map whose ripples travel along axisDeg so they travel along
+// windDeg. Axes are mod 180, so the smaller of the two turns is used.
+DirectX::XMFLOAT2 RippleRotation(float windDeg, float axisDeg)
+{
+    float turn = std::fmod(windDeg - axisDeg, 180.0f);
+    if (turn > 90.0f) turn -= 180.0f;
+    if (turn < -90.0f) turn += 180.0f;
+    const float r = DirectX::XMConvertToRadians(turn);
+    return { std::cos(r), std::sin(r) };
+}
 
 // Sky + reflection cube maps a preset can pick. Sun directions were measured from each panorama
 // (tools/equirect_to_cube.ps1). The sunset sky was rotated so its sun sits at yaw 34.5 like
@@ -182,6 +199,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --tonemap <none|reinhard|aces|aces-hue>  tone curve for this run
     //   --exposure <ev>        overrides every preset's exposure (operator comparisons)
     //   --far-waves <on|off>   pixel-shader wave slopes past the mesh wave fade (default on)
+    //   --align-ripples <on|off>  "Align to wind" for both normal map layers, overrides the presets
     //   --preset-file <path>   load/save presets from this file instead of assets/shader_presets.txt
     //                          (captures with fixed values while the working presets keep changing)
     std::wstring captureLabelArg;
@@ -212,6 +230,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 }
                 else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
                 else if (arg == L"--preset-file" && hasValue) { presetFileOverride_ = argv[++i]; }
+                else if (arg == L"--align-ripples" && hasValue) { rippleAlignOverride_ = std::wstring(argv[++i]) == L"off" ? 0 : 1; }
                 else if (arg == L"--far-waves" && hasValue)  { farWaveNormals_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--exposure" && hasValue)   { exposureOverrideEv_ = static_cast<float>(_wtof(argv[++i])); hasExposureOverride_ = true; }
                 else if (arg == L"--tonemap" && hasValue)
@@ -255,10 +274,12 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         for (const NormalMapEntry& entry : kNormalMaps)
         {
             files.emplace_back(entry.file, entry.name);
+            normalMapAxisDeg_.push_back(entry.rippleAxisDeg);
         }
         if (!normalMapArg.empty())
         {
             files.emplace_back(normalMapArg, std::to_string(files.size()) + " --normal-map " + WideToUtf8(normalMapArg));
+            normalMapAxisDeg_.push_back(0.0f); // not measured: Align to wind treats it as running along +X
             normalOverrideA_ = normalOverrideB_ = static_cast<int>(files.size()) - 1;
         }
         std::string statusLog;
@@ -377,6 +398,8 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     const int lastNormalMap = static_cast<int>(normalMaps_.size()) - 1;
     normalMapA_ = std::clamp(normalOverrideA_ >= 0 ? normalOverrideA_ : preset.normalMapA, 0, lastNormalMap);
     normalMapB_ = std::clamp(normalOverrideB_ >= 0 ? normalOverrideB_ : preset.normalMapB, 0, lastNormalMap);
+    rippleAlignA_ = rippleAlignOverride_ >= 0 ? rippleAlignOverride_ != 0 : preset.rippleAlignA != 0;
+    rippleAlignB_ = rippleAlignOverride_ >= 0 ? rippleAlignOverride_ != 0 : preset.rippleAlignB != 0;
     water_ = preset.water;
     waveMacro_ = preset.waveMacro;
 }
@@ -394,6 +417,8 @@ Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
     preset.exposureEv = exposureEv_;
     preset.normalMapA = normalMapA_;
     preset.normalMapB = normalMapB_;
+    preset.rippleAlignA = rippleAlignA_ ? 1 : 0;
+    preset.rippleAlignB = rippleAlignB_ ? 1 : 0;
     preset.water = water_;
     preset.waveMacro = waveMacro_;
     return preset;
@@ -982,6 +1007,20 @@ bool Graphics::Render(float deltaTime)
 
     d3d_->SetRasterizerWaterSurface();
     water_.farWaveNormals = farWaveNormals_ ? 1.0f : 0.0f; // a renderer switch, not part of the presets
+    {
+        // "Align to wind" follows Wave 1 as rendered (also right when the waves were edited in Advanced).
+        // The measured axes are for the ocean grid (v = -Z); the bench plane's v = +Z mirrors them.
+        water_.uvVSign = oceanMode_ ? -1.0f : 1.0f;
+        const DirectX::XMFLOAT2& wind = water_.waves[0].direction;
+        const float windDeg = DirectX::XMConvertToDegrees(std::atan2(wind.y, wind.x));
+        const auto rotation = [&](bool align, int map) {
+            const float axisDeg = oceanMode_ ? normalMapAxisDeg_[map] : -normalMapAxisDeg_[map];
+            return align ? RippleRotation(windDeg, axisDeg) : DirectX::XMFLOAT2(1.0f, 0.0f);
+        };
+        const DirectX::XMFLOAT2 a = rotation(rippleAlignA_, normalMapA_);
+        const DirectX::XMFLOAT2 b = rotation(rippleAlignB_, normalMapB_);
+        water_.normalRotation = { a.x, a.y, b.x, b.y };
+    }
     Model* waterMesh = oceanMode_ ? oceanGrid_.get() : model_.get();
     waterMesh->Render(d3d_->GetDeviceContext());
     colorShader_->Render(
@@ -1491,6 +1530,7 @@ void Graphics::DrawWaterWindow()
     {
         ImGui::PushID("A");
         textureCombo(normalMapA_);
+        ImGui::Checkbox("Align to wind (turn the ripples to run with Wave 1)", &rippleAlignA_);
         LabeledSlider("Normal map scale (repeats per 2 units; higher = smaller)", &water_.normalScale, 0.1f, 5.0f, "%.2f");
         FlowControls(water_.normalScroll1, flowDirectionDeg_[0], cameraRotation_.y);
         ImGui::PopID();
@@ -1500,6 +1540,7 @@ void Graphics::DrawWaterWindow()
     {
         ImGui::PushID("B");
         textureCombo(normalMapB_);
+        ImGui::Checkbox("Align to wind (turn the ripples to run with Wave 1)", &rippleAlignB_);
         LabeledSlider("Size (times smaller than the large ripples)", &water_.detailScale, 1.0f, 6.0f, "%.1f x");
         FlowControls(water_.normalScroll2, flowDirectionDeg_[1], cameraRotation_.y);
         ImGui::PopID();

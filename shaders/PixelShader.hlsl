@@ -86,6 +86,23 @@ float WidenExponent(float exponent, float slopeVariance)
     return slopeVariance > 0.0 ? exponent / (1.0 + exponent * slopeVariance) : exponent;
 }
 
+// "Align to wind": turn a normal map on the water by angle a (cos, sin; world XZ, 0 = +X, 90 = +Z).
+// Sampling at R(-a)·P puts what was at P0 at R(a)·P0. u runs along +X on both meshes but v runs along
+// +Z on the bench plane and -Z on the ocean grid (vSign), so the uv is taken to world-aligned
+// (X, Z) = (u, vSign·v), rotated, and taken back. (1, 0) leaves the uv unchanged.
+float2 RotateRippleUv(float2 uv, float2 rotation, float vSign)
+{
+    float2 xz = float2(uv.x, vSign * uv.y);
+    xz = float2(rotation.x * xz.x + rotation.y * xz.y, -rotation.y * xz.x + rotation.x * xz.y);
+    return float2(xz.x, vSign * xz.y);
+}
+
+// The sampled slopes are in the turned map's frame: rotate them by +a back into the plane's X / Z.
+float2 RotateRippleSlope(float2 slope, float2 rotation)
+{
+    return float2(rotation.x * slope.x - rotation.y * slope.y, rotation.y * slope.x + rotation.x * slope.y);
+}
+
 // SV_IsFrontFace = rasterizer stage에서 결정되는 system value. 픽셀이 front face에 속하면 true.
 float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
@@ -103,11 +120,15 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 
     // Layer A = broad ripples, layer B = finer chop at a different tiling, so the repeat is harder to spot.
     // Each layer has its own normal map; with two different maps the B layer no longer repeats A's shapes.
-    float2 uv1 = input.uv * normalScale + g_NormalScroll.xy * time;
-    float2 uv2 = input.uv * normalScale * detailScale + g_NormalScroll.zw * time;
+    // "Align to wind" turns only the pattern; the scroll stays in plane uv, so Flow direction keeps its meaning.
+    float uvVSign = g_MeshParams.x;
+    float2 uv1 = RotateRippleUv(input.uv * normalScale, g_NormalRotation.xy, uvVSign) + g_NormalScroll.xy * time;
+    float2 uv2 = RotateRippleUv(input.uv * normalScale * detailScale, g_NormalRotation.zw, uvVSign) + g_NormalScroll.zw * time;
     // rgb [0~1] -> normal vector [-1~1] 범위로 만들기 위해 * 2.0 - 1.0
     float3 n1 = g_NormalMap.Sample(g_NormalSampler, uv1).xyz * 2.0 - 1.0;
     float3 n2 = g_NormalMapB.Sample(g_NormalSampler, uv2).xyz * 2.0 - 1.0;
+    n1.xy = RotateRippleSlope(n1.xy, g_NormalRotation.xy);
+    n2.xy = RotateRippleSlope(n2.xy, g_NormalRotation.zw);
     // Whiteout blend: add the slopes (xy), multiply the z. Plain n1 + n2 halves the detail of each layer.
     float3 blendedNormalTS = float3((n1.xy + n2.xy) * normalStrength, n1.z * n2.z);
     blendedNormalTS = normalize(blendedNormalTS);

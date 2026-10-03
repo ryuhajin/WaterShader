@@ -65,6 +65,8 @@ private:
         float exposureEv = 0.0f; // tonemap pass multiplies the HDR scene by 2^EV
         int normalMapA = 0; // index into kNormalMaps: layer A (broad ripples)
         int normalMapB = 0; // layer B (fine chop, tiled detailScale times smaller)
+        int rippleAlignA = 0; // 1 = rotate layer A so its ripples run with Wave 1 ("Align to wind")
+        int rippleAlignB = 0;
         ColorShader::WaterParams water;
         WaveMacro waveMacro; // Simple wave controls; water.waves is what actually renders
     };
@@ -116,6 +118,10 @@ private:
     int normalMapB_ = 0;
     int normalOverrideA_ = -1; // --normal-a / --normal-b / --normal-map: win over the preset
     int normalOverrideB_ = -1;
+    std::vector<float> normalMapAxisDeg_; // per normal map: ripple travel axis (NormalMapEntry::rippleAxisDeg)
+    bool rippleAlignA_ = false; // "Align to wind" per layer (saved in the presets)
+    bool rippleAlignB_ = false;
+    int rippleAlignOverride_ = -1; // --align-ripples: wins over the presets
     std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<SkyboxShader> skyboxShader_;
     std::unique_ptr<TonemapShader> tonemapShader_;

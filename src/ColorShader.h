@@ -48,6 +48,9 @@ public:
         };
         int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face, 5=lighting terms, 6=wave LOD
         float farWaveNormals = 1.0f; // 1 = pixel shader adds the wave slopes the mesh LOD faded out
+        // Normal map rotation on the water (world XZ), as cos/sin: xy = layer A, zw = layer B. (1, 0) = as authored.
+        DirectX::XMFLOAT4 normalRotation = {1.0f, 0.0f, 1.0f, 0.0f};
+        float uvVSign = 1.0f; // per mesh: uv v runs along +Z (bench plane OBJ) or -Z (ocean grid, -1)
     };
 
     bool Initialize(ID3D11Device* device);

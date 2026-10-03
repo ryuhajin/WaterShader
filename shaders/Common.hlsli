@@ -32,6 +32,8 @@ cbuffer PerFrameCB : register(b0)
     WaveParams g_Waves[4];
     float4 g_DebugParams;      // x = debug mode: 0 render, 1 normal map, 2 world N, 3 UV, 4 front/back face, 5 lighting terms, 6 wave LOD
     float4 g_SurfaceParams;    // x = Fresnel F0, y = normal strength, z = detail layer scale, w = far wave normals (0/1)
+    float4 g_NormalRotation;   // normal map rotation on the water as cos/sin: xy = layer A, zw = layer B
+    float4 g_MeshParams;       // x = direction of uv v on the water: +1 = +Z (bench plane OBJ), -1 = -Z (ocean grid)
 };
 
 struct VSInput
