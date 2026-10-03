@@ -17,6 +17,8 @@ struct SkyboxCB
 {
     DirectX::XMFLOAT4X4 viewNoTranslation;
     DirectX::XMFLOAT4X4 projection;
+    DirectX::XMFLOAT4 sunDirection; // xyz toward the sun, w = cos(angular radius)
+    DirectX::XMFLOAT4 sunRadiance;  // linear rgb
 };
 
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
@@ -102,6 +104,8 @@ bool SkyboxShader::Render(
     int indexCount,
     const DirectX::XMMATRIX& viewNoTranslation,
     const DirectX::XMMATRIX& projection,
+    const DirectX::XMFLOAT4& sunDirection,
+    const DirectX::XMFLOAT4& sunRadiance,
     ID3D11ShaderResourceView* cubemapSRV,
     ID3D11SamplerState* sampler)
 {
@@ -111,6 +115,8 @@ bool SkyboxShader::Render(
         auto* data = static_cast<SkyboxCB*>(mapped.pData);
         DirectX::XMStoreFloat4x4(&data->viewNoTranslation, viewNoTranslation);
         DirectX::XMStoreFloat4x4(&data->projection, projection);
+        data->sunDirection = sunDirection;
+        data->sunRadiance = sunRadiance;
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
@@ -118,6 +124,7 @@ bool SkyboxShader::Render(
     deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
     deviceContext->PSSetShader(pixelShader_.Get(), nullptr, 0);
     deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
+    deviceContext->PSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->PSSetShaderResources(0, 1, &cubemapSRV);
     deviceContext->PSSetSamplers(0, 1, &sampler);
     deviceContext->DrawIndexed(indexCount, 0, 0);

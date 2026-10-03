@@ -83,11 +83,15 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 
     float3 finalColor = lerp(litWaterColor, reflectedSceneColor, reflectionAmount);
 
-    // Sun glint is part of the mirror reflection, so it follows the same Fresnel weight.
+    // Sun glint = mirror reflection of the analytic sun (cut out of HDR skies, so it is not counted twice).
+    // Energy-normalized Phong lobe: (n + 2) / (2 pi) * pow(R.L, n) integrates to 1 over the hemisphere,
+    // so the reflected sun energy is F * E_sun whatever the lobe width. g_LightColor holds E_sun / pi
+    // (Lambert convention), hence pi * (n + 2) / (2 pi) = (n + 2) / 2.
+    // sunGlintIntensity is now a multiplier on that physical value (1 = physically based).
     float sunGlintPower = g_SpecularParams.z;
     float sunGlintIntensity = g_SpecularParams.w;
-    float sunGlint = SunGlintFactor(reflectionDirWS, lightDirWS, sunGlintPower) * sunGlintIntensity * reflectionAmount;
-    finalColor += sunGlint * g_LightColor.rgb * g_LightColor.a;
+    float lobe = SunGlintFactor(reflectionDirWS, lightDirWS, sunGlintPower) * (sunGlintPower + 2.0) * 0.5;
+    finalColor += lobe * sunGlintIntensity * reflectionAmount * g_LightColor.rgb * g_LightColor.a;
 
     // Linear HDR radiance. Values above 1 (glint, bright sky) are kept; the tonemap pass compresses
     // the whole frame, sky included, with one curve.
