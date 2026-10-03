@@ -1,6 +1,6 @@
 # wave-far-normals
 
-> Branch: `feature/wave-far-normals` (from `feature/wave-macro`) · Status: in-progress · Updated: 2026-10-04
+> Branch: `feature/wave-far-normals` (from `feature/wave-macro`) · Status: done · Updated: 2026-10-04
 
 ## 1. Goal / Visual Target
 
@@ -13,11 +13,14 @@
 - **스코프 가드 — 절대로 만들지 않을 것:**
   - 원경 메시 변위(높이) 복원, 테셀레이션, 그리드 해상도 변경
   - 근경 렌더 변경 (정점이 지운 만큼만 픽셀이 채움)
-  - (1차) cbuffer 레이아웃 변경 — 기존 미사용 `g_SurfaceParams.w` 사용. 2차 C에서 `g_NormalRotation`, `g_MeshParams`를 추가함
-  - 노멀맵 G 채널 규약 수정 (NOTES 발견 2, 별도 과제)
-- **2차 범위 (사용자 테스트 1 이후 추가):** step1이 원경에 마름모 격자를 만들어 아래 두 단계를 더함. 상세는 NOTES.
-  - **B. 기울기 분산 → 거칠기:** 픽셀이 해상하지 못하는 파도는 마루 대신 분산 σ²로 바꿔 글린트·스펙큘러를 넓히고 하늘 반사를 흐린다.
+  - (1차) cbuffer 레이아웃 변경 — 기존 미사용 `g_SurfaceParams.w` 사용. 2차에서 `g_NormalRotation`(C), `g_FarParams`(Far spread)를 추가함
+  - 노멀맵 텍스처 수정 — 조명 어긋남의 원인은 텍스처가 아니라 오션 그리드 UV였다(아래 UV 수정)
+- **2차 범위 (사용자 테스트 이후 추가):** step1이 원경에 마름모 격자를 만들어 아래 단계를 더함. 상세는 NOTES(맨 위 요약).
+  - **B. 기울기 분산 → 거칠기:** 픽셀이 해상하지 못하는 파도는 마루 대신 분산 σ²로 바꿔 글린트·스펙큘러를 넓힌다. 하늘 반사 흐림도 넣었으나 step4에서 제거했다.
   - **C. 노멀맵 바람 정렬:** 레이어별 `Align to wind`로 노멀맵 무늬를 Wave 1 방향에 맞춰 회전한다(프리셋 저장, 옛 프리셋 OFF).
+  - **UV 수정:** 오션 그리드 UV를 OBJ 평면과 같게(v = +Z) 맞췄다. 오션에서 노멀맵 조명이 뒤집혀 있던 버그.
+  - **step4:** 하늘 반사 흐림 제거(해를 등진 원경의 반사 형상 복구), 해를 등진 캡처 샷 `ocean_away` 추가.
+  - **Far spread:** Light 창에서 원경 글린트 확산 배율을 조절(0~3, 1 = 물리값).
 
 ## 2. HLSL 접근법 / 수식 / 의사코드
 
@@ -64,14 +67,16 @@ baseNormalWS = normalize(input.normalWS + farOn * mul(delta, (float3x3)g_World))
 | ImGui | Debug Mode 6 "Wave LOD" | combo | R = 정점 파도, G = 픽셀 노멀, B = 거칠기 가중치 |
 | CLI | `--far-waves off` | flag | 회귀 캡처용 |
 | Output | `baseNormalWS` | float3 | 노멀맵 TBN의 기준 노멀 |
-| 2차 B | σ² (픽셀 셰이더 내부) | float | 글린트·스펙큘러 지수 `n/(1+n·σ²)`, 하늘 반사 mip |
+| 2차 B | σ² (픽셀 셰이더 내부) | float | 글린트·스펙큘러 지수 `n/(1+n·σ²·FarSpread)` (하늘 반사 흐림은 step4에서 제거) |
 | 2차 C | `g_NormalRotation` | float4 | 레이어 A/B 회전 cos/sin |
-| 2차 C | `g_MeshParams.x` | float | uv v 방향: +1 벤치 평면, −1 오션 그리드 |
 | 2차 C | Align to wind (레이어 A/B) | checkbox | 프리셋 키 `rippleAlignA/B`, CLI `--align-ripples on` |
 | 2차 C | `kNormalMaps[].rippleAxisDeg` | float | `tools/measure_normal_orientation.ps1`로 측정 |
 | CLI | `--preset-file <path>` | flag | 캡처를 고정 값(`capture_presets.txt`)으로 찍기 |
+| Far spread | `g_FarParams.x` | float | Light 창 `Far spread` 0~3 (1 = 물리값), 프리셋 키 `farGlintSpread`(없으면 1) |
+| UV 수정 | `Model::InitializeGrid` uv | float2 | u = x·0.5 + 0.5, v = z·0.5 + 0.5 (OBJ 평면과 동일) |
+| Capture | `ocean_away` | 고정 샷 | 해(yaw 34.5°)를 등진 저각. 고정 샷은 6개 |
 
-**의존하는 다른 feature:** `water-polish`(Gerstner 4파 + 거리 LOD + ocean 그리드), `wave-macro`(Simple 파도 UI, 머지 전 브랜치).
+**의존하는 다른 feature:** `water-polish`(Gerstner 4파 + 거리 LOD + ocean 그리드), `wave-macro`(Simple 파도 UI).
 
 ## 4. Acceptance Criteria / Test Plan
 
@@ -85,4 +90,6 @@ baseNormalWS = normalize(input.normalWS + farOn * mul(delta, (float3x3)g_World))
 - [x] B: 거칠기 구간 Debug 6 파랑으로 확인, OFF 회귀 최대 10 / 평균 ≤ 0.05 (컴파일 차이, NOTES)
 - [x] C: top 샷 측정으로 회전량 검증(예측과 1° 이내), 플래그 없으면 step2와 동일(같은 컴파일 차이)
 - [x] 단계별 비교 시트(before / step1 / step2 / step3), 수평선 크롭, GPU 시간
-- [ ] 사용자 확인 2: 원경 격자 해소, 수평선 지글거림 없음, Align to wind 동작
+- [x] 사용자 확인 2: 해를 등진 원경 반사가 뭉개짐 → 흐림 제거(step4). 이후 격자 해소와 수평선 지글거림 없음을 확인
+- [x] UV 수정: 벤치 평면 캡처 픽셀 차이 0, 오션만 변경. 모든 노멀맵의 slope 축과 pattern 축 일치
+- [x] Far spread: 기본값 1에서 변경 전과 동일(Sunset/Tropical 픽셀 차이 0), 수평선 태양 데모

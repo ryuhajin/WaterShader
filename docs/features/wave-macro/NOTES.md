@@ -53,9 +53,7 @@
   - `captures/ui-after-advanced.jpg`: Advanced와 Wave 1을 펼친 상태. 스크린샷용 임시 코드로 열었고, 이후 되돌렸다.
 - 테스트 중 `assets/shader_presets.txt`, `camera_presets.txt`가 바뀌지 않았음을 해시로 확인했다.
 
-## 사용자 확인 필요
+## 사용자 확인 결과
 
-- Simple 슬라이더 6개 조작감
-- Advanced 수정 → Custom 표시 → Simple 조작 시 재생성
-- 프리셋 전환 시 Simple 값 변경
-- Save 후 재시작해도 유지되는지
+- Simple 슬라이더 6개, Advanced 수정 → Custom 표시 → Simple 조작 시 재생성, 프리셋 전환과 저장 후 유지: 모두 확인했다.
+- 테스트 중 Direction spread를 20~30°로 낮추면 원경 마름모 격자가 사라지는 것을 사용자가 확인했다. spread가 크면 파도 줄무늬가 크게 엇갈린다. 원경 처리는 [wave-far-normals](../wave-far-normals/NOTES.md)로 이어졌다.
