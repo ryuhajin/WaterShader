@@ -77,6 +77,9 @@ constexpr CaptureShot kCaptureShots[] = {
     { "sunward",       { -1.04f, 0.45f, -1.59f }, { 12.0f, 33.0f, 0.0f }, 60.0f, false },
     { "ocean_sunward", { -0.90f, 0.55f, -1.40f }, {  6.0f, 34.5f, 0.0f }, 55.0f, true  },
     { "ocean_wide",    {  0.00f, 1.60f, -3.00f }, { 14.0f, 10.0f, 0.0f }, 60.0f, true  },
+    // Back to the yaw-34.5 sun (Basic / Sunset): sky and shore reflections without the glint.
+    // (Tropical's sun sits at yaw 236.4, so there this one looks toward it.)
+    { "ocean_away",    {  0.00f, 1.60f,  0.00f }, {  8.0f, 214.5f, 0.0f }, 60.0f, true  },
 };
 
 // Startup / Reset Camera framing: the step2_sun_glint "sunward" shot (bench plane, glint visible).
@@ -93,6 +96,7 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
 {
     fn("sunGlintPower", preset.water.sunGlintPower);
     fn("sunGlintIntensity", preset.water.sunGlintIntensity);
+    fn("farGlintSpread", preset.water.farGlintSpread);
     fn("fresnelF0", preset.water.fresnelF0);
     fn("normalStrength", preset.water.normalStrength);
     fn("detailScale", preset.water.detailScale);
@@ -100,6 +104,8 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("exposureEV", preset.exposureEv);
     fn("normalMapA", preset.normalMapA);
     fn("normalMapB", preset.normalMapB);
+    fn("rippleAlignA", preset.rippleAlignA);
+    fn("rippleAlignB", preset.rippleAlignB);
     fn("waveWindDeg", preset.waveMacro.windDeg);
     fn("waveSpreadDeg", preset.waveMacro.spreadDeg);
     fn("waveSize", preset.waveMacro.size);
@@ -114,14 +120,28 @@ struct NormalMapEntry
 {
     const wchar_t* file;
     const char* name;
+    // Travel axis of the ripples as laid on the water (0 = +X, 90 = +Z, mod 180). "Align to wind"
+    // rotates the map by (wind - this). Measured by tools/measure_normal_orientation.ps1 (pattern axis).
+    float rippleAxisDeg;
 };
 constexpr NormalMapEntry kNormalMaps[] = {
-    { L"textures/water_normal.dds",  "0 Diagonal ripples (water_normal)" },
-    { L"textures/water_normal1.dds", "1 Soft swell (water_normal1)" },
-    { L"textures/water_normal2.dds", "2 Soft chop (water_normal2)" },
-    { L"textures/water_normal3.dds", "3 Long streaks (water_normal3)" },
-    { L"textures/water_normal4.dds", "4 Fine chop (water_normal4)" },
+    { L"textures/water_normal.dds",  "0 Diagonal ripples (water_normal)", -76.0f },
+    { L"textures/water_normal1.dds", "1 Soft swell (water_normal1)",       84.0f },
+    { L"textures/water_normal2.dds", "2 Soft chop (water_normal2)",        70.0f },
+    { L"textures/water_normal3.dds", "3 Long streaks (water_normal3)",     89.0f },
+    { L"textures/water_normal4.dds", "4 Fine chop (water_normal4)",        67.0f },
 };
+
+// Rotation (cos, sin) that turns a normal map whose ripples travel along axisDeg so they travel along
+// windDeg. Axes are mod 180, so the smaller of the two turns is used.
+DirectX::XMFLOAT2 RippleRotation(float windDeg, float axisDeg)
+{
+    float turn = std::fmod(windDeg - axisDeg, 180.0f);
+    if (turn > 90.0f) turn -= 180.0f;
+    if (turn < -90.0f) turn += 180.0f;
+    const float r = DirectX::XMConvertToRadians(turn);
+    return { std::cos(r), std::sin(r) };
+}
 
 // Sky + reflection cube maps a preset can pick. Sun directions were measured from each panorama
 // (tools/equirect_to_cube.ps1). The sunset sky was rotated so its sun sits at yaw 34.5 like
@@ -181,6 +201,10 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --capture-feature <f>  captures go to docs/features/<f>/captures (default water-polish)
     //   --tonemap <none|reinhard|aces|aces-hue>  tone curve for this run
     //   --exposure <ev>        overrides every preset's exposure (operator comparisons)
+    //   --far-waves <on|off>   pixel-shader wave slopes past the mesh wave fade (default on)
+    //   --align-ripples <on|off>  "Align to wind" for both normal map layers, overrides the presets
+    //   --preset-file <path>   load/save presets from this file instead of assets/shader_presets.txt
+    //                          (captures with fixed values while the working presets keep changing)
     std::wstring captureLabelArg;
     std::wstring normalMapArg;
     std::wstring shotArg;
@@ -208,6 +232,9 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                     showWaterWindow_ = ui == L"water" || ui == L"all";
                 }
                 else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
+                else if (arg == L"--preset-file" && hasValue) { presetFileOverride_ = argv[++i]; }
+                else if (arg == L"--align-ripples" && hasValue) { rippleAlignOverride_ = std::wstring(argv[++i]) == L"off" ? 0 : 1; }
+                else if (arg == L"--far-waves" && hasValue)  { farWaveNormals_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--exposure" && hasValue)   { exposureOverrideEv_ = static_cast<float>(_wtof(argv[++i])); hasExposureOverride_ = true; }
                 else if (arg == L"--tonemap" && hasValue)
                 {
@@ -250,10 +277,12 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         for (const NormalMapEntry& entry : kNormalMaps)
         {
             files.emplace_back(entry.file, entry.name);
+            normalMapAxisDeg_.push_back(entry.rippleAxisDeg);
         }
         if (!normalMapArg.empty())
         {
             files.emplace_back(normalMapArg, std::to_string(files.size()) + " --normal-map " + WideToUtf8(normalMapArg));
+            normalMapAxisDeg_.push_back(0.0f); // not measured: Align to wind treats it as running along +X
             normalOverrideA_ = normalOverrideB_ = static_cast<int>(files.size()) - 1;
         }
         std::string statusLog;
@@ -372,6 +401,8 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     const int lastNormalMap = static_cast<int>(normalMaps_.size()) - 1;
     normalMapA_ = std::clamp(normalOverrideA_ >= 0 ? normalOverrideA_ : preset.normalMapA, 0, lastNormalMap);
     normalMapB_ = std::clamp(normalOverrideB_ >= 0 ? normalOverrideB_ : preset.normalMapB, 0, lastNormalMap);
+    rippleAlignA_ = rippleAlignOverride_ >= 0 ? rippleAlignOverride_ != 0 : preset.rippleAlignA != 0;
+    rippleAlignB_ = rippleAlignOverride_ >= 0 ? rippleAlignOverride_ != 0 : preset.rippleAlignB != 0;
     water_ = preset.water;
     waveMacro_ = preset.waveMacro;
 }
@@ -389,6 +420,8 @@ Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
     preset.exposureEv = exposureEv_;
     preset.normalMapA = normalMapA_;
     preset.normalMapB = normalMapB_;
+    preset.rippleAlignA = rippleAlignA_ ? 1 : 0;
+    preset.rippleAlignB = rippleAlignB_ ? 1 : 0;
     preset.water = water_;
     preset.waveMacro = waveMacro_;
     return preset;
@@ -572,6 +605,11 @@ void Graphics::SaveCameraSlots() const
     }
 }
 
+std::filesystem::path Graphics::PresetFilePath() const
+{
+    return presetFileOverride_.empty() ? std::filesystem::path(GetAssetPath(L"shader_presets.txt")) : presetFileOverride_;
+}
+
 void Graphics::LoadPresets()
 {
     presets_[0] = ShaderPreset{};
@@ -602,7 +640,7 @@ void Graphics::LoadPresets()
     presets_[2].water.specularStrength = 0.30f;
     presets_[2].water.specularSharpness = 96.0f;
 
-    const std::filesystem::path presetPath = GetAssetPath(L"shader_presets.txt");
+    const std::filesystem::path presetPath = PresetFilePath();
     std::ifstream file(presetPath);
     if (!file)
     {
@@ -681,7 +719,7 @@ void Graphics::LoadPresets()
 
 void Graphics::SavePresets() const
 {
-    const std::filesystem::path presetPath = GetAssetPath(L"shader_presets.txt");
+    const std::filesystem::path presetPath = PresetFilePath();
     std::filesystem::create_directories(presetPath.parent_path());
 
     std::ofstream file(presetPath);
@@ -971,6 +1009,18 @@ bool Graphics::Render(float deltaTime)
     }
 
     d3d_->SetRasterizerWaterSurface();
+    water_.farWaveNormals = farWaveNormals_ ? 1.0f : 0.0f; // a renderer switch, not part of the presets
+    {
+        // "Align to wind" follows Wave 1 as rendered (also right when the waves were edited in Advanced).
+        const DirectX::XMFLOAT2& wind = water_.waves[0].direction;
+        const float windDeg = DirectX::XMConvertToDegrees(std::atan2(wind.y, wind.x));
+        const auto rotation = [&](bool align, int map) {
+            return align ? RippleRotation(windDeg, normalMapAxisDeg_[map]) : DirectX::XMFLOAT2(1.0f, 0.0f);
+        };
+        const DirectX::XMFLOAT2 a = rotation(rippleAlignA_, normalMapA_);
+        const DirectX::XMFLOAT2 b = rotation(rippleAlignB_, normalMapB_);
+        water_.normalRotation = { a.x, a.y, b.x, b.y };
+    }
     Model* waterMesh = oceanMode_ ? oceanGrid_.get() : model_.get();
     waterMesh->Render(d3d_->GetDeviceContext());
     colorShader_->Render(
@@ -1166,15 +1216,15 @@ void DrawDirectionDial(float relativeDeg)
 }
 
 // Normal map scroll shown as "which way the ripples drift + how fast". The stored value stays the
-// UV velocity the shader adds to the sample position. The plane UVs run u = +X, v = -Z (Model.cpp),
+// UV velocity the shader adds to the sample position. Both water meshes run u = +X, v = +Z (Model.cpp),
 // and sampling at uv + velocity * t moves the pattern by -velocity, so in world terms the ripples
-// drift along (-u, +v). The value is only rewritten when a slider moves, so presets round-trip exactly.
+// drift along (-u, -v). The value is only rewritten when a slider moves, so presets round-trip exactly.
 void FlowControls(DirectX::XMFLOAT2& velocity, float& rememberedDeg, float cameraYawDeg)
 {
     float speed = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
     if (speed > 0.0f)
     {
-        rememberedDeg = DirectX::XMConvertToDegrees(std::atan2(velocity.y, -velocity.x));
+        rememberedDeg = DirectX::XMConvertToDegrees(std::atan2(-velocity.y, -velocity.x));
     }
     float directionDeg = rememberedDeg;
     const float relativeDeg = ViewRelativeDeg(directionDeg, cameraYawDeg);
@@ -1191,7 +1241,7 @@ void FlowControls(DirectX::XMFLOAT2& velocity, float& rememberedDeg, float camer
     {
         rememberedDeg = directionDeg;
         const float r = DirectX::XMConvertToRadians(directionDeg);
-        velocity = { -std::cos(r) * speed, std::sin(r) * speed };
+        velocity = { -std::cos(r) * speed, -std::sin(r) * speed };
     }
 }
 } // namespace
@@ -1328,7 +1378,7 @@ void Graphics::DrawViewWindow()
     }
 
     ImGui::SeparatorText("Debug View");
-    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)" };
+    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
     const std::string& shaderError = colorShader_->GetLastError();
     if (!shaderError.empty())
@@ -1412,6 +1462,8 @@ void Graphics::DrawLightWindow()
     ImGui::SliderFloat("Sharpness", &water_.sunGlintPower, 64.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
     ImGui::SliderFloat("Strength", &water_.sunGlintIntensity, 0.0f, 5.0f, "%.2f");
     ImGui::TextDisabled("Strength 1 = physically based");
+    ImGui::SliderFloat("Far spread", &water_.farGlintSpread, 0.0f, 3.0f, "%.2f");
+    ImGui::TextDisabled("How much far, unresolved waves widen the glint\n(1 = physical, 0 = sharp, >1 = wider glitter\npath, e.g. a sun on the horizon)");
 
     ImGui::SeparatorText("Ambient (light from the whole sky)");
     ImGui::ColorEdit3("Color##ambient", &ambientColor_.x);
@@ -1480,6 +1532,7 @@ void Graphics::DrawWaterWindow()
     {
         ImGui::PushID("A");
         textureCombo(normalMapA_);
+        ImGui::Checkbox("Align to wind (turn the ripples to run with Wave 1)", &rippleAlignA_);
         LabeledSlider("Normal map scale (repeats per 2 units; higher = smaller)", &water_.normalScale, 0.1f, 5.0f, "%.2f");
         FlowControls(water_.normalScroll1, flowDirectionDeg_[0], cameraRotation_.y);
         ImGui::PopID();
@@ -1489,6 +1542,7 @@ void Graphics::DrawWaterWindow()
     {
         ImGui::PushID("B");
         textureCombo(normalMapB_);
+        ImGui::Checkbox("Align to wind (turn the ripples to run with Wave 1)", &rippleAlignB_);
         LabeledSlider("Size (times smaller than the large ripples)", &water_.detailScale, 1.0f, 6.0f, "%.1f x");
         FlowControls(water_.normalScroll2, flowDirectionDeg_[1], cameraRotation_.y);
         ImGui::PopID();
@@ -1498,6 +1552,7 @@ void Graphics::DrawWaterWindow()
     // Gerstner waves move the mesh vertices. The presets order them big -> small.
     ImGui::SeparatorText("Waves (geometry)");
     ImGui::TextDisabled("Moving swells that shape the mesh. Arrow = travel\ndirection as seen from the camera (up = away).");
+    ImGui::Checkbox("Far waves (lighting only past the mesh fade)", &farWaveNormals_);
 
     // Simple: six values generate all four waves (WaveMacro.h). Advanced edits stay until one of
     // these moves; whether they still match is recomputed every frame instead of stored.

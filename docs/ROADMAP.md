@@ -129,7 +129,7 @@
 - [ ] `feature/water-detail-normal` — Macro + Detail 2-layer normal map (사실적 ocean 표준 패턴). 미착수.
 - [ ] `feature/ue5-port` — UE5 머티리얼 포팅 (보너스).
 
-### 완료 (2026-09-29 ~ 10-03, 포트폴리오 퀄리티업)
+### 완료 (2026-09-29 ~ 10-04, 포트폴리오 퀄리티업)
 
 각 feature 폴더의 `NOTES.md`에 문제/해결/과정/검증 기록.
 
@@ -140,6 +140,8 @@
 - [x] `feature/basic-sky` — Basic 하늘을 한낮 들판 HDR로 교체 ([NOTES](features/basic-sky/NOTES.md))
 - [x] `feature/normal-select` — 레이어별 노멀맵 선택 + 프리셋 저장 (`water-detail-normal`의 2-layer 분리를 포함) ([NOTES](features/normal-select/NOTES.md))
 - [x] `feature/ui-panels` — 설정 UI를 View/Light/Water 3창 + 1/2/3 단축키로, 초보자용 Water UI ([NOTES](features/ui-panels/NOTES.md))
+- [x] `feature/wave-macro` — 파도 Simple 모드(상위 값 6개로 파도 4개 생성) + Advanced, Custom 판정 ([NOTES](features/wave-macro/NOTES.md))
+- [x] `feature/wave-far-normals` — 먼 바다 파도 기울기·거칠기 3구간, 노멀맵 바람 정렬, 오션 그리드 UV 버그 수정, 반사 흐림 제거, Far spread ([NOTES](features/wave-far-normals/NOTES.md))
 
 ---
 

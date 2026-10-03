@@ -36,6 +36,7 @@ public:
         float specularSharpness  = 64.0f;
         float sunGlintPower      = 800.0f;  // reflect(-V, N) vs sun direction lobe
         float sunGlintIntensity  = 12.0f;   // HDR multiplier, >1 so glints survive the rolloff
+        float farGlintSpread     = 1.0f;    // scales the far-field slope variance that widens the glint (1 = physical)
         float fresnelF0          = 0.5f;    // reflectance at normal incidence (water ~0.02)
         float normalStrength     = 1.0f;    // tangent-space XY multiplier
         float detailScale        = 1.0f;    // layer B tiling relative to layer A
@@ -46,7 +47,10 @@ public:
             { { 0.574f,  0.819f}, 0.010f, 0.62f, 0.35f, 0.65f },
             { { 0.766f, -0.643f}, 0.006f, 0.41f, 0.28f, 0.70f },
         };
-        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face, 5=lighting terms
+        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face, 5=lighting terms, 6=wave LOD
+        float farWaveNormals = 1.0f; // 1 = pixel shader adds the wave slopes the mesh LOD faded out
+        // Normal map rotation on the water (world XZ), as cos/sin: xy = layer A, zw = layer B. (1, 0) = as authored.
+        DirectX::XMFLOAT4 normalRotation = {1.0f, 0.0f, 1.0f, 0.0f};
     };
 
     bool Initialize(ID3D11Device* device);

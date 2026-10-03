@@ -1,6 +1,6 @@
 # wave-macro
 
-> Branch: `feature/wave-macro` · Status: in-progress · Updated: 2026-10-03
+> Branch: `feature/wave-macro` · Status: done · Updated: 2026-10-04
 
 ## 1. Goal / Visual Target
 
@@ -74,6 +74,6 @@ direction_i  = (cos angle_i, sin angle_i)
 - [x] `WaveMacroTest` 통과: 기본값 재현, Generate→Estimate 왕복, 경계값에서 NaN 없음·sharpness ≤ 1·파장 ≥ 0.2·방향 단위벡터
 - [x] 렌더 회귀: `--capture` 15장이 변경 전과 픽셀 차이 0 (로드 시 파도 불변)
 - [x] Water 창: Simple 6개 + 상태 줄(Generated / Custom), Advanced(기본 닫힘) 안에 기존 슬롯 그대로
-- [ ] Advanced 수정 → Custom 표시 → Simple 슬라이더 이동 시 재생성
-- [ ] 프리셋 전환 시 Simple 값이 프리셋별로 바뀜, Save 후 재시작해도 유지
+- [x] Advanced 수정 → Custom 표시 → Simple 슬라이더 이동 시 재생성 (사용자 확인)
+- [x] 프리셋 전환 시 Simple 값이 프리셋별로 바뀜, Save 후 재시작해도 유지 (사용자 확인, 저장된 프리셋에 `wave*` 키 6개 기록됨)
 - [x] UI before/after 스크린샷 + NOTES

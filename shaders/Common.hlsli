@@ -30,8 +30,10 @@ cbuffer PerFrameCB : register(b0)
     float4 g_SpecularParams;   // x=strength, y=sharpness, z=sun glint power, w=sun glint intensity
 
     WaveParams g_Waves[4];
-    float4 g_DebugParams;      // x = debug mode: 0 render, 1 normal map, 2 world N, 3 UV, 4 front/back face, 5 lighting terms
-    float4 g_SurfaceParams;    // x = Fresnel F0, y = normal strength, z = detail layer scale, w unused
+    float4 g_DebugParams;      // x = debug mode: 0 render, 1 normal map, 2 world N, 3 UV, 4 front/back face, 5 lighting terms, 6 wave LOD
+    float4 g_SurfaceParams;    // x = Fresnel F0, y = normal strength, z = detail layer scale, w = far wave normals (0/1)
+    float4 g_NormalRotation;   // normal map rotation on the water as cos/sin: xy = layer A, zw = layer B
+    float4 g_FarParams;        // x = far glint spread: scales the far-field slope variance (1 = physical, 0 = off)
 };
 
 struct VSInput
@@ -47,6 +49,7 @@ struct PSInput
     float3 normalWS : NORMAL;
     float3 worldPos : TEXCOORD0;
     float2 uv       : TEXCOORD1;
+    float3 restPosLocal : TEXCOORD2; // before wave displacement: wave phase for the far-field normals
 };
 
 #endif // WS_COMMON_HLSLI
