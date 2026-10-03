@@ -54,7 +54,7 @@ float3 N = normalize(nTan.x*T + nTan.y*B + nTan.z*N0);
 - [x] **Normal Scale (tile) 0.1 ↔ 5.0** → 패턴 크기 변화 시각 확인
 - [x] **Layer A/B U/V speed** → 시간에 따른 패턴 흐름 확인 (4개 슬라이더 분리)
 - [x] **회귀:** Fresnel/Cubemap 반사, Wave 변위, Light, Tint, Skybox toggle 모두 정상
-- [x] 자체 제작 텍스처 사용 — `assets/textures/water_normal.dds` (포트폴리오 self-made 카운트 +1)
+- [x] 노멀 텍스처 사용 — `assets/textures/water_normal.dds` (정정 2026-10-03: 자체 제작이 아니라 [CADhatch](https://www.cadhatch.com/seamless-water-textures) 무료 seamless 텍스처. 출처는 README "에셋 출처")
 
 ## 5. Notes (선택)
 

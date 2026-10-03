@@ -146,11 +146,12 @@ bool ColorShader::Render(
     const DirectX::XMFLOAT4& cameraPositionWS,
     const WaterParams& water,
     ID3D11ShaderResourceView* cubemapSRV,
-    ID3D11ShaderResourceView* normalSRV,
+    ID3D11ShaderResourceView* normalSRVA, // layer A (t1)
+    ID3D11ShaderResourceView* normalSRVB, // layer B (t2)
     ID3D11SamplerState* clampSampler,
     ID3D11SamplerState* wrapSampler)
 {
-    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, ambientColor, time, cameraPositionWS, water, cubemapSRV, normalSRV, clampSampler, wrapSampler);
+    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, ambientColor, time, cameraPositionWS, water, cubemapSRV, normalSRVA, normalSRVB, clampSampler, wrapSampler);
     return true;
 }
 
@@ -308,7 +309,8 @@ void ColorShader::RenderShader(
     const DirectX::XMFLOAT4& cameraPositionWS,
     const WaterParams& water,
     ID3D11ShaderResourceView* cubemapSRV,
-    ID3D11ShaderResourceView* normalSRV,
+    ID3D11ShaderResourceView* normalSRVA, // layer A (t1)
+    ID3D11ShaderResourceView* normalSRVB, // layer B (t2)
     ID3D11SamplerState* clampSampler,
     ID3D11SamplerState* wrapSampler)
 {
@@ -357,7 +359,7 @@ void ColorShader::RenderShader(
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
-    ID3D11ShaderResourceView* srvs[2] = {cubemapSRV, normalSRV};
+    ID3D11ShaderResourceView* srvs[3] = {cubemapSRV, normalSRVA, normalSRVB};
     ID3D11SamplerState* samplers[2] = {clampSampler, wrapSampler};
 
     deviceContext->IASetInputLayout(layout_.Get());
@@ -365,7 +367,7 @@ void ColorShader::RenderShader(
     deviceContext->PSSetShader(pixelShader_.Get(), nullptr, 0);
     deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->PSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
-    deviceContext->PSSetShaderResources(0, 2, srvs);
+    deviceContext->PSSetShaderResources(0, 3, srvs);
     deviceContext->PSSetSamplers(0, 2, samplers);
     deviceContext->DrawIndexed(indexCount, 0, 0);
 }

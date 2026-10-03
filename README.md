@@ -177,6 +177,11 @@ cmake --build build/vs2022 --config Debug
 - [GPU Gems Ch.1 — Effective Water Simulation](https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-1-effective-water-simulation-physical-models)
 - [DirectXTK Wiki](https://github.com/microsoft/DirectXTK/wiki)
 
+## 에셋 출처
+
+- **물 노멀맵** (`assets/textures/water_normal*.jpg`, 변환본 `.dds`) — [CADhatch Seamless Water Textures](https://www.cadhatch.com/seamless-water-textures) (무료 seamless 텍스처)
+- **하늘 HDRI** (`assets/textures/env_*.dds`) — [Poly Haven](https://polyhaven.com/hdris) (CC0): `belfast_farmhouse`, `grasslands_sunset`, `the_sky_is_on_fire`, `spiaggia_di_mondello`
+
 ---
 
 ## 기술 스택

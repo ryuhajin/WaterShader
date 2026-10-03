@@ -97,7 +97,24 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("detailScale", preset.water.detailScale);
     fn("environment", preset.environment);
     fn("exposureEV", preset.exposureEv);
+    fn("normalMapA", preset.normalMapA);
+    fn("normalMapB", preset.normalMapB);
 }
+
+// Tangent-space water normal maps (RGBA8 UNORM + mips, converted with texconv --ignore-srgb so the
+// stored values are not gamma-decoded; flat = 128,128,255). Presets store the index, so only append.
+struct NormalMapEntry
+{
+    const wchar_t* file;
+    const char* name;
+};
+constexpr NormalMapEntry kNormalMaps[] = {
+    { L"textures/water_normal.dds",  "0 Diagonal ripples (water_normal)" },
+    { L"textures/water_normal1.dds", "1 Soft swell (water_normal1)" },
+    { L"textures/water_normal2.dds", "2 Soft chop (water_normal2)" },
+    { L"textures/water_normal3.dds", "3 Long streaks (water_normal3)" },
+    { L"textures/water_normal4.dds", "4 Fine chop (water_normal4)" },
+};
 
 // Sky + reflection cube maps a preset can pick. Sun directions were measured from each panorama
 // (tools/equirect_to_cube.ps1). The sunset sky was rotated so its sun sits at yaw 34.5 like
@@ -149,7 +166,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     // Command line:
     //   --capture <label>      save every preset x shot, then quit
     //   --debug <mode>         debug view used for the capture set
-    //   --normal-map <path>    normal map relative to assets/, tried before the default DDS
+    //   --normal-map <path>    extra normal map (relative to assets/), used for both layers
+    //   --normal-a / --normal-b <index>  normal map per layer (kNormalMaps), overrides the presets
     //   --shot <name>          start from a fixed camera shot (e.g. ocean_wide)
     //   --no-vsync             start uncapped (for FPS / GPU ms measurement)
     //   --capture-feature <f>  captures go to docs/features/<f>/captures (default water-polish)
@@ -171,6 +189,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--capture" && hasValue)    { captureLabelArg = argv[++i]; }
                 else if (arg == L"--debug" && hasValue)      { captureDebugMode_ = _wtoi(argv[++i]); }
                 else if (arg == L"--normal-map" && hasValue) { normalMapArg = argv[++i]; }
+                else if (arg == L"--normal-a" && hasValue)   { normalOverrideA_ = _wtoi(argv[++i]); }
+                else if (arg == L"--normal-b" && hasValue)   { normalOverrideB_ = _wtoi(argv[++i]); }
                 else if (arg == L"--shot" && hasValue)       { shotArg = argv[++i]; }
                 else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
                 else if (arg == L"--exposure" && hasValue)   { exposureOverrideEv_ = static_cast<float>(_wtof(argv[++i])); hasExposureOverride_ = true; }
@@ -210,40 +230,33 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     light_->SetDirection(0.0f, -1.0f, 1.0f);
     light_->SetDiffuseColor(1.0f, 1.0f, 1.0f, 1.0f);
 
-    normalMap_ = std::make_unique<Texture>();
     {
-        struct Attempt { std::wstring relPath; const char* label; };
-        std::vector<Attempt> attempts = {
-            { L"textures/water_normal.dds", "DDS" },
-            { L"textures/water_normal.png", "PNG" },
-            { L"textures/water_normal.jpg", "JPG" },
-        };
+        std::vector<std::pair<std::wstring, std::string>> files;
+        for (const NormalMapEntry& entry : kNormalMaps)
+        {
+            files.emplace_back(entry.file, entry.name);
+        }
         if (!normalMapArg.empty())
         {
-            attempts.insert(attempts.begin(), { normalMapArg, "--normal-map" });
+            files.emplace_back(normalMapArg, std::to_string(files.size()) + " --normal-map " + WideToUtf8(normalMapArg));
+            normalOverrideA_ = normalOverrideB_ = static_cast<int>(files.size()) - 1;
         }
         std::string statusLog;
-        bool loaded = false;
-        for (const auto& a : attempts)
+        for (const auto& [relPath, name] : files)
         {
-            const std::wstring path = GetAssetPath(a.relPath.c_str());
-            const std::string pathUtf8 = WideToUtf8(path);
+            auto texture = std::make_unique<Texture>();
+            const std::wstring path = GetAssetPath(relPath.c_str());
             std::wstring err;
-            if (normalMap_->Initialize(d3d_->GetDevice(), path.c_str(), &err))
+            if (!texture->Initialize(d3d_->GetDevice(), path.c_str(), &err))
             {
-                statusLog += std::string("[OK]   ") + a.label + " loaded -> " + pathUtf8 + "\n";
-                loaded = true;
-                break;
+                // A 1x1 flat tangent normal keeps the index valid and the shader path exercised.
+                texture->InitializeFlat(d3d_->GetDevice(), 128, 128, 255, 255);
+                statusLog += "[FAIL -> flat] " + WideToUtf8(err) + " " + WideToUtf8(path) + "\n";
             }
-            statusLog += std::string("[FAIL] ") + a.label + " " + WideToUtf8(err) + " -> " + pathUtf8 + "\n";
+            normalMaps_.push_back(std::move(texture));
+            normalMapNames_.push_back(name);
         }
-        if (!loaded)
-        {
-            // Fallback: 1x1 flat tangent normal so the shader path stays exercised.
-            normalMap_->InitializeFlat(d3d_->GetDevice(), 128, 128, 255, 255);
-            statusLog += "[FALLBACK] flat (128,128,255) - all sources failed\n";
-        }
-        normalMapStatus_ = statusLog;
+        normalMapStatus_ = statusLog; // empty = every map loaded
         OutputDebugStringA(("[NormalMap]\n" + statusLog).c_str());
     }
 
@@ -341,6 +354,9 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     ambientIntensity_ = preset.ambientIntensity;
     environmentIndex_ = std::clamp(preset.environment, 0, kEnvironmentCount - 1);
     exposureEv_ = hasExposureOverride_ ? exposureOverrideEv_ : preset.exposureEv;
+    const int lastNormalMap = static_cast<int>(normalMaps_.size()) - 1;
+    normalMapA_ = std::clamp(normalOverrideA_ >= 0 ? normalOverrideA_ : preset.normalMapA, 0, lastNormalMap);
+    normalMapB_ = std::clamp(normalOverrideB_ >= 0 ? normalOverrideB_ : preset.normalMapB, 0, lastNormalMap);
     water_ = preset.water;
 }
 
@@ -355,6 +371,8 @@ Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
     preset.ambientIntensity = ambientIntensity_;
     preset.environment = environmentIndex_;
     preset.exposureEv = exposureEv_;
+    preset.normalMapA = normalMapA_;
+    preset.normalMapB = normalMapB_;
     preset.water = water_;
     return preset;
 }
@@ -738,11 +756,11 @@ void Graphics::Shutdown()
         oceanGrid_.reset();
     }
 
-    if (normalMap_)
+    for (auto& normalMap : normalMaps_)
     {
-        normalMap_->Shutdown();
-        normalMap_.reset();
+        normalMap->Shutdown();
     }
+    normalMaps_.clear();
     light_.reset();
     camera_.reset();
 
@@ -926,7 +944,8 @@ bool Graphics::Render(float deltaTime)
         cameraPosWS,
         water_,
         environments_[environmentIndex_]->GetSRV(),
-        normalMap_->GetSRV(),
+        normalMaps_[normalMapA_]->GetSRV(),
+        normalMaps_[normalMapB_]->GetSRV(),
         d3d_->GetSampler(),
         d3d_->GetWrapSampler());
     d3d_->SetRasterizerDefault();
@@ -1190,6 +1209,21 @@ void Graphics::DrawImGuiPanel()
     ImGui::SliderFloat("Normal Scale (tile)", &water_.normalScale, 0.1f, 5.0f);
     ImGui::SliderFloat("Normal Strength", &water_.normalStrength, 0.0f, 3.0f);
     ImGui::SliderFloat("Detail Layer Scale (B / A)", &water_.detailScale, 1.0f, 6.0f);
+    const auto normalMapCombo = [this](const char* label, int& index) {
+        if (ImGui::BeginCombo(label, normalMapNames_[index].c_str()))
+        {
+            for (int i = 0; i < static_cast<int>(normalMapNames_.size()); ++i)
+            {
+                if (ImGui::Selectable(normalMapNames_[i].c_str(), i == index))
+                {
+                    index = i;
+                }
+            }
+            ImGui::EndCombo();
+        }
+    };
+    normalMapCombo("Normal Map A (broad)", normalMapA_);
+    normalMapCombo("Normal Map B (detail)", normalMapB_);
     ImGui::TextDisabled("Normal map UV scroll velocity (2 layers blended)");
     ImGui::SliderFloat("Layer A - U speed (per sec)", &water_.normalScroll1.x, -0.2f, 0.2f);
     ImGui::SliderFloat("Layer A - V speed (per sec)", &water_.normalScroll1.y, -0.2f, 0.2f);
@@ -1262,7 +1296,10 @@ void Graphics::DrawImGuiPanel()
     ImGui::SeparatorText("Debug View");
     const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
-    ImGui::TextWrapped("Normal Map Loader: %s", normalMapStatus_.c_str());
+    if (!normalMapStatus_.empty())
+    {
+        ImGui::TextWrapped("Normal map load failed:\n%s", normalMapStatus_.c_str());
+    }
 
     ImGui::End();
 }

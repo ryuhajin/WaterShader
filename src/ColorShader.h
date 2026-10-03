@@ -65,7 +65,8 @@ public:
         const DirectX::XMFLOAT4& cameraPositionWS,
         const WaterParams& water,
         ID3D11ShaderResourceView* cubemapSRV,
-        ID3D11ShaderResourceView* normalSRV,
+        ID3D11ShaderResourceView* normalSRVA, // layer A (t1)
+        ID3D11ShaderResourceView* normalSRVB, // layer B (t2)
         ID3D11SamplerState* clampSampler,
         ID3D11SamplerState* wrapSampler);
 
@@ -89,7 +90,8 @@ private:
         const DirectX::XMFLOAT4& cameraPositionWS,
         const WaterParams& water,
         ID3D11ShaderResourceView* cubemapSRV,
-        ID3D11ShaderResourceView* normalSRV,
+        ID3D11ShaderResourceView* normalSRVA, // layer A (t1)
+        ID3D11ShaderResourceView* normalSRVB, // layer B (t2)
         ID3D11SamplerState* clampSampler,
         ID3D11SamplerState* wrapSampler);
 
