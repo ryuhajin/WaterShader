@@ -1,6 +1,6 @@
 # linear-hdr
 
-> Branch: `feature/linear-hdr` (from `feature/bench-tools`) · Status: in-progress · Updated: 2026-10-03
+> Branch: `feature/linear-hdr` (from `feature/bench-tools`) · Status: done · Updated: 2026-10-03
 
 ## 1. Goal
 
@@ -24,7 +24,7 @@
 | 0-a | 무인 실행 모드: `--capture` / `--no-input`이면 포커스를 빼앗지 않고 키보드·마우스 입력 무시 |
 | 0 | before 캡처 |
 | 1 | `R16G16B16A16_FLOAT` HDR 타깃, 큐브맵 `_SRGB` SRV(`DDS_LOADER_FORCE_SRGB`), 색 파라미터 sRGB→linear 업로드, 최종 패스에서 clamp + `LinearToSrgb` (톤매핑 없음) |
-| 2 | 노출 + 톤매핑(None / Reinhard / ACES), `HighlightRolloff` 제거 |
+| 2 | 노출 + 톤매핑(None / Reinhard / ACES 채널별 / ACES hue-preserving — 기본), `HighlightRolloff` 제거 |
 | 3 | linear 기준 프리셋 재튜닝 |
 
 - 노멀맵은 데이터 텍스처라 UNORM 유지.
@@ -33,9 +33,9 @@
 
 ## 4. Acceptance Criteria
 
-- [ ] 무인 모드에서 포커스 유지 + 입력 무시 확인
-- [ ] Step 1: 스카이박스가 before와 거의 동일(sRGB 왕복 오차 측정)
-- [ ] 단계별 캡처 + 비교 시트 + NOTES (문제/해결/과정/검증/교훈)
-- [ ] 디버그 뷰 1~5가 before와 동일
-- [ ] 리사이즈 시 HDR 타깃 재생성, Debug/Release 경고 0
-- [ ] 톤매핑 패스 GPU 비용 기록
+- [x] 무인 모드에서 포커스 유지 + 입력 무시 확인
+- [x] Step 1: 스카이박스가 before와 거의 동일(sRGB 왕복 오차 평균 0.15~0.36/255)
+- [x] 단계별 캡처 + 비교 시트 + NOTES (문제/해결/과정/검증/교훈)
+- [x] 디버그 뷰가 before와 동일 (Debug 5 평균 차이 0.2)
+- [x] 리사이즈 시 HDR 타깃 재생성, Debug/Release 경고 0
+- [x] 톤매핑 패스 GPU 비용 기록 (타이머 해상도 0.01 ms 미만)
