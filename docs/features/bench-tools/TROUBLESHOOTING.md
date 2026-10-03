@@ -61,6 +61,30 @@
 
 ---
 
+## F. 자동 캡처/측정 실행이 사용자 입력을 가로챔 (2026-10-03)
+
+**증상 (잠재)**
+- 캡처·스크린샷용으로 앱을 띄우는 동안 사용자가 다른 창에서 작업하면, 그 키보드·마우스 입력이 WaterShader로 들어갈 수 있었다. WASD → 카메라 이동, ESC → 즉시 종료, 드래그 → 판 회전. 캡처 구도가 틀어지거나 사용자 작업이 끊긴다.
+
+**원인**
+- `System::ShowWindowAfterInitialize`가 무조건 `SetForegroundWindow` + `SetFocus` → 실행될 때마다 **포커스를 빼앗음**.
+- 입력 필터가 없어서, 포커스를 받은 순간부터 모든 키보드·마우스 메시지가 ImGui와 `Input`으로 전달됨.
+
+**해결 — 무인 모드 (`--capture` 또는 `--no-input`)**
+- 창 생성 시 `WS_EX_NOACTIVATE`(클릭해도 활성화 안 됨), 표시 시 `SW_SHOWNOACTIVATE` + `HWND_BOTTOM`(다른 창 뒤로). `SetForegroundWindow`/`SetFocus` 호출 안 함.
+- `System::MessageHandler` 맨 앞에서 `WM_KEYFIRST~WM_KEYLAST`, `WM_MOUSEFIRST~WM_MOUSELAST`, `WM_INPUT`을 **ImGui·Input 둘 다에 전달하지 않고 버림**. `WM_CLOSE`, `WM_SIZE`, 비클라이언트 메시지는 정상 처리 → 스크립트가 창을 닫을 수 있음.
+- 캡처는 백버퍼를 직접 저장하고, 확인용 스크린샷은 `PrintWindow(PW_RENDERFULLCONTENT)`라서 창이 가려져 있어도 된다.
+
+**검증**
+- `--no-input`으로 실행 전후 `GetForegroundWindow()` 동일(앱이 전경이 된 적 없음).
+- 앱 창에 W 키 0.8초 + 좌·우클릭 드래그 메시지를 직접 보낸 뒤에도 카메라 `Pos (-1.04, 0.45, -1.59)`, 판 `Pitch 0 / Yaw 0` 그대로.
+- `WM_CLOSE`로 정상 종료(exit 0).
+
+**교훈**
+- 자동화 도구로 쓰는 프로그램은 "사람이 옆에서 다른 일을 하고 있다"를 전제로 해야 한다. 포커스 획득과 입력 처리는 실행 모드에 따라 끌 수 있어야 한다.
+
+---
+
 ## B. (8번) JPG 노멀맵 로드 실패 원인 — COM 초기화 가설 검증
 
 이전 기록(`water-normal-map/NOTES.md`)은 "Photoshop JPG의 Adobe APP14 마커 + ICC 프로필 때문에 WIC가 거부"로 추정했다.

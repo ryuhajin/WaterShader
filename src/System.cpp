@@ -7,7 +7,10 @@
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 
+#include <shellapi.h>
+
 #include <stdexcept>
+#include <string>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -31,6 +34,20 @@ System::~System() = default;
 
 bool System::Initialize(HINSTANCE instance)
 {
+    int argc = 0;
+    if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc))
+    {
+        for (int i = 1; i < argc; ++i)
+        {
+            const std::wstring arg = argv[i];
+            if (arg == L"--capture" || arg == L"--no-input")
+            {
+                unattended_ = true;
+            }
+        }
+        LocalFree(argv);
+    }
+
     try
     {
         if (!InitializeWindow(instance))
@@ -116,6 +133,17 @@ void System::Shutdown()
 
 LRESULT System::MessageHandler(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    // Unattended: drop client-area keyboard/mouse input before ImGui or Input can see it.
+    // Window management (WM_CLOSE, WM_SIZE, non-client messages) still goes through normally.
+    const bool isUserInput =
+        (message >= WM_KEYFIRST && message <= WM_KEYLAST) ||
+        (message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) ||
+        message == WM_INPUT;
+    if (unattended_ && isUserInput)
+    {
+        return 0;
+    }
+
     if (imguiContextCreated_ && ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam))
     {
         return 1;
@@ -202,7 +230,7 @@ bool System::InitializeWindow(HINSTANCE instance)
     const int posY = (GetSystemMetrics(SM_CYSCREEN) - windowHeight) / 2;
 
     hwnd_ = CreateWindowEx(
-        0,
+        unattended_ ? WS_EX_NOACTIVATE : 0, // clicking an unattended window must not activate it
         WINDOW_CLASS_NAME,
         WINDOW_TITLE,
         windowStyle,
@@ -225,6 +253,16 @@ bool System::InitializeWindow(HINSTANCE instance)
 
 void System::ShowWindowAfterInitialize()
 {
+    if (unattended_)
+    {
+        // Show without activating and put it behind the user's windows. Captures read the back
+        // buffer directly, so the window does not need to be visible on top.
+        ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+        SetWindowPos(hwnd_, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        UpdateWindow(hwnd_);
+        return;
+    }
+
     ShowWindow(hwnd_, SW_SHOW);
     UpdateWindow(hwnd_);
     SetForegroundWindow(hwnd_);

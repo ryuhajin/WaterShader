@@ -37,6 +37,10 @@ private:
     bool imguiContextCreated_ = false;
     bool imguiWin32Initialized_ = false;
 
+    // Unattended (--capture / --no-input): never take focus, never react to keyboard or mouse,
+    // so automated runs can't hijack whatever the user is typing elsewhere.
+    bool unattended_ = false;
+
     std::unique_ptr<Input> input_;
     std::unique_ptr<Timer> timer_;
     std::unique_ptr<Graphics> graphics_;
