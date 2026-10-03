@@ -109,13 +109,31 @@ struct Environment
     const char* name;
     float sunYawDeg;
     float sunElevationDeg;
+    bool hdr; // false: LDR sRGB-encoded (read through an *_SRGB view); true: BC6H linear radiance
+    // Measured from the .hdr by equirect_to_cube.ps1, already divided by pi (Lambert convention):
+    DirectX::XMFLOAT3 sunLight;     // sun irradiance normal to the sun / pi (0 = no visible disk)
+    DirectX::XMFLOAT3 ambientLight; // sky irradiance on an upward plane / pi (sun excluded)
+    float keyExposureEv;            // log-average luminance -> 0.18
 };
 
+// 0-2: LDR "Tonemapped JPG" skies (kept for LDR vs HDR comparison).
+// 3-5: the same Poly Haven skies from the .hdr originals (BC6H_UF16, measured by equirect_to_cube.ps1).
+//      The HDR sunset is rotated by its real radiance peak (yaw 64 in the source), the LDR one by the
+//      centroid of its clipped glow (yaw 103.8) - the clipped JPG had pointed ~40 deg off.
 constexpr Environment kEnvironments[] = {
-    { L"textures/skybox.dds",          "Meadow dusk (overcast)",                   34.5f,  4.0f },
-    { L"textures/env_sunset_fire.dds", "Sunset sea (PH: the_sky_is_on_fire)",      34.5f,  6.4f },
-    { L"textures/env_beach_day.dds",   "Beach day (PH: spiaggia_di_mondello)",    236.4f, 25.3f },
+    { L"textures/skybox.dds",              "LDR Meadow dusk",                       34.5f,  4.0f, false, {}, {}, 0.0f },
+    { L"textures/env_sunset_fire.dds",     "LDR Sunset sea (the_sky_is_on_fire)",   34.5f,  6.4f, false, {}, {}, 0.0f },
+    { L"textures/env_beach_day.dds",       "LDR Beach day (spiaggia_di_mondello)", 236.4f, 25.3f, false, {}, {}, 0.0f },
+    { L"textures/env_meadow_hdr.dds",      "HDR Meadow dusk (grasslands_sunset)",   34.5f,  3.3f, true,
+      {0.4223f, 0.0803f, 0.0101f}, {1.0182f, 1.2756f, 1.6360f}, -0.96f },
+    { L"textures/env_sunset_fire_hdr.dds", "HDR Sunset sea (the_sky_is_on_fire)",   34.5f,  4.0f, true,
+      {0.0f, 0.0f, 0.0f},          {0.8992f, 0.7332f, 1.0624f}, -0.27f },
+    { L"textures/env_beach_day_hdr.dds",   "HDR Beach day (spiaggia_di_mondello)", 236.4f, 25.2f, true,
+      {1.6680f, 1.7421f, 1.4529f}, {0.1819f, 0.3168f, 0.6009f}, -0.81f },
 };
+
+// Real sun: angular radius ~0.2665 deg.
+constexpr float kSunAngularRadiusDeg = 0.2665f;
 constexpr int kEnvironmentCount = static_cast<int>(std::size(kEnvironments));
 
 constexpr float kCaptureTime = 12.0f;
@@ -252,7 +270,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         auto cubemap = std::make_unique<CubemapTexture>();
         const std::wstring cubemapPath = GetAssetPath(env.file);
         std::wstring cubemapError;
-        if (!cubemap->Initialize(d3d_->GetDevice(), cubemapPath.c_str(), &cubemapError))
+        if (!cubemap->Initialize(d3d_->GetDevice(), cubemapPath.c_str(), !env.hdr, &cubemapError))
         {
             const std::wstring msg = cubemapPath + L"\n\n" + cubemapError;
             MessageBoxW(hwnd, msg.c_str(), L"WaterShader: cubemap load failed", MB_ICONERROR | MB_OK);
@@ -872,11 +890,19 @@ bool Graphics::Render(float deltaTime)
     {
         d3d_->SetDepthLessEqual();
         skybox_->Render(d3d_->GetDeviceContext());
+        // Analytic sun disk for HDR skies (their sun was cut out of the texture). Radiance = irradiance /
+        // solid angle of the disk; lightColor holds E/pi, so E = pi * light.
+        const float cosSunRadius = cosf(XMConvertToRadians(kSunAngularRadiusDeg));
+        const float sunSolidAngle = XM_2PI * (1.0f - cosSunRadius);
+        const XMFLOAT4 sunLightLinear = SrgbToLinear(lightColorPacked);
+        const float sunRadianceScale = kEnvironments[environmentIndex_].hdr ? XM_PI * lightIntensity_ / sunSolidAngle : 0.0f;
         skyboxShader_->Render(
             d3d_->GetDeviceContext(),
             skybox_->GetIndexCount(),
             viewNoTrans,
             projection,
+            XMFLOAT4(-lightDir.x, -lightDir.y, -lightDir.z, cosSunRadius),
+            XMFLOAT4(sunLightLinear.x * sunRadianceScale, sunLightLinear.y * sunRadianceScale, sunLightLinear.z * sunRadianceScale, 0.0f),
             environments_[environmentIndex_]->GetSRV(),
             d3d_->GetSampler());
         d3d_->SetDepthDefault();
@@ -1100,6 +1126,18 @@ void Graphics::DrawImGuiPanel()
     ImGui::SliderFloat("Sun Elevation (deg)", &sunElevationDeg_, 0.0f, 90.0f);
     const Environment& currentEnv = kEnvironments[environmentIndex_];
     ImGui::TextDisabled("Sky sun: yaw %.1f, elevation %.1f", currentEnv.sunYawDeg, currentEnv.sunElevationDeg);
+    ImGui::BeginDisabled(!currentEnv.hdr);
+    if (ImGui::Button("Calibrate Lights From Sky"))
+    {
+        // Sun direction, sun light, ambient and exposure as measured from the HDR sky.
+        sunYawDeg_ = currentEnv.sunYawDeg;
+        sunElevationDeg_ = currentEnv.sunElevationDeg;
+        SplitLinearLight(currentEnv.sunLight, lightColor_, lightIntensity_);
+        SplitLinearLight(currentEnv.ambientLight, ambientColor_, ambientIntensity_);
+        exposureEv_ = currentEnv.keyExposureEv;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
     if (ImGui::Button("Match Skybox Sun"))
     {
         sunYawDeg_ = currentEnv.sunYawDeg;

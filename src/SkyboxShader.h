@@ -19,6 +19,8 @@ public:
         int indexCount,
         const DirectX::XMMATRIX& viewNoTranslation,
         const DirectX::XMMATRIX& projection,
+        const DirectX::XMFLOAT4& sunDirection,   // xyz toward the sun, w = cos(angular radius)
+        const DirectX::XMFLOAT4& sunRadiance,    // linear rgb, 0 = no analytic disk
         ID3D11ShaderResourceView* cubemapSRV,
         ID3D11SamplerState* sampler);
 

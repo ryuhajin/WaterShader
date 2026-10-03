@@ -1,6 +1,6 @@
 # hdr-env
 
-> Branch: `feature/hdr-env` (from `feature/linear-hdr`) · Status: in-progress · Updated: 2026-10-03
+> Branch: `feature/hdr-env` (from `feature/linear-hdr`) · Status: done · Updated: 2026-10-03
 
 ## 1. Goal
 
@@ -20,8 +20,8 @@
 
 ## 3. Acceptance Criteria
 
-- [ ] Capture Set 버튼: 확인 단계 + 기존 폴더를 덮어쓰지 않음
-- [ ] HDR 변환 도구 + BC6H 큐브맵 3종, 로더가 HDR은 sRGB 변환 없이 읽음
-- [ ] 단계별 캡처 + 비교 시트 + NOTES (문제/해결/과정/검증/교훈)
-- [ ] 조명 보정값(태양·ambient)을 HDR에서 측정해 기록
-- [ ] Debug/Release 경고 0, 성능 기록
+- [x] Capture Set 버튼: 확인 단계 + 기존 폴더를 덮어쓰지 않음 (팝업은 수동 확인 필요)
+- [x] HDR 변환 도구 + BC6H 큐브맵 3종, 로더가 HDR은 sRGB 변환 없이 읽음
+- [x] 단계별 캡처 + 비교 시트 + NOTES (문제/해결/과정/검증/교훈)
+- [x] 조명 보정값(태양·ambient)을 HDR에서 측정해 기록 + 태양 분리(중복 계산 제거)
+- [x] Debug/Release 경고 0, 성능 기록

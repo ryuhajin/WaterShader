@@ -4,7 +4,7 @@
 
 #include <cstdio>
 
-bool CubemapTexture::Initialize(ID3D11Device* device, const wchar_t* ddsPath, std::wstring* outError)
+bool CubemapTexture::Initialize(ID3D11Device* device, const wchar_t* ddsPath, bool srgb, std::wstring* outError)
 {
     // Sky textures hold sRGB-encoded colors (photos). FORCE_SRGB creates the *_SRGB view
     // (R8G8B8A8_UNORM_SRGB / BC7_UNORM_SRGB), so the sampler decodes to linear before filtering
@@ -17,7 +17,7 @@ bool CubemapTexture::Initialize(ID3D11Device* device, const wchar_t* ddsPath, st
         D3D11_BIND_SHADER_RESOURCE,
         0,
         0,
-        DirectX::DDS_LOADER_FORCE_SRGB,
+        srgb ? DirectX::DDS_LOADER_FORCE_SRGB : DirectX::DDS_LOADER_DEFAULT,
         nullptr,
         srv_.GetAddressOf());
 
