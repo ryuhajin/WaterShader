@@ -98,7 +98,7 @@ WaterShader/
 
 ## 향후 계획
 
-- **Foam mask**: 파도 마루의 흰 거품 (`feature/foam-mask` 브랜치에서 진행 중)
+- **Foam mask**: 파도 마루의 흰 거품
 - **Waterfall**: 폭포 리본 메시와 가장자리 거품
 - **Ripple SDF**: 시간에 따라 퍼지는 원형 물결
 - **UE5 포팅**
