@@ -134,7 +134,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // Plane TBN: tangent = world X, bitangent = world Z, normal = vertex normal (+ far-field wave slopes).
     FarWaves farWaves = EvaluateFarWaves(input.restPosLocal);
     float farWaveNormals = g_SurfaceParams.w; // 0 = off: no far normals, no roughness (renders as before)
-    float slopeVariance = farWaves.slopeVariance * farWaveNormals;
+    float slopeVariance = farWaves.slopeVariance * farWaveNormals * g_FarParams.x; // Light window "Far spread"
     float3 baseNormalWS = normalize(input.normalWS + farWaveNormals * mul(farWaves.normalDelta, (float3x3)g_World));
     float3 tangentWS  = normalize(mul(float3(1, 0, 0), (float3x3)g_World));
     float3 bitangentWS  = normalize(mul(float3(0, 0, 1), (float3x3)g_World));

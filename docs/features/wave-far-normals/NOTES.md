@@ -164,3 +164,17 @@
   - 해를 향한 샷: 흐림 있을 때보다 하얀 띠가 크게 줄었다.
 - **남은 점:** 이전 Basic 값(Wave 4가 가파름)으로 해를 향한 수평선(`captures/horizon_steps_step4_basic_ocean_wide.jpg`)은 흐림을 빼도 하얗게 번진다. 남은 하얀 띠는 글린트 확산에서 온다. 격자·모아레는 생기지 않았다.
 - 비교 시트 `compare/*.jpg`: before / step1 / step2 / step3 / step3b_uvfix / step4_no-blur (`ocean_away`는 step3b부터)
+
+## Far spread — 원경 글린트 확산 세기 (Light 창)
+
+- 사용자 요청: 태양이 수평선에 걸린 장면을 연출할 때 원경 반짝임 띠의 폭을 조절하고 싶다.
+- Light 창 Sun Glint 섹션의 기존 `Sharpness`와 `Strength`는 근경과 원경에 똑같이 적용된다. 그래서 원경에서만 넓어지는 정도를 조절하는 **`Far spread`**(0~3)를 추가했다.
+  - 해상도보다 작은 파도의 기울기 분산 σ²에 곱하는 배율이다. 1 = 물리값, 0 = 확산 없음(날카로운 글린트), 1보다 크면 반짝임 띠가 더 넓어진다.
+  - 프리셋 키는 `farGlintSpread`다(없으면 1). cbuffer에 `g_FarParams.x`를 추가했다.
+- **회귀:** 기본값 1에서 Sunset과 Tropical은 이전 캡처와 픽셀 차이 0이다. Basic은 사용자가 그 사이 프리셋을 다시 저장해서 비교에서 제외했다.
+- **데모:** `captures/far_spread_sunset_horizon.jpg`. 데모를 위해 Sunset 태양 세기를 1.2로 올린 임시 프리셋을 썼고, 태양은 고도 4°의 수평선에 있다. 0 / 1 / 2.5 순으로 수평선을 따라 반짝임 띠가 넓어진다.
+- **참고 — Sunset에 태양이 안 보이는 이유:** Sunset 프리셋의 태양 `Intensity`가 0이다(커밋 `09dba1b`부터). 원반과 글린트 모두 이 값에 비례한다. HDR 노을 하늘은 사진 속 태양을 잘라냈기 때문에 태양이 전혀 보이지 않는다.
+- **참고 — Basic이 가장 하얗게 번지는 이유** (해를 향한 `ocean_wide` 원경 띠의 밝기):
+  - 고정 샷에서 태양이 화면 앞에 오는 프리셋은 Basic뿐이다. Sunset은 태양 세기가 0이고, Tropical은 태양이 카메라 뒤에 있다.
+  - Basic의 노출이 +0.07 EV로 가장 높다(Tropical −0.81, Sunset −1.2). **노출만 −0.81로 낮추면 흰 픽셀 비율이 18%에서 0%가 됐다.**
+  - 그 밖에 Glint Strength 1.5, F0 0.103, 상대적으로 큰 σ²(0.022 vs 0.012)와 낮은 Sharpness(362)도 번짐을 키운다.

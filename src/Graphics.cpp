@@ -96,6 +96,7 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
 {
     fn("sunGlintPower", preset.water.sunGlintPower);
     fn("sunGlintIntensity", preset.water.sunGlintIntensity);
+    fn("farGlintSpread", preset.water.farGlintSpread);
     fn("fresnelF0", preset.water.fresnelF0);
     fn("normalStrength", preset.water.normalStrength);
     fn("detailScale", preset.water.detailScale);
@@ -1461,6 +1462,8 @@ void Graphics::DrawLightWindow()
     ImGui::SliderFloat("Sharpness", &water_.sunGlintPower, 64.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
     ImGui::SliderFloat("Strength", &water_.sunGlintIntensity, 0.0f, 5.0f, "%.2f");
     ImGui::TextDisabled("Strength 1 = physically based");
+    ImGui::SliderFloat("Far spread", &water_.farGlintSpread, 0.0f, 3.0f, "%.2f");
+    ImGui::TextDisabled("How much far, unresolved waves widen the glint\n(1 = physical, 0 = sharp, >1 = wider glitter\npath, e.g. a sun on the horizon)");
 
     ImGui::SeparatorText("Ambient (light from the whole sky)");
     ImGui::ColorEdit3("Color##ambient", &ambientColor_.x);

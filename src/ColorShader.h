@@ -36,6 +36,7 @@ public:
         float specularSharpness  = 64.0f;
         float sunGlintPower      = 800.0f;  // reflect(-V, N) vs sun direction lobe
         float sunGlintIntensity  = 12.0f;   // HDR multiplier, >1 so glints survive the rolloff
+        float farGlintSpread     = 1.0f;    // scales the far-field slope variance that widens the glint (1 = physical)
         float fresnelF0          = 0.5f;    // reflectance at normal incidence (water ~0.02)
         float normalStrength     = 1.0f;    // tangent-space XY multiplier
         float detailScale        = 1.0f;    // layer B tiling relative to layer A
