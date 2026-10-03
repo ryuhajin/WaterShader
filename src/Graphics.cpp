@@ -77,6 +77,9 @@ constexpr CaptureShot kCaptureShots[] = {
     { "sunward",       { -1.04f, 0.45f, -1.59f }, { 12.0f, 33.0f, 0.0f }, 60.0f, false },
     { "ocean_sunward", { -0.90f, 0.55f, -1.40f }, {  6.0f, 34.5f, 0.0f }, 55.0f, true  },
     { "ocean_wide",    {  0.00f, 1.60f, -3.00f }, { 14.0f, 10.0f, 0.0f }, 60.0f, true  },
+    // Back to the yaw-34.5 sun (Basic / Sunset): sky and shore reflections without the glint.
+    // (Tropical's sun sits at yaw 236.4, so there this one looks toward it.)
+    { "ocean_away",    {  0.00f, 1.60f,  0.00f }, {  8.0f, 214.5f, 0.0f }, 60.0f, true  },
 };
 
 // Startup / Reset Camera framing: the step2_sun_glint "sunward" shot (bench plane, glint visible).

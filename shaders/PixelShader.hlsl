@@ -19,9 +19,11 @@ float4 DebugOut(float3 value)
 //   pixel  - the mesh LOD dropped the wave but a pixel still resolves it: its slope is added here per
 //            pixel, so lit crests keep following the wind (weight = (1 - vertex fade) * pixel fade).
 //   rough  - too small for a pixel: drawing it as crests only aliases (moire, lattice of crossing waves),
-//            so its slope becomes variance instead and widens the glint and blurs the reflection, the way
+//            so its slope becomes variance instead and widens the glint (energy-normalized), the way
 //            unresolved waves look on a real sea (Bruneton et al. 2010, "seamless transitions from
-//            geometry to BRDF"; same idea as Toksvig / LEAN mapping).
+//            geometry to BRDF"; same idea as Toksvig / LEAN mapping). The sky reflection is not
+//            blurred by it: blurring through the cube mips erased the shore and sky reflections at
+//            the horizon (wave-far-normals NOTES, step4).
 // The pixel band ends early (16 -> 8 px per wavelength): at 4 -> 2 px the four crossing sine stripes read
 // as a regular lattice and the glint turns them into moire.
 static const float kPixelFadeStart = 1.0 / 16.0; // footprint (wavelengths per pixel) where the fade starts
@@ -178,13 +180,6 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // Mirror it back into the sky instead (the ground is not really visible in a water reflection).
     float3 envLookupDirWS = float3(reflectionDirWS.x, abs(reflectionDirWS.y), reflectionDirWS.z);
     float3 reflectedSceneColor = SampleEnv(envLookupDirWS);
-    // Rough (unresolved) water reflects a blurred sky: the reflected ray spreads by about twice the
-    // slope deviation. The hardware mip is taken outside the branch (it needs derivatives).
-    float envAutoLod = EnvAutoLod(envLookupDirWS);
-    if (slopeVariance > 0.0)
-    {
-        reflectedSceneColor = SampleEnvBlurred(envLookupDirWS, 2.0 * sqrt(slopeVariance), envAutoLod);
-    }
 
     float reflectionAmount = saturate(reflectionByViewAngle * reflectionStrength);
     if (debugMode == 5) { return DebugOut(float3(diffuseAmount, specular, reflectionAmount)); }
