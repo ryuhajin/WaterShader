@@ -1,189 +1,145 @@
-# WaterShader — 스타일라이즈드 수면 HLSL 포트폴리오
+# WaterShader
 
-외부 머티리얼 그래프나 엔진 추상에 의존하지 않고 raw HLSL로 직접 작성한 셰이더. ImGui로 모든 파라미터를 실시간 조절 가능하며, hot reload로 셰이더 파일 저장 즉시 결과 확인.
+> DirectX 11과 HLSL로 만든 물 셰이더입니다.
 
----
+![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
+![DirectX 11](https://img.shields.io/badge/DirectX-11-107C10)
+![HLSL](https://img.shields.io/badge/HLSL-SM%205.0-5C2D91)
+![Windows](https://img.shields.io/badge/Windows-Win32-0078D6?logo=windows&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-3.24%2B-064F8C?logo=cmake&logoColor=white)
+![vcpkg](https://img.shields.io/badge/vcpkg-manifest-5C2D91)
 
-## 미리보기
+![태양 쪽을 바라본 수면 — 빛의 길과 HDR 하늘 반사](docs/images/hero.jpg)
 
-ImGui 패널에서 다음을 실시간 조절:
-- Lighting (방향/색/강도) · Camera (FOV/이동/회전속도) · Tint Color
-- Water — Fresnel power · Shallow/Deep color · Normal Scale · Layer A/B U/V scroll speed
-- Wave 0/1 — 방향/진폭/파장/속도
-- Debug View — Sampled normal map / World-space N / UV / (foam mask, crest factor — feature 브랜치)
+## 프로젝트 개요
 
----
+"물을 표현하기 위해선 어떤 기능이 필요할까?"에서 출발한 프로젝트입니다. 그동안 당연하게 보던 물의 모습을 하나하나 뜯어보게 됐고, 그중 핵심이라고 느낀 네 가지를 구현했습니다.
 
-## 구현된 기능 (마감 산출분)
+- **물의 질감** : 잔물결은 노멀맵 두 장을 서로 다른 크기와 방향으로 흘려 겹쳤습니다. 한 장만 쓸 때 보이는 반복 무늬도 함께 줄었습니다.
 
-### `feature/water-base`
-- **Sine wave 정점 변위** (2-layer) + **analytic normal 재계산** — 마루/골 방향 연속성 유지
-- **2-layer scrolling normal map** + plane 가정 TBN(T=worldX, B=worldZ)
-- **Fresnel 기반 cubemap reflection** — `lerp(litWater, env, fresnel * strength)`
-- **Shallow/Deep color** — NdotV 기반 깊이감
-- **양면 그리기 RasterizerState** — 단면 plane 아래에서도 보이도록
+- **물의 색과 반사** : 물은 내려다보면 속이 비치고, 수평에 가깝게 볼수록 하늘을 비춥니다. 프레넬(Fresnel) 효과로 보는 각도에 따라 이 둘의 비율이 바뀌게 했습니다.
 
-### `feature/water-normal-map`
-- water_normal.dds 자산 투입 (texconv BC4_UNORM 변환)
-- `.dds → .png → .jpg → flat` 다단계 폴백 텍스처 로더 + ImGui 진단 출력
-- **Debug 시각화 모드** — Sampled normal map / World-space N / UV 직접 출력으로 진단 시간 0
-- ImGui slider 분해 — `Normal Scroll 1/2` (Float2) → `Layer A/B - U/V speed (per sec)` (4개 분리)
+- **물의 모양** : 바다의 물은 위아래로만 움직이지 않고 작은 원을 그리며, 그래서 마루는 뾰족하고 골은 넓습니다. 이 움직임을 Gerstner 파도 여러 개로 겹쳐 표현했습니다.
 
-### 인프라
-- DirectX 11 + Win32 + ImGui + vcpkg manifest 통합
-- HLSL hot reload (200ms 폴링, 컴파일 에러는 ImGui 빨간 텍스트로 노출, 기존 셰이더 유지)
-- DirectXTK DDS/WIC 텍스처 로더, tinyobjloader OBJ
-- Cubemap + 인라인 cube skybox + LessEqual DSS
+- **빛** : 조명 값을 임의로 설정하지 않고 HDR 하늘에서 해의 방향, 색, 밝기와 주변광을 읽어 왔습니다. 하늘을 바꾸면 물에 닿는 빛도 함께 바뀝니다.
 
-### 추가 예정
-- `feature/foam-mask` — wave-crest whitecap. **코드 90% 완성**, 시각 검증 미진행. 자산 1장 제작 완료. (브랜치 보존)
-- `feature/water-specular` — Blinn-Phong specular (`git stash`에 작업분 보존)
-- `feature/water-detail-normal` — Macro + Detail 2-layer normal map (사실적 ocean 표준)
-- `feature/waterfall` — 폭포 ribbon 메시 + edge foam
-- `feature/color-presets` — 분위기 preset 2개
-- `feature/ripple-sdf`, `feature/ue5-port`
+## 스크린샷
 
-자세한 우선순위는 [`docs/ROADMAP.md`](docs/ROADMAP.md)의 **Post-deadline** 섹션 참고.
+| | |
+|---|---|
+| ![프리셋 비교](docs/images/presets.jpg) | ![2026-05 vs 2026-10](docs/images/before-after.jpg) |
+| **프리셋**: Basic / Sunset / Tropical (오션 그리드) | **업데이트 전후**: 2026-05 기존 버전 vs 2026-10 |
+| ![디버그 뷰](docs/images/debug-views.jpg) | ![설정 창 3개](docs/images/ui-panels.jpg) |
+| **디버그 뷰**: 최종 / 노멀맵 / 월드 법선 / 조명 항 | **설정 창**: View [1] · Light [2] · Water [3] |
 
----
+## 빌드와 실행
 
-## 빌드 & 실행
+**요구 환경**: Windows 10/11, Visual Studio 2022 (C++ 데스크톱 개발), CMake 3.24+, [vcpkg](https://github.com/microsoft/vcpkg) (manifest 모드)
 
-### 필요 도구
-- Windows 10/11
-- Visual Studio 2022 (Desktop development with C++)
-- CMake 3.24+
-- [vcpkg](https://github.com/microsoft/vcpkg) (manifest mode)
-
-### 의존성 (vcpkg manifest)
-- [DirectXTK](https://github.com/microsoft/DirectXTK) — DDS/WIC 텍스처 로더, math
-- [Dear ImGui](https://github.com/ocornut/imgui) — `win32-binding`, `dx11-binding`
-- [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader) — OBJ 파서
-
-### 빌드 절차
+**의존성** (`vcpkg.json`에서 자동 설치): [DirectXTK](https://github.com/microsoft/DirectXTK) (DDS/WIC 로더), [Dear ImGui](https://github.com/ocornut/imgui) (win32/dx11 바인딩), [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader) (OBJ 파서)
 
 ```powershell
-# vcpkg 환경 변수 (필요 시)
-$env:VCPKG_ROOT = "C:\path\to\vcpkg"
-
-# Configure (Debug 또는 Release)
-cmake -S . -B build/vs2022 -G "Visual Studio 17 2022" `
-      -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake"
-
-# Build
-cmake --build build/vs2022 --config Debug
-
-# Run
-./build/vs2022/Debug/WaterShader.exe
+git clone https://github.com/ryuhajin/WaterShader.git
+cd WaterShader
+$env:VCPKG_ROOT = "C:\path\to\vcpkg"      # vcpkg 설치 경로
+cmake --preset vs2022
+cmake --build --preset vs2022-debug       # Release는 vs2022-release
+.\build\vs2022\Debug\WaterShader.exe
 ```
 
-### Hot reload
+- 빌드 후 셰이더와 `assets/`가 실행 파일 옆으로 복사됩니다.
+- **핫 리로드**: `shaders/`의 `.hlsl`/`.hlsli`를 저장하면 200ms 안에 다시 컴파일합니다. Debug 빌드는 소스 `shaders/`와 `assets/`를 직접 쓰고, Release 빌드는 실행 파일 옆 복사본을 읽습니다.
+- Debug 빌드에서 `Save Current`를 누르면 저장소의 `assets/shader_presets.txt`가 바뀝니다.
 
-`shaders/*.hlsl` 또는 `*.hlsli` 파일을 저장하면 200ms 안에 자동 재컴파일 후 결과 즉시 반영. 컴파일 에러는 ImGui 패널 상단에 빨간 텍스트로 표시되며 기존 셰이더는 유지(검은 화면 안 됨).
+**명령줄 옵션** (캡처·측정용)
 
----
-
-## 컨트롤
-
-| 키 | 동작 |
+| 옵션 | 동작 |
 |---|---|
-| **W / S** | 카메라 전후 이동 |
-| **A / D** | 카메라 좌우 이동 |
-| **Q / E** | 카메라 상하 이동 |
-| **← → ↑ ↓** | 카메라 회전 (yaw / pitch) |
-| ImGui | 모든 셰이더 파라미터 실시간 조절 |
+| `--capture <label>` | 프리셋 3개 × 고정 샷 5개를 저장하고 종료 (무인 모드 포함) |
+| `--capture-feature <name>` | 저장 위치 `docs/features/<name>/captures/<label>/` |
+| `--debug <0-5>` | 캡처할 디버그 뷰 |
+| `--shot <name>` | 시작 카메라 샷 (`oblique`, `top`, `sunward`, `ocean_sunward`, `ocean_wide`) |
+| `--ui <view\|light\|water\|all>` | 설정 창을 연 상태로 시작 |
+| `--normal-a <i>` / `--normal-b <i>` | 레이어별 노멀맵을 프리셋 대신 지정 |
+| `--normal-map <path>` | 추가 노멀맵 파일(두 레이어에 적용) |
+| `--tonemap <none\|reinhard\|aces\|aces-hue>`, `--exposure <ev>` | 톤 커브·노출 덮어쓰기 |
+| `--no-vsync` | FPS 제한 해제 (성능 측정) |
+| `--no-input` | 무인 모드: 포커스를 가져가지 않고 키보드·마우스 입력을 무시 |
 
----
+## 조작
 
-## 아키텍처 한눈에
+| 입력 | 동작 |
+|---|---|
+| `W` / `S`, `A` / `D`, `E` / `Q` | 카메라 앞·뒤, 왼쪽·오른쪽, 위·아래 이동 |
+| `←` `→` / `↑` `↓` | 카메라 좌우 / 상하 회전 |
+| 마우스 왼쪽 드래그 | 벤치 평면 회전 (오션 그리드에서는 시점 회전) |
+| 마우스 오른쪽 드래그 | 시점 회전 |
+| `1` / `2` / `3` | View / Light / Water 설정 창 열기·닫기 |
+| `Esc` | 종료 |
 
-```text
-[ImGui] → Graphics::water_ → ColorShader::PerFrameCB → cbuffer b0
-                                                         │
-                                                ┌────────┴────────┐
-                                                ▼                 ▼
-                                        [VSMain]          [PSMain]
-                                  SineDisplace +     SampleWaterNormal +
-                                  analytic normal    Lambert + Fresnel +
-                                                     Cubemap reflection
+| 창 | 섹션 |
+|---|---|
+| **View Settings [1]** | Presets(Apply / Save Current), Camera, Camera Presets(고정 샷 5개 + 슬롯 4개), Scene(Ocean Grid, Skybox), Capture, Debug View |
+| **Light Settings [2]** | Sky / Environment(하늘 선택, Calibrate From Sky), Sun(방향·색·세기), Sun Glint, Ambient, Tonemapping(커브·노출) |
+| **Water Settings [3]** | Water Color, Reflection, Normal Map(레이어 A/B: 텍스처·크기·흐름), Waves(파도 4개: 방향·높이·길이·속도·뾰족함) |
 
-자산:  assets/textures/skybox.dds (Cubemap)
-       assets/textures/water_normal.dds (Normal map, BC4_UNORM)
-       assets/models/32x32Plane.obj (33×35 grid plane)
+좌측 상단 Stats에는 FPS, CPU/GPU 시간, VSync 토글, 단축키 안내가 표시됩니다.
 
-셰이더 포함관계:
-       Common.hlsli (cbuffer + PSInput)
-       ├── vertexShader.hlsl
-       └── PixelShader.hlsl
-            ├── Lighting.hlsli (Lambert, Fresnel)
-            └── Cubemap.hlsli  (TextureCube, SampleEnv)
-
-별도 셰이더: skybox.hlsl (자체 cbuffer b1)
-```
-
----
-
-## 폴더 구조
+## 프로젝트 구조
 
 ```text
-.
-├── shaders/            # HLSL (hot reload 지원)
-│   ├── Common.hlsli       # cbuffer + VSInput/PSInput 정의
-│   ├── Lighting.hlsli     # Lambert, FresnelSchlick
-│   ├── Cubemap.hlsli      # TextureCube + SampleEnv
-│   ├── vertexShader.hlsl  # SineDisplace + VSMain
-│   ├── PixelShader.hlsl   # SampleWaterNormal + PSMain
-│   └── skybox.hlsl        # 별도 skybox 셰이더
-├── src/                # C++ 엔진 (DirectX 11 + ImGui + 텍스처/메시 로드)
-├── assets/
-│   ├── models/         # OBJ
-│   └── textures/       # DDS/JPG/PNG
-├── docs/
-│   ├── CONVENTIONS.md  # 문서/브랜치 워크플로 규칙
-│   ├── OVERVIEW.md     # 프로젝트 목적/평가 포인트
-│   ├── ROADMAP.md      # 일자별 일정 + Post-deadline backlog
-│   └── features/       # feature 단위 SPEC + NOTES
-│       ├── dx11-setup/
-│       ├── shader-hot-reload/
-│       ├── asset-pipeline/
-│       ├── scene-lighting/
-│       ├── env-cubemap/
-│       ├── water-base/
-│       ├── water-normal-map/
-│       └── foam-mask/   # deferred — 코드는 feature/foam-mask 브랜치
-└── CMakeLists.txt
+WaterShader/
+├─ src/          # C++: D3D11·HDR 타깃, Graphics(UI·카메라·프리셋·캡처), 셰이더 래퍼(핫 리로드), GpuTimer, 로더
+├─ shaders/      # vertexShader, PixelShader, skybox, tonemap + 공용 헤더 Common/Lighting/Cubemap/Color.hlsli
+├─ assets/       # 벤치 평면 OBJ, 하늘(HDR BC6H)·노멀맵 5종 DDS, 프리셋·카메라 슬롯 txt
+├─ tools/        # equirect_to_cube.ps1 — 파노라마 → 큐브맵 DDS + 태양·하늘 측정
+└─ docs/         # 개요, 로드맵, 작업 규칙, 결정 기록, 기능별 SPEC/NOTES
 ```
 
----
+## 향후 계획
 
-## 워크플로
+- **Foam mask**: 파도 마루의 흰 거품 (`feature/foam-mask` 브랜치에서 진행 중)
+- **Waterfall**: 폭포 리본 메시와 가장자리 거품
+- **Ripple SDF**: 시간에 따라 퍼지는 원형 물결
+- **UE5 포팅**
 
-본 프로젝트는 **기능(feature) 단위 SPEC + 브랜치 워크플로**로 운영됩니다:
+## 구현 상세
 
-1. 새 기능 시작 시 `docs/features/_TEMPLATE/SPEC.md`를 복사해 `docs/features/<name>/SPEC.md` 작성 (4 필수 섹션)
-2. SPEC을 main에 doc-only commit
-3. `feature/<name>` 브랜치에서 구현
-4. 머지 시 `--no-ff`로 브랜치 흔적 보존, ROADMAP 항목 체크
-5. 폐기/연기 기능도 SPEC + NOTES + 브랜치 commit으로 시도 기록 보존
+```mermaid
+flowchart LR
+    UI[ImGui<br/>View · Light · Water] --> G[Graphics]
+    G --> CB[ColorShader<br/>PerFrameCB · b0]
+    CB --> VS[vertexShader.hlsl<br/>Gerstner 4파 + 해석적 법선]
+    VS --> PS[PixelShader.hlsl<br/>노멀맵 · 조명 · Fresnel · 글린트]
+    SKY[skybox.hlsl<br/>HDR 큐브맵 + 해석적 태양] --> HDR[HDR RT<br/>R16G16B16A16_FLOAT]
+    PS --> HDR
+    HDR --> TM[tonemap.hlsl<br/>노출 · 톤 커브 · sRGB]
+    TM --> BB[Back Buffer]
+    IMGUI[ImGui 렌더] --> BB
+```
 
-자세한 규칙은 [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) 참고.
+## 업데이트 내역
 
----
+2026-09 ~ 10에 진행한 버그 수정 12건과 퀄리티 업 7건은 [업데이트 내역](docs/CHANGELOG.md)에 증상·원인·해결과 기록 문서 링크로 정리했습니다.
+
+## 문서
+
+- [프로젝트 개요](docs/OVERVIEW.md) — 목적과 평가 포인트
+- [로드맵](docs/ROADMAP.md) — 일정, 완료 목록, 앞으로 할 일
+- [작업 규칙](docs/CONVENTIONS.md) — 문서 규칙과 기능 단위 브랜치 워크플로
+- [기술 결정 기록](docs/decisions.md)
+- [업데이트 내역](docs/CHANGELOG.md) — 버그 수정·퀄리티 업 기록
+- [기능별 SPEC / NOTES](docs/features/)
 
 ## 참고 자료
 
-- Schlick approximation (Fresnel) — Real-Time Rendering 4th, Ch. 9
+- Schlick approximation (Fresnel) — *Real-Time Rendering* 4th, Ch. 9
+- [GPU Gems Ch.1 — Effective Water Simulation from Physical Models](https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-1-effective-water-simulation-physical-models) (Gerstner 파도, 법선)
 - [Catlike Coding — Waves](https://catlikecoding.com/unity/tutorials/flow/waves/)
-- [GPU Gems Ch.1 — Effective Water Simulation](https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-1-effective-water-simulation-physical-models)
+- [Krzysztof Narkowicz — ACES Filmic Tone Mapping Curve](https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/)
 - [DirectXTK Wiki](https://github.com/microsoft/DirectXTK/wiki)
 
 ## 에셋 출처
 
 - **물 노멀맵** (`assets/textures/water_normal*.jpg`, 변환본 `.dds`) — [CADhatch Seamless Water Textures](https://www.cadhatch.com/seamless-water-textures) (무료 seamless 텍스처)
 - **하늘 HDRI** (`assets/textures/env_*.dds`) — [Poly Haven](https://polyhaven.com/hdris) (CC0): `belfast_farmhouse`, `grasslands_sunset`, `the_sky_is_on_fire`, `spiaggia_di_mondello`
-
----
-
-## 기술 스택
-
-`HLSL` · `DirectX 11` · `Win32` · `C++20` · `CMake` · `vcpkg` · `DirectXTK` · `Dear ImGui` · `tinyobjloader`
