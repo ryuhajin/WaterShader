@@ -1,6 +1,6 @@
 # basic-sky
 
-> Branch: `feature/basic-sky` (from `feature/hdr-env`) · Status: in progress · Updated: 2026-10-03
+> Branch: `feature/basic-sky` (from `feature/hdr-env`) · Status: done · Updated: 2026-10-03
 
 ## 1. Goal
 
@@ -21,7 +21,7 @@
 
 ## 3. Acceptance Criteria
 
-- [ ] 새 HDR 큐브맵 + 측정값(태양 방향·색·조도, ambient, key EV) 기록
-- [ ] Basic 프리셋이 새 하늘 사용, 반사에 붉은 기운 없음(수치로 확인)
-- [ ] before/after 캡처 + 비교 시트 + NOTES (문제/해결/과정/검증/교훈)
-- [ ] Debug/Release 경고 0
+- [x] 새 HDR 큐브맵 + 측정값(태양 방향·색·조도, ambient, key EV) 기록
+- [x] Basic 프리셋이 새 하늘 사용, 반사에 붉은 기운 없음(수치로 확인)
+- [x] before/after 캡처 + 비교 시트 + NOTES (문제/해결/과정/검증/교훈)
+- [x] Debug/Release 경고 0

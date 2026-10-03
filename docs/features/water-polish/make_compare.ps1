@@ -19,6 +19,8 @@ $outDir = Join-Path $Dir $Out
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
 $presets = @("basic", "sunset", "tropical")
+# A feature that only touches one preset keeps only that preset's captures; drop the empty rows.
+$presets = @($presets | Where-Object { $p = $_; $Steps | Where-Object { Test-Path (Join-Path $root "$_\$($p)_oblique.jpg") } })
 $shots = @("oblique", "top", "sunward", "ocean_sunward", "ocean_wide")
 $cellW = 480; $cellH = 270; $labelH = 28
 

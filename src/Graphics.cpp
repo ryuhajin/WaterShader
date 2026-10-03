@@ -130,6 +130,8 @@ constexpr Environment kEnvironments[] = {
       {0.0f, 0.0f, 0.0f},          {0.8992f, 0.7332f, 1.0624f}, -0.27f },
     { L"textures/env_beach_day_hdr.dds",   "HDR Beach day (spiaggia_di_mondello)", 236.4f, 25.2f, true,
       {1.6680f, 1.7421f, 1.4529f}, {0.1819f, 0.3168f, 0.6009f}, -0.81f },
+    { L"textures/env_field_day_hdr.dds",   "HDR Field day (belfast_farmhouse)",     34.5f, 21.6f, true,
+      {3.4202f, 3.1902f, 2.6979f}, {0.1512f, 0.2329f, 0.3562f},  0.15f },
 };
 
 // Real sun: angular radius ~0.2665 deg.
@@ -1144,7 +1146,7 @@ void Graphics::DrawImGuiPanel()
         sunElevationDeg_ = currentEnv.sunElevationDeg;
     }
     ImGui::ColorEdit3("Light Color", &lightColor_.x);
-    ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 3.0f);
+    ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 5.0f);
     ImGui::SliderFloat("Specular Strength", &water_.specularStrength, 0.0f, 2.0f);
     ImGui::SliderFloat("Specular Sharpness", &water_.specularSharpness, 16.0f, 256.0f);
     ImGui::SliderFloat("Sun Glint Power", &water_.sunGlintPower, 64.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
