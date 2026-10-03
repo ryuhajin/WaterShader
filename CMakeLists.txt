@@ -98,6 +98,9 @@ add_custom_command(TARGET WaterShader POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${SHADER_SOURCE_DIR}/Color.hlsli"
         "${SHADER_OUTPUT_DIR}/Color.hlsli"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_SOURCE_DIR}/Waves.hlsli"
+        "${SHADER_OUTPUT_DIR}/Waves.hlsli"
 )
 
 set(ASSETS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")

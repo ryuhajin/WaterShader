@@ -167,6 +167,7 @@ bool ColorShader::InitializeShader(ID3D11Device* device)
         {GetShaderPath(L"Lighting.hlsli"), {}},
         {GetShaderPath(L"Cubemap.hlsli"),  {}},
         {GetShaderPath(L"Color.hlsli"),    {}},
+        {GetShaderPath(L"Waves.hlsli"),    {}},
     };
 
     D3D11_BUFFER_DESC cbDesc = {};
@@ -355,7 +356,7 @@ void ColorShader::RenderShader(
             water.fresnelF0,
             water.normalStrength,
             water.detailScale,
-            0.0f);
+            water.farWaveNormals);
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 

@@ -2,6 +2,7 @@
 #include "Lighting.hlsli"
 #include "Cubemap.hlsli"
 #include "Color.hlsli"
+#include "Waves.hlsli"
 
 // Water-only resources. Cubemap.hlsli already reserves t0/s0; do not reuse here.
 Texture2D    g_NormalMap     : register(t1); // layer A
@@ -11,6 +12,54 @@ SamplerState g_NormalSampler : register(s1);
 float4 DebugOut(float3 value)
 {
     return float4(SrgbToLinear(saturate(value)), 1.0);
+}
+
+// Far-field wave slopes. The vertex shader fades each Gerstner wave out with distance (its height and
+// its normal together), so far water would only show the normal maps, whose stripes follow the texture
+// instead of the wind. Here the same waves add back the slope the mesh dropped, (1 - vertex fade),
+// evaluated per pixel, so the lighting keeps the wind-driven crests out to where a wave shrinks to
+// 8 -> 4 px. (Fading at the 2 px Nyquist limit left high-contrast moire at the horizon: the sun glint
+// and Fresnel react sharply to the normal.) Same terms as AccumulateGerstnerWave with fade = w:
+// q·kA = steepness·w / WAVE_COUNT. Returns the (local-space) normal delta to add to the vertex normal.
+float3 FarWaveNormalDelta(float3 restPosLocal, out float vertexWeight, out float pixelWeight)
+{
+    float3 restPosWS = mul(float4(restPosLocal, 1.0), g_World).xyz;
+    float viewDistance = length(restPosWS.xz - g_CameraPositionWS.xz);
+    // Screen-space derivatives outside the loop (not inside data-dependent branches).
+    float2 dx = ddx(restPosLocal.xz);
+    float2 dy = ddy(restPosLocal.xz);
+
+    float3 delta = 0.0;
+    vertexWeight = 0.0;
+    pixelWeight = 0.0;
+    float activeWaves = 0.0;
+
+    [unroll]
+    for (int i = 0; i < WAVE_COUNT; ++i)
+    {
+        WaveParams wave = g_Waves[i];
+        if (wave.amplitude <= 0.0f || wave.wavelength <= 0.0f) continue;
+
+        float vertexFade = WaveVertexFade(wave.wavelength, viewDistance);
+        // How many wavelengths one pixel spans along the travel direction: crests running toward the
+        // camera stay resolvable much farther than crests running across the view.
+        float footprint = max(abs(dot(dx, wave.direction)), abs(dot(dy, wave.direction))) / wave.wavelength;
+        float w = (1.0 - vertexFade) * (1.0 - smoothstep(0.125, 0.25, footprint));
+
+        float waveNumber = 6.2831853 / wave.wavelength;
+        float phase = dot(wave.direction, restPosLocal.xz) * waveNumber - waveNumber * wave.speed * g_WaterParams.x;
+        float kA = waveNumber * wave.amplitude * w;
+        delta.xz -= wave.direction * kA * cos(phase);
+        delta.y  -= wave.steepness * w / WAVE_COUNT * sin(phase);
+
+        vertexWeight += vertexFade;
+        pixelWeight += w;
+        activeWaves += 1.0;
+    }
+
+    vertexWeight /= max(activeWaves, 1.0);
+    pixelWeight /= max(activeWaves, 1.0);
+    return delta;
 }
 
 // SV_IsFrontFace = rasterizer stage에서 결정되는 system value. 픽셀이 front face에 속하면 true.
@@ -39,8 +88,11 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float3 blendedNormalTS = float3((n1.xy + n2.xy) * normalStrength, n1.z * n2.z);
     blendedNormalTS = normalize(blendedNormalTS);
 
-    // Plane TBN: tangent = world X, bitangent = world Z, normal = vertex normal.
-    float3 baseNormalWS = normalize(input.normalWS);
+    // Plane TBN: tangent = world X, bitangent = world Z, normal = vertex normal (+ far-field wave slopes).
+    float vertexWaveWeight, pixelWaveWeight;
+    float3 farWaveDelta = FarWaveNormalDelta(input.restPosLocal, vertexWaveWeight, pixelWaveWeight);
+    float farWaveNormals = g_SurfaceParams.w;
+    float3 baseNormalWS = normalize(input.normalWS + farWaveNormals * mul(farWaveDelta, (float3x3)g_World));
     float3 tangentWS  = normalize(mul(float3(1, 0, 0), (float3x3)g_World));
     float3 bitangentWS  = normalize(mul(float3(0, 0, 1), (float3x3)g_World));
     float3 finalNormalWS  = normalize(blendedNormalTS.x * tangentWS + blendedNormalTS.y * bitangentWS + blendedNormalTS.z * baseNormalWS);
@@ -51,6 +103,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // 2 = final world-space normal
     // 3 = mesh UV
     // 4 = front/back face
+    // 6 = wave LOD: R = mesh (vertex) wave weight, G = pixel-shader wave weight (avg over waves)
     // Debug values are data, not light: DebugOut pre-decodes them so the final LinearToSrgb in the
     // tonemap pass (forced to "no tone curve" while debugging) gives back exactly these numbers.
     int debugMode = (int)g_DebugParams.x;
@@ -58,6 +111,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     if (debugMode == 2) { return DebugOut(finalNormalWS * 0.5 + 0.5); }
     if (debugMode == 3) { return DebugOut(float3(frac(input.uv), 0.0)); }
     if (debugMode == 4) { return DebugOut(isFrontFace ? float3(0.1, 0.9, 0.2) : float3(0.9, 0.1, 0.1)); }
+    if (debugMode == 6) { return DebugOut(float3(vertexWaveWeight, pixelWaveWeight * farWaveNormals, 0.0)); }
 
     float3 viewDirWS = normalize(g_CameraPositionWS.xyz - input.worldPos);
     float  viewFacingAmount = saturate(dot(finalNormalWS, viewDirWS));

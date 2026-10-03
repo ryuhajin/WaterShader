@@ -181,6 +181,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --capture-feature <f>  captures go to docs/features/<f>/captures (default water-polish)
     //   --tonemap <none|reinhard|aces|aces-hue>  tone curve for this run
     //   --exposure <ev>        overrides every preset's exposure (operator comparisons)
+    //   --far-waves <on|off>   pixel-shader wave slopes past the mesh wave fade (default on)
     std::wstring captureLabelArg;
     std::wstring normalMapArg;
     std::wstring shotArg;
@@ -208,6 +209,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                     showWaterWindow_ = ui == L"water" || ui == L"all";
                 }
                 else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
+                else if (arg == L"--far-waves" && hasValue)  { farWaveNormals_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--exposure" && hasValue)   { exposureOverrideEv_ = static_cast<float>(_wtof(argv[++i])); hasExposureOverride_ = true; }
                 else if (arg == L"--tonemap" && hasValue)
                 {
@@ -971,6 +973,7 @@ bool Graphics::Render(float deltaTime)
     }
 
     d3d_->SetRasterizerWaterSurface();
+    water_.farWaveNormals = farWaveNormals_ ? 1.0f : 0.0f; // a renderer switch, not part of the presets
     Model* waterMesh = oceanMode_ ? oceanGrid_.get() : model_.get();
     waterMesh->Render(d3d_->GetDeviceContext());
     colorShader_->Render(
@@ -1328,7 +1331,7 @@ void Graphics::DrawViewWindow()
     }
 
     ImGui::SeparatorText("Debug View");
-    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)" };
+    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
     const std::string& shaderError = colorShader_->GetLastError();
     if (!shaderError.empty())
@@ -1498,6 +1501,7 @@ void Graphics::DrawWaterWindow()
     // Gerstner waves move the mesh vertices. The presets order them big -> small.
     ImGui::SeparatorText("Waves (geometry)");
     ImGui::TextDisabled("Moving swells that shape the mesh. Arrow = travel\ndirection as seen from the camera (up = away).");
+    ImGui::Checkbox("Far waves (lighting only past the mesh fade)", &farWaveNormals_);
 
     // Simple: six values generate all four waves (WaveMacro.h). Advanced edits stay until one of
     // these moves; whether they still match is recomputed every frame instead of stored.

@@ -147,6 +147,7 @@ private:
     bool oceanMode_ = false;
     ColorShader::WaterParams water_;
     WaveMacro waveMacro_; // Simple wave sliders; moving one regenerates water_.waves
+    bool farWaveNormals_ = true; // --far-waves off / Water window checkbox
     std::string normalMapStatus_;
     std::array<ShaderPreset, 3> presets_{};
 

@@ -46,7 +46,8 @@ public:
             { { 0.574f,  0.819f}, 0.010f, 0.62f, 0.35f, 0.65f },
             { { 0.766f, -0.643f}, 0.006f, 0.41f, 0.28f, 0.70f },
         };
-        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face, 5=lighting terms
+        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face, 5=lighting terms, 6=wave LOD
+        float farWaveNormals = 1.0f; // 1 = pixel shader adds the wave slopes the mesh LOD faded out
     };
 
     bool Initialize(ID3D11Device* device);

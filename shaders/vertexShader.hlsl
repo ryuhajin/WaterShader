@@ -1,6 +1,5 @@
 #include "Common.hlsli"
-
-#define WAVE_COUNT 4
+#include "Waves.hlsli"
 
 // Gerstner wave: the vertex moves in a circle instead of only up/down.
 // steepness(Q) = 0 is the old sine wave; larger Q pulls vertices toward the crest, so crests get
@@ -14,9 +13,8 @@ void AccumulateGerstnerWave(
 {
     if (wave.amplitude <= 0.0f || wave.wavelength <= 0.0f) return;
 
-    // Distance LOD: the ocean grid gets coarser with distance, so each wave fades out before the
-    // vertex spacing is too wide to sample it (short waves fade first). Far water becomes a calm mirror.
-    float fade = 1.0 - smoothstep(wave.wavelength * 8.0, wave.wavelength * 14.0, viewDistance);
+    // Distance LOD (Waves.hlsli): past it the mesh is flat and PixelShader adds the slopes back.
+    float fade = WaveVertexFade(wave.wavelength, viewDistance);
     if (fade <= 0.0) return;
     wave.amplitude *= fade;
     float waveNumber = 6.2831853 / wave.wavelength;
@@ -66,5 +64,6 @@ PSInput VSMain(VSInput input)
     output.normalWS = normalize(mul(waveNormal, (float3x3)g_World));
     output.worldPos = worldPos.xyz;
     output.uv = input.uv;
+    output.restPosLocal = input.position;
     return output;
 }

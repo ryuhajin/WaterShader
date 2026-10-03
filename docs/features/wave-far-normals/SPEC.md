@@ -30,7 +30,7 @@ contribution_i(w) = ( −D.x·k·A·w·cos θ ,  −(steepness·w / 4)·sin θ ,
 - **VS:** 지금처럼 `w = vsFade_i = 1 − smoothstep(8λ, 14λ, 거리)`
 - **PS:** 나머지 `w = (1 − vsFade_i) · pixelFade_i`
 - **pixelFade:** 한 픽셀이 파도 진행 방향으로 덮는 파장 수 `footprint = max(|ddx(xz)·D|, |ddy(xz)·D|) / λ`
-  - `pixelFade = 1 − smoothstep(0.25, 0.5, footprint)` → 파장당 4픽셀부터 줄이기 시작해 2픽셀(나이퀴스트)에서 0
+  - `pixelFade = 1 − smoothstep(0.125, 0.25, footprint)` → 파장당 8픽셀부터 줄이기 시작해 4픽셀에서 0 (2px 나이퀴스트 기준은 수평선 moire로 기각, NOTES 참고)
 - **위상:** 변위 전 local 위치로 계산한다(VS와 같은 기준). VS → PS로 `restPosLocal`을 넘긴다.
 
 ```hlsl
@@ -39,7 +39,7 @@ float2 dx = ddx(rest.xz), dy = ddy(rest.xz);           // 루프 밖에서 한 �
 for each wave:
     float vsFade = WaveVertexFade(λ, viewDistance);
     float footprint = max(abs(dot(dx, D)), abs(dot(dy, D))) / λ;
-    float w = (1 - vsFade) * (1 - smoothstep(0.25, 0.5, footprint));
+    float w = (1 - vsFade) * (1 - smoothstep(0.125, 0.25, footprint));
     delta.xz -= D * k * A * w * cos(θ);
     delta.y  -= steepness * w / WAVE_COUNT * sin(θ);
 baseNormalWS = normalize(input.normalWS + farOn * mul(delta, (float3x3)g_World));
@@ -66,10 +66,10 @@ baseNormalWS = normalize(input.normalWS + farOn * mul(delta, (float3x3)g_World))
 
 ## 4. Acceptance Criteria / Test Plan
 
-- [ ] Debug/Release 빌드 경고 0, 셰이더 컴파일 경고 0, `WaveMacroTest` 통과
-- [ ] `--far-waves off` 캡처 15장이 변경 전과 픽셀 차이 0 (VS 리팩터 + OFF 경로 동일)
-- [ ] ON 캡처: 차이가 원경에 집중되고 근경은 그대로
-- [ ] Debug 6으로 근경(빨강)/원경(초록)/수평선(검정) 구역 확인
-- [ ] GPU 시간 증가 측정·기록
+- [x] Debug/Release 빌드 경고 0, 셰이더 컴파일 경고 0, `WaveMacroTest` 통과
+- [x] `--far-waves off` 캡처 15장이 변경 전과 픽셀 차이 0 (VS 리팩터 + OFF 경로 동일)
+- [x] ON 캡처: 차이가 원경에 집중되고 근경은 그대로
+- [x] Debug 6으로 근경(빨강)/원경(초록)/수평선(검정) 구역 확인
+- [x] GPU 시간 증가 측정·기록
 - [ ] 사용자 확인: 근경-원경 줄무늬 방향 연속, Wind direction 회전 시 원경도 회전, 수평선 깜빡임 없음
-- [ ] before/after 비교 + NOTES
+- [x] before/after 비교 + NOTES
