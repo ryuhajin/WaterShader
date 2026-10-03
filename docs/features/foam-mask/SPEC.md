@@ -98,7 +98,7 @@ ImGui 슬라이더:
 - [ ] **Debug View 모드 확장:** 4=foam mask raw, 5=crest factor 추가 (시각 검증용)
 - [ ] 회귀: Normal Scale/Scroll, Wave amp/wavelen/speed/dir, Fresnel, Skybox toggle, Light 모두 정상
 - [ ] **Foam off:** Foam Color alpha 또는 별도 toggle로 완전 끄기 가능 (회귀 비교용)
-- [x] 자체 제작 텍스처 사용 — `assets/textures/water_foam.{dds,png}` (포트폴리오 self-made 카운트 +1, 누적 2장)
+- [x] 자체 제작 텍스처 사용 — `assets/textures/water_foam.{dds,png}` (포트폴리오 self-made 카운트 +1 — 정정 2026-10-03: 노멀맵은 외부 텍스처라 누적 1장)
 
 ## 5. Notes (선택)
 
