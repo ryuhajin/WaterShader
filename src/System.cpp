@@ -42,7 +42,9 @@ bool System::Initialize(HINSTANCE instance)
         ImGui::CreateContext();
         imguiContextCreated_ = true;
         ImGuiIO& io = ImGui::GetIO();
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        // No ImGui keyboard navigation: with it, any focused ImGui window (e.g. right after clicking a
+        // button) sets WantCaptureKeyboard and WASD / arrow keys stop reaching the camera.
+        // Without it, ImGui only captures the keyboard while a text field is being edited.
         ImGui::StyleColorsDark();
 
         if (!ImGui_ImplWin32_Init(hwnd_))
@@ -131,7 +133,9 @@ LRESULT System::MessageHandler(HWND hwnd, UINT message, WPARAM wParam, LPARAM lP
         }
         return 0;
     case WM_KEYUP:
-        if (input_ && !imguiWantsKeyboard)
+        // Always release, even while ImGui has the keyboard: a key pressed before focus moved to
+        // ImGui would otherwise stay "held" and keep moving the camera.
+        if (input_)
         {
             input_->KeyUp(static_cast<unsigned int>(wParam));
         }

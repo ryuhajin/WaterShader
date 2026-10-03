@@ -28,6 +28,8 @@ public:
     ID3D11SamplerState* GetSampler() const { return defaultSampler_.Get(); }
     ID3D11SamplerState* GetWrapSampler() const { return wrapSampler_.Get(); }
     Microsoft::WRL::ComPtr<ID3D11Texture2D> GetBackBuffer() const;
+    bool GetVSync() const { return vsyncEnabled_; }
+    void SetVSync(bool enabled) { vsyncEnabled_ = enabled; }
 
 private:
     bool CreateDeviceAndSwapChain(int screenWidth, int screenHeight, HWND hwnd, bool fullscreen);

@@ -13,10 +13,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <type_traits>
 
 namespace
 {
@@ -33,6 +35,26 @@ std::wstring GetAssetPath(const wchar_t* relativePath)
     path = path.parent_path() / L"assets" / relativePath;
     return path.wstring();
 #endif
+}
+
+// std::string(ws.begin(), ws.end()) truncates each wchar_t to one byte (C4244) and mangles any
+// non-ASCII path. ImGui and our logs expect UTF-8, so convert explicitly.
+std::string WideToUtf8(const std::wstring& text)
+{
+    if (text.empty()) return {};
+    const int size = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    std::string result(static_cast<size_t>(size), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), size, nullptr, nullptr);
+    return result;
+}
+
+std::wstring Utf8ToWide(const std::string& text)
+{
+    if (text.empty()) return {};
+    const int size = MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+    std::wstring result(static_cast<size_t>(size), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), size);
+    return result;
 }
 
 struct CaptureShot
@@ -55,6 +77,9 @@ constexpr CaptureShot kCaptureShots[] = {
     { "ocean_wide",    {  0.00f, 1.60f, -3.00f }, { 14.0f, 10.0f, 0.0f }, 60.0f, true  },
 };
 
+// Startup / Reset Camera framing: the step2_sun_glint "sunward" shot (bench plane, glint visible).
+constexpr int kDefaultShotIndex = 2;
+
 constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical" };
 
 constexpr int kPresetFileVersion = 3;
@@ -69,11 +94,28 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("fresnelF0", preset.water.fresnelF0);
     fn("normalStrength", preset.water.normalStrength);
     fn("detailScale", preset.water.detailScale);
+    fn("environment", preset.environment);
 }
 
-// Measured from assets/textures/skybox.dds (sun disk on the +Z face, just above the horizon).
-constexpr float kSkyboxSunYawDeg = 34.5f;
-constexpr float kSkyboxSunElevationDeg = 4.0f;
+// Sky + reflection cube maps a preset can pick. Sun directions were measured from each panorama
+// (tools/equirect_to_cube.ps1). The sunset sky was rotated so its sun sits at yaw 34.5 like
+// skybox.dds (the fixed "sunward" shots face it); the beach was rotated so its open sea faces the
+// shots instead, which puts its sun behind the camera (yaw 236.4).
+struct Environment
+{
+    const wchar_t* file;
+    const char* name;
+    float sunYawDeg;
+    float sunElevationDeg;
+};
+
+constexpr Environment kEnvironments[] = {
+    { L"textures/skybox.dds",          "Meadow dusk (overcast)",                   34.5f,  4.0f },
+    { L"textures/env_sunset_fire.dds", "Sunset sea (PH: the_sky_is_on_fire)",      34.5f,  6.4f },
+    { L"textures/env_beach_day.dds",   "Beach day (PH: spiaggia_di_mondello)",    236.4f, 25.3f },
+};
+constexpr int kEnvironmentCount = static_cast<int>(std::size(kEnvironments));
+
 constexpr float kCaptureTime = 12.0f;
 } // namespace
 
@@ -82,15 +124,53 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     screenWidth_ = static_cast<unsigned int>(screenWidth);
     screenHeight_ = static_cast<unsigned int>(screenHeight);
 
+    // Command line:
+    //   --capture <label>      save every preset x shot, then quit
+    //   --debug <mode>         debug view used for the capture set
+    //   --normal-map <path>    normal map relative to assets/, tried before the default DDS
+    //   --shot <name>          start from a fixed camera shot (e.g. ocean_wide)
+    //   --no-vsync             start uncapped (for FPS / GPU ms measurement)
+    //   --capture-feature <f>  captures go to docs/features/<f>/captures (default water-polish)
+    std::wstring captureLabelArg;
+    std::wstring normalMapArg;
+    std::wstring shotArg;
+    bool vsyncArg = VSYNC_ENABLED;
+    {
+        int argc = 0;
+        if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc))
+        {
+            for (int i = 1; i < argc; ++i)
+            {
+                const std::wstring arg = argv[i];
+                const bool hasValue = i + 1 < argc;
+                if (arg == L"--no-vsync")                    { vsyncArg = false; }
+                else if (arg == L"--capture" && hasValue)    { captureLabelArg = argv[++i]; }
+                else if (arg == L"--debug" && hasValue)      { captureDebugMode_ = _wtoi(argv[++i]); }
+                else if (arg == L"--normal-map" && hasValue) { normalMapArg = argv[++i]; }
+                else if (arg == L"--shot" && hasValue)       { shotArg = argv[++i]; }
+                else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
+            }
+            LocalFree(argv);
+        }
+    }
+
     d3d_ = std::make_unique<D3DClass>();
-    if (!d3d_->Initialize(screenWidth, screenHeight, VSYNC_ENABLED, hwnd, FULL_SCREEN, SCREEN_DEPTH, SCREEN_NEAR))
+    if (!d3d_->Initialize(screenWidth, screenHeight, vsyncArg, hwnd, FULL_SCREEN, SCREEN_DEPTH, SCREEN_NEAR))
     {
         return false;
     }
 
     camera_ = std::make_unique<Camera>();
-    camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
-    camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
+    int startShot = kDefaultShotIndex;
+    for (int i = 0; i < static_cast<int>(std::size(kCaptureShots)); ++i)
+    {
+        if (shotArg == Utf8ToWide(kCaptureShots[i].name))
+        {
+            startShot = i;
+        }
+    }
+    ApplyCameraShot(startShot);
+    LoadCameraSlots();
 
     light_ = std::make_unique<Light>();
     light_->SetDirection(0.0f, -1.0f, 1.0f);
@@ -98,18 +178,22 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
 
     normalMap_ = std::make_unique<Texture>();
     {
-        struct Attempt { const wchar_t* relPath; const char* label; };
-        const Attempt attempts[] = {
+        struct Attempt { std::wstring relPath; const char* label; };
+        std::vector<Attempt> attempts = {
             { L"textures/water_normal.dds", "DDS" },
             { L"textures/water_normal.png", "PNG" },
             { L"textures/water_normal.jpg", "JPG" },
         };
+        if (!normalMapArg.empty())
+        {
+            attempts.insert(attempts.begin(), { normalMapArg, "--normal-map" });
+        }
         std::string statusLog;
         bool loaded = false;
         for (const auto& a : attempts)
         {
-            const std::wstring path = GetAssetPath(a.relPath);
-            const std::string pathUtf8(path.begin(), path.end());
+            const std::wstring path = GetAssetPath(a.relPath.c_str());
+            const std::string pathUtf8 = WideToUtf8(path);
             std::wstring err;
             if (normalMap_->Initialize(d3d_->GetDevice(), path.c_str(), &err))
             {
@@ -117,8 +201,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 loaded = true;
                 break;
             }
-            const std::string errUtf8(err.begin(), err.end());
-            statusLog += std::string("[FAIL] ") + a.label + " " + errUtf8 + " -> " + pathUtf8 + "\n";
+            statusLog += std::string("[FAIL] ") + a.label + " " + WideToUtf8(err) + " -> " + pathUtf8 + "\n";
         }
         if (!loaded)
         {
@@ -150,14 +233,18 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         return false;
     }
 
-    cubemap_ = std::make_unique<CubemapTexture>();
-    const std::wstring cubemapPath = GetAssetPath(L"textures/skybox.dds");
-    std::wstring cubemapError;
-    if (!cubemap_->Initialize(d3d_->GetDevice(), cubemapPath.c_str(), &cubemapError))
+    for (const Environment& env : kEnvironments)
     {
-        const std::wstring msg = cubemapPath + L"\n\n" + cubemapError;
-        MessageBoxW(hwnd, msg.c_str(), L"WaterShader: cubemap load failed", MB_ICONERROR | MB_OK);
-        return false;
+        auto cubemap = std::make_unique<CubemapTexture>();
+        const std::wstring cubemapPath = GetAssetPath(env.file);
+        std::wstring cubemapError;
+        if (!cubemap->Initialize(d3d_->GetDevice(), cubemapPath.c_str(), &cubemapError))
+        {
+            const std::wstring msg = cubemapPath + L"\n\n" + cubemapError;
+            MessageBoxW(hwnd, msg.c_str(), L"WaterShader: cubemap load failed", MB_ICONERROR | MB_OK);
+            return false;
+        }
+        environments_.push_back(std::move(cubemap));
     }
 
     skybox_ = std::make_unique<Skybox>();
@@ -178,26 +265,15 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     }
     imguiInitialized_ = true;
 
+    // Timing is a debugging aid; a device without timestamp queries just shows "n/a".
+    gpuTimer_.Initialize(d3d_->GetDevice());
+
     LoadPresets();
     ApplyPreset(0);
 
-    // WaterShader.exe --capture <label> : save every preset x shot, then quit.
-    int argc = 0;
-    if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc))
+    if (!captureLabelArg.empty())
     {
-        for (int i = 1; i + 1 < argc; ++i)
-        {
-            if (std::wstring(argv[i]) == L"--capture")
-            {
-                const std::wstring label = argv[i + 1];
-                StartCaptureSet(std::string(label.begin(), label.end()), true);
-            }
-            else if (std::wstring(argv[i]) == L"--debug")
-            {
-                captureDebugMode_ = _wtoi(argv[i + 1]);
-            }
-        }
-        LocalFree(argv);
+        StartCaptureSet(captureLabelArg, true);
     }
 
     return true;
@@ -223,6 +299,7 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     lightIntensity_ = preset.lightIntensity;
     ambientColor_ = preset.ambientColor;
     ambientIntensity_ = preset.ambientIntensity;
+    environmentIndex_ = std::clamp(preset.environment, 0, kEnvironmentCount - 1);
     water_ = preset.water;
 }
 
@@ -235,6 +312,7 @@ Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
     preset.lightIntensity = lightIntensity_;
     preset.ambientColor = ambientColor_;
     preset.ambientIntensity = ambientIntensity_;
+    preset.environment = environmentIndex_;
     preset.water = water_;
     return preset;
 }
@@ -251,7 +329,7 @@ void Graphics::SaveCurrentPreset(int index)
     SavePresets();
 }
 
-void Graphics::StartCaptureSet(const std::string& label, bool quitWhenDone)
+void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone)
 {
     captureQueue_.clear();
     for (int preset = 0; preset < static_cast<int>(presets_.size()); ++preset)
@@ -262,16 +340,16 @@ void Graphics::StartCaptureSet(const std::string& label, bool quitWhenDone)
         }
     }
 
-    // assets/ -> project root -> docs/features/water-polish/captures/<label>
+    // assets/ -> project root -> docs/features/<feature>/captures/<label>
     const std::filesystem::path projectRoot =
         std::filesystem::path(GetAssetPath(L"shader_presets.txt")).parent_path().parent_path();
-    captureDir_ = projectRoot / "docs" / "features" / "water-polish" / "captures" / label;
+    captureDir_ = projectRoot / "docs" / "features" / captureFeature_ / "captures" / label;
     std::error_code ec;
     std::filesystem::create_directories(captureDir_, ec);
 
-    captureRestore_ = {MakePresetFromCurrent(), cameraPosition_, cameraRotation_, cameraFovDeg_, elapsedTime_, oceanMode_};
+    captureRestore_ = {MakePresetFromCurrent(), MakeViewFromCurrent(), elapsedTime_};
     quitAfterCapture_ = quitWhenDone;
-    captureStatus_ = "Capturing -> " + captureDir_.string();
+    captureStatus_ = "Capturing -> " + WideToUtf8(captureDir_.wstring());
 }
 
 bool Graphics::BeginCaptureFrame()
@@ -287,13 +365,9 @@ bool Graphics::BeginCaptureFrame()
     ApplyPresetValues(presets_[job.preset]);
     water_.debugMode = captureDebugMode_;
 
+    // Also resets the bench plane rotation, so mouse-drag state never leaks into captures.
+    ApplyCameraShot(job.shot);
     const CaptureShot& shot = kCaptureShots[job.shot];
-    cameraPosition_ = shot.position;
-    cameraRotation_ = shot.rotation;
-    cameraFovDeg_ = shot.fovDeg;
-    oceanMode_ = shot.ocean;
-    camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
-    camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
 
     // Fixed time so before/after frames show the same wave phase.
     elapsedTime_ = kCaptureTime;
@@ -305,8 +379,11 @@ bool Graphics::BeginCaptureFrame()
 
 void Graphics::EndCaptureFrame()
 {
-    // WIC needs COM; S_FALSE / RPC_E_CHANGED_MODE just mean it is already initialized.
-    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    // Delete first, then write a new file. Overwriting a batch of existing JPEGs in place from a
+    // freshly built exe gets the whole process tree frozen mid-write (ransomware-style heuristic,
+    // see docs/features/bench-tools/TROUBLESHOOTING.md); delete + create does not.
+    std::error_code removeError;
+    std::filesystem::remove(pendingCapturePath_, removeError);
 
     // JPEG keeps each step's capture set ~2MB in git instead of ~11MB as PNG.
     const auto backBuffer = d3d_->GetBackBuffer();
@@ -326,7 +403,7 @@ void Graphics::EndCaptureFrame()
             value.fltVal = 0.95f;
             props->Write(1, &option, &value);
         });
-    OutputDebugStringA(((SUCCEEDED(hr) ? "[Capture] saved " : "[Capture] FAILED ") + pendingCapturePath_.string() + "\n").c_str());
+    OutputDebugStringW(((SUCCEEDED(hr) ? L"[Capture] saved " : L"[Capture] FAILED ") + pendingCapturePath_.wstring() + L"\n").c_str());
 
     if (!captureQueue_.empty())
     {
@@ -334,13 +411,83 @@ void Graphics::EndCaptureFrame()
     }
 
     ApplyPresetValues(captureRestore_.preset);
-    cameraPosition_ = captureRestore_.cameraPosition;
-    cameraRotation_ = captureRestore_.cameraRotation;
-    cameraFovDeg_ = captureRestore_.cameraFovDeg;
-    oceanMode_ = captureRestore_.oceanMode;
+    ApplyView(captureRestore_.view);
     elapsedTime_ = captureRestore_.elapsedTime;
-    captureStatus_ = "Saved -> " + captureDir_.string();
+    captureStatus_ = "Saved -> " + WideToUtf8(captureDir_.wstring());
     captureFinishedQuit_ = quitAfterCapture_;
+}
+
+Graphics::CameraView Graphics::MakeViewFromCurrent() const
+{
+    return {cameraPosition_, cameraRotation_, cameraFovDeg_, oceanMode_, modelRotation_};
+}
+
+void Graphics::ApplyView(const CameraView& view)
+{
+    cameraPosition_ = view.position;
+    cameraRotation_ = view.rotation;
+    cameraFovDeg_ = view.fovDeg;
+    oceanMode_ = view.ocean;
+    modelRotation_ = view.modelRotation;
+    camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
+    camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
+}
+
+void Graphics::ApplyCameraShot(int shotIndex)
+{
+    const CaptureShot& shot = kCaptureShots[shotIndex];
+    ApplyView({shot.position, shot.rotation, shot.fovDeg, shot.ocean, {0.0f, 0.0f, 0.0f}});
+}
+
+// assets/camera_presets.txt: one line per slot
+//   used  pos.x pos.y pos.z  pitch yaw roll  fov  ocean  model.x model.y model.z
+void Graphics::LoadCameraSlots()
+{
+    std::ifstream file(GetAssetPath(L"camera_presets.txt"));
+    std::string header;
+    int version = 0;
+    if (!file || !(file >> header >> version) || header != "WaterShaderCameras" || version != 1)
+    {
+        return;
+    }
+
+    for (int i = 0; i < kCameraSlotCount; ++i)
+    {
+        CameraView& v = cameraSlots_[i];
+        int used = 0;
+        int ocean = 0;
+        file >> used
+             >> v.position.x >> v.position.y >> v.position.z
+             >> v.rotation.x >> v.rotation.y >> v.rotation.z
+             >> v.fovDeg >> ocean
+             >> v.modelRotation.x >> v.modelRotation.y >> v.modelRotation.z;
+        if (!file)
+        {
+            break;
+        }
+        v.ocean = ocean != 0;
+        cameraSlotUsed_[i] = used != 0;
+    }
+}
+
+void Graphics::SaveCameraSlots() const
+{
+    std::ofstream file(GetAssetPath(L"camera_presets.txt"));
+    if (!file)
+    {
+        return;
+    }
+
+    file << "WaterShaderCameras 1\n";
+    for (int i = 0; i < kCameraSlotCount; ++i)
+    {
+        const CameraView& v = cameraSlots_[i];
+        file << (cameraSlotUsed_[i] ? 1 : 0) << ' '
+             << v.position.x << ' ' << v.position.y << ' ' << v.position.z << ' '
+             << v.rotation.x << ' ' << v.rotation.y << ' ' << v.rotation.z << ' '
+             << v.fovDeg << ' ' << (v.ocean ? 1 : 0) << ' '
+             << v.modelRotation.x << ' ' << v.modelRotation.y << ' ' << v.modelRotation.z << '\n';
+    }
 }
 
 void Graphics::LoadPresets()
@@ -431,11 +578,11 @@ void Graphics::LoadPresets()
         float value = 0.0f;
         while (in >> key >> value)
         {
-            ForEachExtraField(preset, [&](const char* name, float& field)
+            ForEachExtraField(preset, [&](const char* name, auto& field)
             {
                 if (key == name)
                 {
-                    field = value;
+                    field = static_cast<std::decay_t<decltype(field)>>(value);
                 }
             });
         }
@@ -483,7 +630,7 @@ void Graphics::SavePresets() const
                 << ' ' << wave.steepness;
         }
 
-        ForEachExtraField(preset, [&](const char* name, const float& field)
+        ForEachExtraField(preset, [&](const char* name, const auto& field)
         {
             file << ' ' << name << ' ' << field;
         });
@@ -494,6 +641,8 @@ void Graphics::SavePresets() const
 
 void Graphics::Shutdown()
 {
+    gpuTimer_.Shutdown();
+
     if (imguiInitialized_)
     {
         ImGui_ImplDX11_Shutdown();
@@ -512,11 +661,11 @@ void Graphics::Shutdown()
         skybox_.reset();
     }
 
-    if (cubemap_)
+    for (auto& cubemap : environments_)
     {
-        cubemap_->Shutdown();
-        cubemap_.reset();
+        cubemap->Shutdown();
     }
+    environments_.clear();
 
     if (colorShader_)
     {
@@ -554,8 +703,38 @@ void Graphics::Shutdown()
 bool Graphics::Frame(float deltaTime, const Input& input)
 {
     elapsedTime_ += deltaTime;
+    UpdateMouseDrag(); // before UpdateCamera, which pushes cameraRotation_ to the camera
     UpdateCamera(deltaTime, input);
     return Render(deltaTime);
+}
+
+void Graphics::UpdateMouseDrag()
+{
+    // Viewport drags (ImGui's Win32 backend already tracks the mouse, so no extra input plumbing):
+    //   bench plane: left-drag = rotate the plane, right-drag = look around
+    //   ocean grid : left- or right-drag = look around (the grid itself stays level)
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse)
+    {
+        return;
+    }
+
+    constexpr float kDegreesPerPixel = 0.3f;
+    const bool leftDrag = io.MouseDown[0];
+    const bool rightDrag = io.MouseDown[1];
+
+    if (!oceanMode_ && leftDrag)
+    {
+        modelRotation_.y -= io.MouseDelta.x * kDegreesPerPixel;
+        modelRotation_.x = std::clamp(modelRotation_.x + io.MouseDelta.y * kDegreesPerPixel, -89.0f, 89.0f);
+        modelRotation_.y = std::fmod(modelRotation_.y, 360.0f);
+    }
+    else if (rightDrag || (oceanMode_ && leftDrag))
+    {
+        // Mouse-look: drag right = turn right, drag down = look down (pitch > 0 looks down).
+        cameraRotation_.y = std::fmod(cameraRotation_.y + io.MouseDelta.x * kDegreesPerPixel, 360.0f);
+        cameraRotation_.x = std::clamp(cameraRotation_.x + io.MouseDelta.y * kDegreesPerPixel, -89.0f, 89.0f);
+    }
 }
 
 void Graphics::UpdateCamera(float deltaTime, const Input& input)
@@ -605,6 +784,7 @@ bool Graphics::Render(float deltaTime)
     using namespace DirectX;
 
     const auto now = std::chrono::steady_clock::now();
+    UpdateFrameStats(deltaTime);
     colorShader_->CheckHotReload(d3d_->GetDevice(), now);
     skyboxShader_->CheckHotReload(d3d_->GetDevice(), now);
 
@@ -616,10 +796,11 @@ bool Graphics::Render(float deltaTime)
         ? static_cast<float>(screenWidth_) / static_cast<float>(screenHeight_)
         : 1.0f;
 
-    const XMMATRIX world =
-        XMMatrixRotationX(XMConvertToRadians(modelRotation_.x)) *
-        XMMatrixRotationY(XMConvertToRadians(modelRotation_.y)) *
-        XMMatrixRotationZ(XMConvertToRadians(modelRotation_.z));
+    // Bench plane: pitch in local space, then yaw around world Y (turntable-style drag).
+    const XMMATRIX world = oceanMode_
+        ? XMMatrixIdentity()
+        : XMMatrixRotationX(XMConvertToRadians(modelRotation_.x)) *
+          XMMatrixRotationY(XMConvertToRadians(modelRotation_.y));
     const XMMATRIX view = camera_->GetViewMatrix();
     const XMMATRIX projection = XMMatrixPerspectiveFovLH(
         XMConvertToRadians(cameraFovDeg_),
@@ -649,6 +830,7 @@ bool Graphics::Render(float deltaTime)
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
+    gpuTimer_.Begin(d3d_->GetDeviceContext());
     d3d_->BeginScene(0.02f, 0.08f, 0.11f, 1.0f);
 
     if (skyboxVisible_)
@@ -660,7 +842,7 @@ bool Graphics::Render(float deltaTime)
             skybox_->GetIndexCount(),
             viewNoTrans,
             projection,
-            cubemap_->GetSRV(),
+            environments_[environmentIndex_]->GetSRV(),
             d3d_->GetSampler());
         d3d_->SetDepthDefault();
     }
@@ -680,7 +862,7 @@ bool Graphics::Render(float deltaTime)
         elapsedTime_,
         cameraPosWS,
         water_,
-        cubemap_->GetSRV(),
+        environments_[environmentIndex_]->GetSRV(),
         normalMap_->GetSRV(),
         d3d_->GetSampler(),
         d3d_->GetWrapSampler());
@@ -688,24 +870,84 @@ bool Graphics::Render(float deltaTime)
 
     if (!capturing)
     {
+        DrawStatsOverlay();
         DrawImGuiPanel();
     }
 
     ImGui::Render();
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+    gpuTimer_.End(d3d_->GetDeviceContext());
 
     if (capturing)
     {
         EndCaptureFrame();
     }
 
+    // CPU cost of this frame, excluding the Present / vsync wait below.
+    cpuFrameMs_ = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - now).count();
+
     d3d_->EndScene();
 
     return !captureFinishedQuit_;
 }
 
+void Graphics::UpdateFrameStats(float deltaTime)
+{
+    // Values shown in the overlay are averaged over 0.5 s so they are readable.
+    statsAccumTime_ += deltaTime;
+    statsAccumCpuMs_ += cpuFrameMs_;
+    ++statsAccumFrames_;
+    if (statsAccumTime_ >= 0.5f)
+    {
+        displayedFps_ = statsAccumFrames_ / statsAccumTime_;
+        displayedCpuMs_ = statsAccumCpuMs_ / statsAccumFrames_;
+        displayedGpuMs_ = gpuTimer_.GetLastMs();
+        statsAccumTime_ = 0.0f;
+        statsAccumCpuMs_ = 0.0f;
+        statsAccumFrames_ = 0;
+    }
+}
+
+void Graphics::DrawStatsOverlay()
+{
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.75f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
+    // The title-bar arrow collapses / expands it.
+    if (ImGui::Begin("Stats", nullptr, flags))
+    {
+        ImGui::Text("Time    %8.2f s", elapsedTime_);
+        ImGui::Text("FPS     %8.1f", displayedFps_);
+        ImGui::Text("Frame   %8.2f ms", displayedFps_ > 0.0f ? 1000.0f / displayedFps_ : 0.0f);
+        ImGui::Text("CPU     %8.2f ms", displayedCpuMs_);
+        if (displayedGpuMs_ >= 0.0f)
+        {
+            ImGui::Text("GPU     %8.2f ms", displayedGpuMs_);
+        }
+        else
+        {
+            ImGui::Text("GPU          n/a");
+        }
+
+        bool vsync = d3d_->GetVSync();
+        if (ImGui::Checkbox("VSync", &vsync))
+        {
+            d3d_->SetVSync(vsync);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled(vsync ? "(FPS capped by display)" : "(uncapped)");
+        ImGui::Text("Mesh: %s", oceanMode_ ? "ocean grid 1024^2" : "bench plane 32^2");
+    }
+    ImGui::End();
+}
+
 void Graphics::DrawImGuiPanel()
 {
+    // Default to the right edge so it never covers the Stats overlay (imgui.ini overrides after first run).
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 10.0f, 10.0f), ImGuiCond_FirstUseEver, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(360.0f, io.DisplaySize.y - 20.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("Shader Bench");
 
     const std::string& shaderError = colorShader_->GetLastError();
@@ -722,9 +964,15 @@ void Graphics::DrawImGuiPanel()
     ImGui::Separator();
 
     ImGui::SeparatorText("Model Rotation");
-    ImGui::SliderFloat("X##model", &modelRotation_.x, 0.0f, 360.0f);
-    ImGui::SliderFloat("Y##model", &modelRotation_.y, 0.0f, 360.0f);
-    ImGui::SliderFloat("Z##model", &modelRotation_.z, 0.0f, 360.0f);
+    if (oceanMode_)
+    {
+        ImGui::TextDisabled("Ocean Grid stays level (drag = look around)");
+    }
+    else
+    {
+        ImGui::TextDisabled("Left-drag: rotate plane, right-drag: look around");
+        ImGui::Text("Pitch %.1f  Yaw %.1f", modelRotation_.x, modelRotation_.y);
+    }
     if (ImGui::Button("Reset Model Rotation"))
     {
         modelRotation_ = {0.0f, 0.0f, 0.0f};
@@ -734,15 +982,50 @@ void Graphics::DrawImGuiPanel()
     ImGui::SliderFloat("FOV (deg)", &cameraFovDeg_, 30.0f, 120.0f);
     ImGui::SliderFloat("Move Speed", &cameraMoveSpeed_, 0.1f, 10.0f);
     ImGui::SliderFloat("Turn Speed (deg/sec)", &cameraTurnSpeed_, 30.0f, 360.0f);
-    ImGui::Text("WASD: move, Q/E: down/up, Arrows: rotate");
+    ImGui::Text("WASD: move, Q/E: down/up, Arrows or drag: look");
     if (ImGui::Button("Reset Camera"))
     {
-        cameraPosition_ = {0.0f, 0.0f, -2.5f};
-        cameraRotation_ = {0.0f, 0.0f, 0.0f};
-        cameraFovDeg_ = 60.0f;
+        ApplyCameraShot(kDefaultShotIndex);
         cameraMoveSpeed_ = 2.0f;
         cameraTurnSpeed_ = 90.0f;
     }
+
+    ImGui::SeparatorText("Camera Presets");
+    ImGui::TextDisabled("Fixed shots (same as --capture)");
+    for (int i = 0; i < static_cast<int>(std::size(kCaptureShots)); ++i)
+    {
+        if (i > 0 && i != 3)
+        {
+            ImGui::SameLine();
+        }
+        if (ImGui::Button(kCaptureShots[i].name))
+        {
+            ApplyCameraShot(i);
+        }
+    }
+    ImGui::TextDisabled("Slots (saved to assets/camera_presets.txt)");
+    for (int i = 0; i < kCameraSlotCount; ++i)
+    {
+        ImGui::PushID(i);
+        ImGui::Text("Slot %d%s", i + 1, cameraSlotUsed_[i] ? (cameraSlots_[i].ocean ? " [ocean]" : " [bench]") : " (empty)");
+        ImGui::SameLine(120.0f);
+        if (ImGui::Button("Save"))
+        {
+            cameraSlots_[i] = MakeViewFromCurrent();
+            cameraSlotUsed_[i] = true;
+            SaveCameraSlots();
+        }
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!cameraSlotUsed_[i]);
+        if (ImGui::Button("Load"))
+        {
+            ApplyView(cameraSlots_[i]);
+        }
+        ImGui::EndDisabled();
+        ImGui::PopID();
+    }
+    ImGui::Text("Pos (%.2f, %.2f, %.2f)  Pitch %.1f Yaw %.1f",
+        cameraPosition_.x, cameraPosition_.y, cameraPosition_.z, cameraRotation_.x, cameraRotation_.y);
 
     ImGui::SeparatorText("Settings");
     const char* presetNames[] = { "Basic", "Sunset", "Tropical" };
@@ -768,11 +1051,12 @@ void Graphics::DrawImGuiPanel()
     ImGui::SeparatorText("Lighting");
     ImGui::SliderFloat("Sun Yaw (deg)", &sunYawDeg_, 0.0f, 360.0f);
     ImGui::SliderFloat("Sun Elevation (deg)", &sunElevationDeg_, 0.0f, 90.0f);
-    ImGui::TextDisabled("Skybox sun: yaw %.1f, elevation %.1f", kSkyboxSunYawDeg, kSkyboxSunElevationDeg);
+    const Environment& currentEnv = kEnvironments[environmentIndex_];
+    ImGui::TextDisabled("Sky sun: yaw %.1f, elevation %.1f", currentEnv.sunYawDeg, currentEnv.sunElevationDeg);
     if (ImGui::Button("Match Skybox Sun"))
     {
-        sunYawDeg_ = kSkyboxSunYawDeg;
-        sunElevationDeg_ = kSkyboxSunElevationDeg;
+        sunYawDeg_ = currentEnv.sunYawDeg;
+        sunElevationDeg_ = currentEnv.sunElevationDeg;
     }
     ImGui::ColorEdit3("Light Color", &lightColor_.x);
     ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 3.0f);
@@ -783,7 +1067,7 @@ void Graphics::DrawImGuiPanel()
     ImGui::Text("Time: %.2fs", elapsedTime_);
     if (ImGui::Button("Reset Light"))
     {
-        sunYawDeg_ = kSkyboxSunYawDeg;
+        sunYawDeg_ = currentEnv.sunYawDeg;
         sunElevationDeg_ = 20.0f;
         lightColor_ = {1.0f, 1.0f, 1.0f};
         lightIntensity_ = 1.0f;
@@ -796,6 +1080,17 @@ void Graphics::DrawImGuiPanel()
     ImGui::SliderFloat("Ambient Intensity", &ambientIntensity_, 0.0f, 1.0f);
 
     ImGui::SeparatorText("Environment");
+    if (ImGui::BeginCombo("Sky / Reflection", kEnvironments[environmentIndex_].name))
+    {
+        for (int i = 0; i < kEnvironmentCount; ++i)
+        {
+            if (ImGui::Selectable(kEnvironments[i].name, i == environmentIndex_))
+            {
+                environmentIndex_ = i;
+            }
+        }
+        ImGui::EndCombo();
+    }
     ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
     ImGui::Checkbox("Ocean Grid (open water to the horizon)", &oceanMode_);
     ImGui::SliderFloat("Reflection Strength", &water_.reflectionStrength, 0.0f, 1.0f);
@@ -839,7 +1134,7 @@ void Graphics::DrawImGuiPanel()
     ImGui::InputText("Label", captureLabel_, sizeof(captureLabel_));
     if (ImGui::Button("Capture Set (presets x shots)"))
     {
-        StartCaptureSet(captureLabel_, false);
+        StartCaptureSet(Utf8ToWide(captureLabel_), false);
     }
     ImGui::TextDisabled("Fixed time %.1fs, UI hidden. Saves to docs/features/water-polish/captures/<label>", kCaptureTime);
     if (!captureStatus_.empty())

@@ -4,6 +4,7 @@
 #include "ColorShader.h"
 #include "CubemapTexture.h"
 #include "D3DClass.h"
+#include "GpuTimer.h"
 #include "Light.h"
 #include "Model.h"
 #include "Skybox.h"
@@ -31,14 +32,17 @@ public:
 private:
     bool Render(float deltaTime);
     void DrawImGuiPanel();
+    void DrawStatsOverlay();
+    void UpdateFrameStats(float deltaTime);
     void UpdateCamera(float deltaTime, const Input& input);
+    void UpdateMouseDrag();
     void ApplyPreset(int index);
     void SaveCurrentPreset(int index);
     void LoadPresets();
     void SavePresets() const;
 
     // Before/after capture: renders preset x fixed camera shots at a fixed time and saves JPEGs.
-    void StartCaptureSet(const std::string& label, bool quitWhenDone);
+    void StartCaptureSet(const std::wstring& label, bool quitWhenDone);
     bool BeginCaptureFrame();
     void EndCaptureFrame();
 
@@ -50,11 +54,28 @@ private:
         float lightIntensity = 1.0f;
         DirectX::XMFLOAT3 ambientColor = {0.10f, 0.14f, 0.18f};
         float ambientIntensity = 0.35f;
+        int environment = 0; // index into kEnvironments (sky + reflection cube map)
         ColorShader::WaterParams water;
     };
 
     ShaderPreset MakePresetFromCurrent() const;
     void ApplyPresetValues(const ShaderPreset& preset);
+
+    // Everything that defines a framing: fixed capture shots, save slots and capture restore share it.
+    struct CameraView
+    {
+        DirectX::XMFLOAT3 position = {0.0f, 0.0f, 0.0f};
+        DirectX::XMFLOAT3 rotation = {0.0f, 0.0f, 0.0f}; // x = pitch, y = yaw (deg)
+        float fovDeg = 60.0f;
+        bool ocean = false;
+        DirectX::XMFLOAT3 modelRotation = {0.0f, 0.0f, 0.0f}; // bench plane only
+    };
+
+    CameraView MakeViewFromCurrent() const;
+    void ApplyView(const CameraView& view);
+    void ApplyCameraShot(int shotIndex);
+    void LoadCameraSlots();
+    void SaveCameraSlots() const;
 
     struct CaptureJob
     {
@@ -65,11 +86,8 @@ private:
     struct CaptureRestoreState
     {
         ShaderPreset preset;
-        DirectX::XMFLOAT3 cameraPosition;
-        DirectX::XMFLOAT3 cameraRotation;
-        float cameraFovDeg;
-        float elapsedTime;
-        bool oceanMode;
+        CameraView view;
+        float elapsedTime = 0.0f;
     };
 
     std::unique_ptr<D3DClass> d3d_;
@@ -79,7 +97,8 @@ private:
     std::unique_ptr<Model> model_;
     std::unique_ptr<Model> oceanGrid_;
     std::unique_ptr<ColorShader> colorShader_;
-    std::unique_ptr<CubemapTexture> cubemap_;
+    std::vector<std::unique_ptr<CubemapTexture>> environments_; // one per kEnvironments entry
+    int environmentIndex_ = 0;
     std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<SkyboxShader> skyboxShader_;
 
@@ -87,8 +106,9 @@ private:
     unsigned int screenWidth_ = 0;
     unsigned int screenHeight_ = 0;
 
+    // Initial values come from the default capture shot (ApplyCameraShot in Initialize).
     DirectX::XMFLOAT3 modelRotation_ = {0.0f, 0.0f, 0.0f};
-    DirectX::XMFLOAT3 cameraPosition_ = {0.0f, 0.0f, -2.5f};
+    DirectX::XMFLOAT3 cameraPosition_ = {0.0f, 0.0f, 0.0f};
     DirectX::XMFLOAT3 cameraRotation_ = {0.0f, 0.0f, 0.0f};
     float cameraFovDeg_ = 60.0f;
     float cameraMoveSpeed_ = 2.0f;
@@ -106,6 +126,20 @@ private:
     std::string normalMapStatus_;
     std::array<ShaderPreset, 3> presets_{};
 
+    // Stats overlay (top-left). CPU ms = Render() start to just before Present (excludes vsync wait).
+    GpuTimer gpuTimer_;
+    float cpuFrameMs_ = 0.0f;
+    float displayedFps_ = 0.0f;
+    float displayedCpuMs_ = 0.0f;
+    float displayedGpuMs_ = 0.0f;
+    float statsAccumTime_ = 0.0f;
+    int statsAccumFrames_ = 0;
+    float statsAccumCpuMs_ = 0.0f;
+
+    static constexpr int kCameraSlotCount = 4;
+    std::array<CameraView, kCameraSlotCount> cameraSlots_{};
+    std::array<bool, kCameraSlotCount> cameraSlotUsed_{};
+
     std::vector<CaptureJob> captureQueue_;
     std::filesystem::path captureDir_;
     std::filesystem::path pendingCapturePath_;
@@ -113,6 +147,7 @@ private:
     bool quitAfterCapture_ = false;
     bool captureFinishedQuit_ = false;
     int captureDebugMode_ = 0;
+    std::wstring captureFeature_ = L"water-polish";
     char captureLabel_[64] = "manual";
     std::string captureStatus_;
 };

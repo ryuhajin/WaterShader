@@ -1,12 +1,19 @@
 # Builds side-by-side comparison sheets from capture sets.
 #   rows = presets, columns = capture steps (in the order given)
 # Usage: powershell -File make_compare.ps1 before step1_bugfix step2_sun_glint
-param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Steps)
+#        powershell -File make_compare.ps1 -Dir ../bench-tools before env final   (another feature folder)
+[CmdletBinding(PositionalBinding = $false)] # -Dir must be named; bare words are step names
+param(
+    [string]$Dir = $PSScriptRoot,
+    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Steps
+)
 
 Add-Type -AssemblyName System.Drawing
 
-$root = Join-Path $PSScriptRoot "captures"
-$outDir = Join-Path $PSScriptRoot "compare"
+if (-not [IO.Path]::IsPathRooted($Dir)) { $Dir = Join-Path $PSScriptRoot $Dir }
+$Dir = (Resolve-Path $Dir).Path
+$root = Join-Path $Dir "captures"
+$outDir = Join-Path $Dir "compare"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
 $presets = @("basic", "sunset", "tropical")
