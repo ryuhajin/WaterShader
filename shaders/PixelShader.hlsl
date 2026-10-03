@@ -89,6 +89,8 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float sunGlint = SunGlintFactor(reflectionDirWS, lightDirWS, sunGlintPower) * sunGlintIntensity * reflectionAmount;
     finalColor += sunGlint * g_LightColor.rgb * g_LightColor.a;
 
-    return float4(HighlightRolloff(finalColor), 1.0);
+    // Linear HDR radiance. Values above 1 (glint, bright sky) are kept; the tonemap pass compresses
+    // the whole frame, sky included, with one curve.
+    return float4(finalColor, 1.0);
 }
 

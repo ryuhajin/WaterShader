@@ -29,15 +29,5 @@ float SunGlintFactor(float3 reflectionDirWS, float3 lightDirWS, float power)
     return pow(saturate(dot(reflectionDirWS, lightDirWS)), power);
 }
 
-// Keeps [0, threshold] untouched (so the water still matches the LDR skybox) and compresses
-// HDR values above it toward 1 instead of hard clipping.
-float3 HighlightRolloff(float3 color)
-{
-    const float threshold = 0.8;
-    float3 over = max(color - threshold, 0.0);
-    float3 compressed = threshold + (1.0 - threshold) * (1.0 - exp(-over / (1.0 - threshold)));
-    return color <= threshold ? color : compressed;
-}
-
 #endif // WS_LIGHTING_HLSLI
 

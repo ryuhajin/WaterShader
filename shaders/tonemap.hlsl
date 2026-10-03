@@ -7,7 +7,7 @@
 cbuffer TonemapCB : register(b0)
 {
     float g_Exposure;  // linear multiplier (2^EV)
-    uint  g_Operator;  // 0 = none (clamp), 1 = Reinhard, 2 = ACES (Narkowicz fit)
+    uint  g_Operator;  // 0 = none (clamp), 1 = Reinhard, 2 = ACES per channel, 3 = ACES hue-preserving
     float2 g_Padding;
 };
 
@@ -39,6 +39,21 @@ float3 TonemapAces(float3 x)
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
+// Hue-preserving ACES with white highlights.
+//  - Per-channel ACES pushes bright saturated colors toward white: it bleaches skies that were already
+//    tone-mapped once (LDR photos) - measured sunset sky saturation 0.33 -> 0.21.
+//  - Luminance-only ACES (curve on luminance, RGB scaled by the ratio) keeps the sky (0.29) but leaves
+//    a 20x-bright glint flat orange with clipped channels instead of burning to white.
+//  So: luminance mapping for in-range colors, blended into per-channel for real HDR values.
+float3 TonemapAcesHuePreserving(float3 x)
+{
+    float luminance = dot(x, float3(0.2126, 0.7152, 0.0722));
+    float3 luminanceMapped = x * (TonemapAces(luminance.xxx).x / max(luminance, 1e-5));
+    float3 channelMapped = TonemapAces(x);
+    float highlight = smoothstep(1.0, 4.0, max(x.r, max(x.g, x.b)));
+    return lerp(saturate(luminanceMapped), channelMapped, highlight);
+}
+
 float4 PSMain(VSOutput input) : SV_TARGET
 {
     // Same size as the back buffer, so read the texel directly (no sampler / filtering).
@@ -46,6 +61,7 @@ float4 PSMain(VSOutput input) : SV_TARGET
 
     if (g_Operator == 1)      { color = TonemapReinhard(color); }
     else if (g_Operator == 2) { color = TonemapAces(color); }
+    else if (g_Operator == 3) { color = TonemapAcesHuePreserving(color); }
 
     return float4(LinearToSrgb(color), 1.0); // LinearToSrgb clamps to [0,1] (operator 0 = clamp)
 }

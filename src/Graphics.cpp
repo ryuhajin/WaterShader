@@ -96,6 +96,7 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("normalStrength", preset.water.normalStrength);
     fn("detailScale", preset.water.detailScale);
     fn("environment", preset.environment);
+    fn("exposureEV", preset.exposureEv);
 }
 
 // Sky + reflection cube maps a preset can pick. Sun directions were measured from each panorama
@@ -132,6 +133,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --shot <name>          start from a fixed camera shot (e.g. ocean_wide)
     //   --no-vsync             start uncapped (for FPS / GPU ms measurement)
     //   --capture-feature <f>  captures go to docs/features/<f>/captures (default water-polish)
+    //   --tonemap <none|reinhard|aces|aces-hue>  tone curve for this run
+    //   --exposure <ev>        overrides every preset's exposure (operator comparisons)
     std::wstring captureLabelArg;
     std::wstring normalMapArg;
     std::wstring shotArg;
@@ -150,6 +153,16 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--normal-map" && hasValue) { normalMapArg = argv[++i]; }
                 else if (arg == L"--shot" && hasValue)       { shotArg = argv[++i]; }
                 else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
+                else if (arg == L"--exposure" && hasValue)   { exposureOverrideEv_ = static_cast<float>(_wtof(argv[++i])); hasExposureOverride_ = true; }
+                else if (arg == L"--tonemap" && hasValue)
+                {
+                    const std::wstring op = argv[++i];
+                    tonemapOperator_ = op == L"none" ? TonemapShader::None
+                                     : op == L"reinhard" ? TonemapShader::Reinhard
+                                     : op == L"aces-hue" ? TonemapShader::AcesHuePreserving
+                                     : op == L"aces" ? TonemapShader::Aces
+                                     : TonemapShader::AcesHuePreserving;
+                }
             }
             LocalFree(argv);
         }
@@ -307,6 +320,7 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     ambientColor_ = preset.ambientColor;
     ambientIntensity_ = preset.ambientIntensity;
     environmentIndex_ = std::clamp(preset.environment, 0, kEnvironmentCount - 1);
+    exposureEv_ = hasExposureOverride_ ? exposureOverrideEv_ : preset.exposureEv;
     water_ = preset.water;
 }
 
@@ -320,6 +334,7 @@ Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
     preset.ambientColor = ambientColor_;
     preset.ambientIntensity = ambientIntensity_;
     preset.environment = environmentIndex_;
+    preset.exposureEv = exposureEv_;
     preset.water = water_;
     return preset;
 }
@@ -891,7 +906,7 @@ bool Graphics::Render(float deltaTime)
     tonemapShader_->Render(
         d3d_->GetDeviceContext(),
         d3d_->GetHdrSRV(),
-        debugView ? 1.0f : exposure_,
+        debugView ? 1.0f : std::exp2(exposureEv_),
         debugView ? TonemapShader::None : tonemapOperator_);
     d3d_->SetRasterizerDefault();
 
@@ -1156,6 +1171,16 @@ void Graphics::DrawImGuiPanel()
             ImGui::TreePop();
         }
     }
+
+    ImGui::SeparatorText("Tonemapping");
+    const char* operatorNames[] = { "None (clamp)", "Reinhard", "ACES (per channel)", "ACES (hue-preserving)" };
+    int op = static_cast<int>(tonemapOperator_);
+    if (ImGui::Combo("Tone Curve", &op, operatorNames, IM_ARRAYSIZE(operatorNames)))
+    {
+        tonemapOperator_ = static_cast<TonemapShader::Operator>(op);
+    }
+    ImGui::SliderFloat("Exposure (EV)", &exposureEv_, -4.0f, 4.0f, "%+.2f");
+    ImGui::TextDisabled("x%.3f linear, saved with the preset", std::exp2(exposureEv_));
 
     ImGui::SeparatorText("Capture");
     ImGui::InputText("Label", captureLabel_, sizeof(captureLabel_));

@@ -17,6 +17,7 @@ public:
         None = 0,     // clamp to [0, 1]
         Reinhard = 1,
         Aces = 2,
+        AcesHuePreserving = 3, // luminance curve for in-range colors, per-channel for HDR highlights
     };
 
     bool Initialize(ID3D11Device* device);
