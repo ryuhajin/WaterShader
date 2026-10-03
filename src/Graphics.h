@@ -57,6 +57,8 @@ private:
         float ambientIntensity = 0.35f;
         int environment = 0; // index into kEnvironments (sky + reflection cube map)
         float exposureEv = 0.0f; // tonemap pass multiplies the HDR scene by 2^EV
+        int normalMapA = 0; // index into kNormalMaps: layer A (broad ripples)
+        int normalMapB = 0; // layer B (fine chop, tiled detailScale times smaller)
         ColorShader::WaterParams water;
     };
 
@@ -95,12 +97,18 @@ private:
     std::unique_ptr<D3DClass> d3d_;
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Light> light_;
-    std::unique_ptr<Texture> normalMap_;
     std::unique_ptr<Model> model_;
     std::unique_ptr<Model> oceanGrid_;
     std::unique_ptr<ColorShader> colorShader_;
     std::vector<std::unique_ptr<CubemapTexture>> environments_; // one per kEnvironments entry
     int environmentIndex_ = 0;
+    // Water normal maps (kNormalMaps, plus the --normal-map file if given). Each layer picks its own.
+    std::vector<std::unique_ptr<Texture>> normalMaps_;
+    std::vector<std::string> normalMapNames_;
+    int normalMapA_ = 0;
+    int normalMapB_ = 0;
+    int normalOverrideA_ = -1; // --normal-a / --normal-b / --normal-map: win over the preset
+    int normalOverrideB_ = -1;
     std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<SkyboxShader> skyboxShader_;
     std::unique_ptr<TonemapShader> tonemapShader_;

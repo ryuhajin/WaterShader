@@ -1,6 +1,6 @@
 # normal-select
 
-> Branch: `feature/normal-select` (from `feature/basic-sky`) · Status: in progress · Updated: 2026-10-03
+> Branch: `feature/normal-select` (from `feature/basic-sky`) · Status: done · Updated: 2026-10-03
 
 ## 1. Goal
 
@@ -20,7 +20,7 @@
 
 ## 3. Acceptance Criteria
 
-- [ ] 노멀맵 5장 DDS(밉 포함, 평균 RGB 확인)
-- [ ] 레이어 A/B 노멀맵을 따로 선택, 프리셋 저장/불러오기에 포함(키가 없는 옛 프리셋은 기존과 동일하게 0/0)
-- [ ] 노멀맵 비교 캡처 + before/after + NOTES
-- [ ] Debug/Release 경고 0
+- [x] 노멀맵 5장 DDS(밉 포함, 평균 RGB 확인)
+- [x] 레이어 A/B 노멀맵을 따로 선택, 프리셋 저장/불러오기에 포함(키가 없는 옛 프리셋은 기존과 동일하게 0/0)
+- [x] 노멀맵 비교 캡처 + before/after + NOTES
+- [x] Debug/Release 경고 0

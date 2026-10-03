@@ -4,7 +4,8 @@
 #include "Color.hlsli"
 
 // Water-only resources. Cubemap.hlsli already reserves t0/s0; do not reuse here.
-Texture2D    g_NormalMap     : register(t1);
+Texture2D    g_NormalMap     : register(t1); // layer A
+Texture2D    g_NormalMapB    : register(t2); // layer B (may be the same texture as A)
 SamplerState g_NormalSampler : register(s1);
 
 float4 DebugOut(float3 value)
@@ -28,11 +29,12 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float detailScale = g_SurfaceParams.z;
 
     // Layer A = broad ripples, layer B = finer chop at a different tiling, so the repeat is harder to spot.
+    // Each layer has its own normal map; with two different maps the B layer no longer repeats A's shapes.
     float2 uv1 = input.uv * normalScale + g_NormalScroll.xy * time;
     float2 uv2 = input.uv * normalScale * detailScale + g_NormalScroll.zw * time;
     // rgb [0~1] -> normal vector [-1~1] 범위로 만들기 위해 * 2.0 - 1.0
     float3 n1 = g_NormalMap.Sample(g_NormalSampler, uv1).xyz * 2.0 - 1.0;
-    float3 n2 = g_NormalMap.Sample(g_NormalSampler, uv2).xyz * 2.0 - 1.0;
+    float3 n2 = g_NormalMapB.Sample(g_NormalSampler, uv2).xyz * 2.0 - 1.0;
     // Whiteout blend: add the slopes (xy), multiply the z. Plain n1 + n2 halves the detail of each layer.
     float3 blendedNormalTS = float3((n1.xy + n2.xy) * normalStrength, n1.z * n2.z);
     blendedNormalTS = normalize(blendedNormalTS);
