@@ -11,6 +11,7 @@
 #include "SkyboxShader.h"
 #include "TonemapShader.h"
 #include "Texture.h"
+#include "WaveMacro.h"
 
 #include <DirectXMath.h>
 
@@ -64,6 +65,7 @@ private:
         int normalMapA = 0; // index into kNormalMaps: layer A (broad ripples)
         int normalMapB = 0; // layer B (fine chop, tiled detailScale times smaller)
         ColorShader::WaterParams water;
+        WaveMacro waveMacro; // Simple wave controls; water.waves is what actually renders
     };
 
     ShaderPreset MakePresetFromCurrent() const;
@@ -144,6 +146,7 @@ private:
     bool skyboxVisible_ = true;
     bool oceanMode_ = false;
     ColorShader::WaterParams water_;
+    WaveMacro waveMacro_; // Simple wave sliders; moving one regenerates water_.waves
     std::string normalMapStatus_;
     std::array<ShaderPreset, 3> presets_{};
 

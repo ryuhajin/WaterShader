@@ -100,6 +100,12 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("exposureEV", preset.exposureEv);
     fn("normalMapA", preset.normalMapA);
     fn("normalMapB", preset.normalMapB);
+    fn("waveWindDeg", preset.waveMacro.windDeg);
+    fn("waveSpreadDeg", preset.waveMacro.spreadDeg);
+    fn("waveSize", preset.waveMacro.size);
+    fn("waveHeight", preset.waveMacro.height);
+    fn("waveChop", preset.waveMacro.chop);
+    fn("waveSpeed", preset.waveMacro.speedScale);
 }
 
 // Tangent-space water normal maps (RGBA8 UNORM + mips, converted with texconv --ignore-srgb so the
@@ -367,6 +373,7 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     normalMapA_ = std::clamp(normalOverrideA_ >= 0 ? normalOverrideA_ : preset.normalMapA, 0, lastNormalMap);
     normalMapB_ = std::clamp(normalOverrideB_ >= 0 ? normalOverrideB_ : preset.normalMapB, 0, lastNormalMap);
     water_ = preset.water;
+    waveMacro_ = preset.waveMacro;
 }
 
 Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
@@ -383,6 +390,7 @@ Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
     preset.normalMapA = normalMapA_;
     preset.normalMapB = normalMapB_;
     preset.water = water_;
+    preset.waveMacro = waveMacro_;
     return preset;
 }
 
@@ -650,6 +658,7 @@ void Graphics::LoadPresets()
 
         std::string key;
         float value = 0.0f;
+        bool hasWaveMacro = false;
         while (in >> key >> value)
         {
             ForEachExtraField(preset, [&](const char* name, auto& field)
@@ -659,6 +668,13 @@ void Graphics::LoadPresets()
                     field = static_cast<std::decay_t<decltype(field)>>(value);
                 }
             });
+            hasWaveMacro = hasWaveMacro || key.rfind("wave", 0) == 0;
+        }
+        // Saved before the Simple wave controls: guess them from the waves. The waves themselves
+        // stay untouched, so the preset renders as before and shows as Custom if the guess is off.
+        if (!hasWaveMacro)
+        {
+            preset.waveMacro = EstimateWaveMacro(preset.water.waves);
         }
     }
 }
@@ -1482,34 +1498,73 @@ void Graphics::DrawWaterWindow()
     // Gerstner waves move the mesh vertices. The presets order them big -> small.
     ImGui::SeparatorText("Waves (geometry)");
     ImGui::TextDisabled("Moving swells that shape the mesh. Arrow = travel\ndirection as seen from the camera (up = away).");
-    const char* waveNames[ColorShader::kWaveCount] = { "Wave 1 - Big swell", "Wave 2 - Medium swell", "Wave 3 - Small waves", "Wave 4 - Ripples" };
-    for (int i = 0; i < ColorShader::kWaveCount; ++i)
-    {
-        auto& w = water_.waves[i];
-        float angleDeg = DirectX::XMConvertToDegrees(std::atan2(w.direction.y, w.direction.x));
-        const float relativeDeg = ViewRelativeDeg(angleDeg, cameraRotation_.y);
 
-        ImGui::PushID(i);
-        ImGui::AlignTextToFramePadding();
-        const bool open = ImGui::TreeNode("##wave", "%s", waveNames[i]);
-        ImGui::SameLine(185.0f);
-        DrawDirectionDial(relativeDeg);
+    // Simple: six values generate all four waves (WaveMacro.h). Advanced edits stay until one of
+    // these moves; whether they still match is recomputed every frame instead of stored.
+    if (WavesMatchMacro(waveMacro_, water_.waves))
+    {
+        ImGui::TextDisabled("4 waves generated from the sliders below.");
+    }
+    else
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.78f, 0.3f, 1.0f));
+        ImGui::TextWrapped("Custom - edited in Advanced. Moving any slider here rebuilds all 4 waves.");
+        ImGui::PopStyleColor();
+    }
+    {
+        WaveMacro& m = waveMacro_;
+        const float windRelativeDeg = ViewRelativeDeg(m.windDeg, cameraRotation_.y);
+        ImGui::TextUnformatted("Wind direction (deg, 0 = +X, 90 = +Z)");
+        DrawDirectionDial(windRelativeDeg);
         ImGui::SameLine();
-        ImGui::TextDisabled("%s", DescribeViewDirection(relativeDeg));
-        if (open)
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", DescribeViewDirection(windRelativeDeg));
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        bool changed = ImGui::SliderFloat("##windDirection", &m.windDeg, -180.0f, 180.0f, "%.0f");
+        changed |= LabeledSlider("Direction spread (deg, 0 = all waves parallel)", &m.spreadDeg, 0.0f, wave_macro::kSpreadMax, "%.0f");
+        changed |= LabeledSlider("Wave size (main wave, crest to crest)", &m.size, wave_macro::kSizeMin, wave_macro::kSizeMax, "%.2f");
+        changed |= LabeledSlider("Height (main wave; smaller ones follow)", &m.height, 0.0f, wave_macro::kHeightMax, "%.3f");
+        changed |= LabeledSlider("Choppiness (0 = round, higher = pointed crests)", &m.chop, 0.0f, wave_macro::kChopMax, "%.2f");
+        changed |= LabeledSlider("Speed (x; longer waves already move faster)", &m.speedScale, 0.0f, wave_macro::kSpeedMax, "%.2f");
+        if (changed)
         {
-            if (LabeledSlider("Direction (deg, 0 = +X, 90 = +Z)", &angleDeg, -180.0f, 180.0f, "%.0f"))
-            {
-                const float r = DirectX::XMConvertToRadians(angleDeg);
-                w.direction = { std::cos(r), std::sin(r) };
-            }
-            LabeledSlider("Height", &w.amplitude, 0.0f, 0.3f, "%.3f");
-            LabeledSlider("Length (crest to crest)", &w.wavelength, 0.2f, 8.0f, "%.2f");
-            LabeledSlider("Speed", &w.speed, 0.0f, 3.0f, "%.2f");
-            LabeledSlider("Sharpness (0 = round, 1 = pointed crests)", &w.steepness, 0.0f, 1.0f, "%.2f");
-            ImGui::TreePop();
+            GenerateWaves(m, water_.waves);
         }
-        ImGui::PopID();
+    }
+
+    // Advanced: the four waves the shader actually gets, one by one (presets order them big -> small).
+    // No extra indent, so the wave rows keep room for the direction text.
+    if (ImGui::TreeNodeEx("Advanced - individual waves", ImGuiTreeNodeFlags_NoTreePushOnOpen))
+    {
+        const char* waveNames[ColorShader::kWaveCount] = { "Wave 1 - Big swell", "Wave 2 - Medium swell", "Wave 3 - Small waves", "Wave 4 - Ripples" };
+        for (int i = 0; i < ColorShader::kWaveCount; ++i)
+        {
+            auto& w = water_.waves[i];
+            float angleDeg = DirectX::XMConvertToDegrees(std::atan2(w.direction.y, w.direction.x));
+            const float relativeDeg = ViewRelativeDeg(angleDeg, cameraRotation_.y);
+
+            ImGui::PushID(i);
+            ImGui::AlignTextToFramePadding();
+            const bool open = ImGui::TreeNode("##wave", "%s", waveNames[i]);
+            ImGui::SameLine(185.0f);
+            DrawDirectionDial(relativeDeg);
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", DescribeViewDirection(relativeDeg));
+            if (open)
+            {
+                if (LabeledSlider("Direction (deg, 0 = +X, 90 = +Z)", &angleDeg, -180.0f, 180.0f, "%.0f"))
+                {
+                    const float r = DirectX::XMConvertToRadians(angleDeg);
+                    w.direction = { std::cos(r), std::sin(r) };
+                }
+                LabeledSlider("Height", &w.amplitude, 0.0f, 0.3f, "%.3f");
+                LabeledSlider("Length (crest to crest)", &w.wavelength, 0.2f, 8.0f, "%.2f");
+                LabeledSlider("Speed", &w.speed, 0.0f, 3.0f, "%.2f");
+                LabeledSlider("Sharpness (0 = round, 1 = pointed crests)", &w.steepness, 0.0f, 1.0f, "%.2f");
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
     }
 
     ImGui::End();
