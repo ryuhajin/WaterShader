@@ -1,5 +1,7 @@
 ﻿#include "ColorShader.h"
 
+#include "ColorSpace.h"
+
 #include <windows.h>
 
 #include <d3dcompiler.h>
@@ -163,6 +165,7 @@ bool ColorShader::InitializeShader(ID3D11Device* device)
         {GetShaderPath(L"Common.hlsli"),   {}},
         {GetShaderPath(L"Lighting.hlsli"), {}},
         {GetShaderPath(L"Cubemap.hlsli"),  {}},
+        {GetShaderPath(L"Color.hlsli"),    {}},
     };
 
     D3D11_BUFFER_DESC cbDesc = {};
@@ -317,11 +320,12 @@ void ColorShader::RenderShader(
         DirectX::XMStoreFloat4x4(&data->view, view);
         DirectX::XMStoreFloat4x4(&data->projection, projection);
         data->lightDirection = lightDirection;
-        data->lightColor = lightColor;
-        data->ambientColor = ambientColor;
+        // Colors arrive as sRGB (what the pickers show); the shader lights in linear space.
+        data->lightColor = SrgbToLinear(lightColor);
+        data->ambientColor = SrgbToLinear(ambientColor);
         data->cameraPositionWS = cameraPositionWS;
-        data->facingColor = water.facingColor;
-        data->grazingColor = water.grazingColor;
+        data->facingColor = SrgbToLinear(water.facingColor);
+        data->grazingColor = SrgbToLinear(water.grazingColor);
         data->normalScroll = DirectX::XMFLOAT4(
             water.normalScroll1.x, water.normalScroll1.y,
             water.normalScroll2.x, water.normalScroll2.y);

@@ -17,11 +17,12 @@
 ## 명령줄
 
 ```
-WaterShader.exe [--shot <name>] [--no-vsync]
+WaterShader.exe [--shot <name>] [--no-vsync] [--no-input]
                 [--capture <label>] [--capture-feature <feature>] [--debug <mode>]
                 [--normal-map <path relative to assets>]
 ```
 
+- `--capture` / `--no-input` = 무인 모드: 포커스를 빼앗지 않고(다른 창 뒤에 표시) 키보드·마우스 입력 무시 — TROUBLESHOOTING F
 - 캡처 결과: `docs/features/<feature>/captures/<label>/` (기본 feature = water-polish)
 - 비교 시트: `powershell -File docs/features/water-polish/make_compare.ps1 [-Dir ../<feature>] <step> <step> ...`
 

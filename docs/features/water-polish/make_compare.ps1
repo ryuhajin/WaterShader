@@ -2,9 +2,11 @@
 #   rows = presets, columns = capture steps (in the order given)
 # Usage: powershell -File make_compare.ps1 before step1_bugfix step2_sun_glint
 #        powershell -File make_compare.ps1 -Dir ../bench-tools before env final   (another feature folder)
+#        ... -Out compare_operators ...                                          (output folder name)
 [CmdletBinding(PositionalBinding = $false)] # -Dir must be named; bare words are step names
 param(
     [string]$Dir = $PSScriptRoot,
+    [string]$Out = "compare",
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Steps
 )
 
@@ -13,7 +15,7 @@ Add-Type -AssemblyName System.Drawing
 if (-not [IO.Path]::IsPathRooted($Dir)) { $Dir = Join-Path $PSScriptRoot $Dir }
 $Dir = (Resolve-Path $Dir).Path
 $root = Join-Path $Dir "captures"
-$outDir = Join-Path $Dir "compare"
+$outDir = Join-Path $Dir $Out
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
 $presets = @("basic", "sunset", "tropical")

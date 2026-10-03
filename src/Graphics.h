@@ -9,6 +9,7 @@
 #include "Model.h"
 #include "Skybox.h"
 #include "SkyboxShader.h"
+#include "TonemapShader.h"
 #include "Texture.h"
 
 #include <DirectXMath.h>
@@ -55,6 +56,7 @@ private:
         DirectX::XMFLOAT3 ambientColor = {0.10f, 0.14f, 0.18f};
         float ambientIntensity = 0.35f;
         int environment = 0; // index into kEnvironments (sky + reflection cube map)
+        float exposureEv = 0.0f; // tonemap pass multiplies the HDR scene by 2^EV
         ColorShader::WaterParams water;
     };
 
@@ -101,6 +103,13 @@ private:
     int environmentIndex_ = 0;
     std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<SkyboxShader> skyboxShader_;
+    std::unique_ptr<TonemapShader> tonemapShader_;
+
+    // Final pass: exposure (per preset, EV) and tone curve (global, --tonemap to override).
+    float exposureEv_ = 0.0f;
+    bool hasExposureOverride_ = false;
+    float exposureOverrideEv_ = 0.0f;
+    TonemapShader::Operator tonemapOperator_ = TonemapShader::AcesHuePreserving;
 
     bool imguiInitialized_ = false;
     unsigned int screenWidth_ = 0;

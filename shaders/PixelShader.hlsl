@@ -1,10 +1,16 @@
 #include "Common.hlsli"
 #include "Lighting.hlsli"
 #include "Cubemap.hlsli"
+#include "Color.hlsli"
 
 // Water-only resources. Cubemap.hlsli already reserves t0/s0; do not reuse here.
 Texture2D    g_NormalMap     : register(t1);
 SamplerState g_NormalSampler : register(s1);
+
+float4 DebugOut(float3 value)
+{
+    return float4(SrgbToLinear(saturate(value)), 1.0);
+}
 
 // SV_IsFrontFace = rasterizer stage에서 결정되는 system value. 픽셀이 front face에 속하면 true.
 float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
@@ -43,11 +49,13 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // 2 = final world-space normal
     // 3 = mesh UV
     // 4 = front/back face
+    // Debug values are data, not light: DebugOut pre-decodes them so the final LinearToSrgb in the
+    // tonemap pass (forced to "no tone curve" while debugging) gives back exactly these numbers.
     int debugMode = (int)g_DebugParams.x;
-    if (debugMode == 1) { return float4(g_NormalMap.Sample(g_NormalSampler, uv1).rgb, 1.0); }
-    if (debugMode == 2) { return float4(finalNormalWS * 0.5 + 0.5, 1.0); }
-    if (debugMode == 3) { return float4(frac(input.uv), 0.0, 1.0); }
-    if (debugMode == 4) { return isFrontFace ? float4(0.1, 0.9, 0.2, 1.0) : float4(0.9, 0.1, 0.1, 1.0); }
+    if (debugMode == 1) { return DebugOut(g_NormalMap.Sample(g_NormalSampler, uv1).rgb); }
+    if (debugMode == 2) { return DebugOut(finalNormalWS * 0.5 + 0.5); }
+    if (debugMode == 3) { return DebugOut(float3(frac(input.uv), 0.0)); }
+    if (debugMode == 4) { return DebugOut(isFrontFace ? float3(0.1, 0.9, 0.2) : float3(0.9, 0.1, 0.1)); }
 
     float3 viewDirWS = normalize(g_CameraPositionWS.xyz - input.worldPos);
     float  viewFacingAmount = saturate(dot(finalNormalWS, viewDirWS));
@@ -71,7 +79,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float3 reflectedSceneColor = SampleEnv(envLookupDirWS);
 
     float reflectionAmount = saturate(reflectionByViewAngle * reflectionStrength);
-    if (debugMode == 5) { return float4(diffuseAmount, specular, reflectionAmount, 1.0); }
+    if (debugMode == 5) { return DebugOut(float3(diffuseAmount, specular, reflectionAmount)); }
 
     float3 finalColor = lerp(litWaterColor, reflectedSceneColor, reflectionAmount);
 
@@ -81,6 +89,8 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float sunGlint = SunGlintFactor(reflectionDirWS, lightDirWS, sunGlintPower) * sunGlintIntensity * reflectionAmount;
     finalColor += sunGlint * g_LightColor.rgb * g_LightColor.a;
 
-    return float4(HighlightRolloff(finalColor), 1.0);
+    // Linear HDR radiance. Values above 1 (glint, bright sky) are kept; the tonemap pass compresses
+    // the whole frame, sky included, with one curve.
+    return float4(finalColor, 1.0);
 }
 
