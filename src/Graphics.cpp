@@ -7,10 +7,15 @@
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
 
+#include <ScreenGrab.h>
+#include <shellapi.h>
+#include <wincodec.h>
+
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 
 namespace
@@ -29,6 +34,47 @@ std::wstring GetAssetPath(const wchar_t* relativePath)
     return path.wstring();
 #endif
 }
+
+struct CaptureShot
+{
+    const char* name;
+    DirectX::XMFLOAT3 position;
+    DirectX::XMFLOAT3 rotation; // x = pitch, y = yaw (deg)
+    float fovDeg;
+    bool ocean; // true = large ocean grid, false = 2x2 bench plane
+};
+
+// Fixed camera shots for before/after comparison. Bench plane spans x,z in [-1, 1].
+// "sunward" looks along the skybox sun (yaw ~33 deg) from a low angle to catch the glint path.
+// ocean_* shots use the large grid and only exist from step 6 on.
+constexpr CaptureShot kCaptureShots[] = {
+    { "oblique",       {  0.00f, 1.00f, -2.20f }, { 24.0f,  0.0f, 0.0f }, 60.0f, false },
+    { "top",           {  0.00f, 2.40f,  0.00f }, { 89.9f,  0.0f, 0.0f }, 60.0f, false },
+    { "sunward",       { -1.04f, 0.45f, -1.59f }, { 12.0f, 33.0f, 0.0f }, 60.0f, false },
+    { "ocean_sunward", { -0.90f, 0.55f, -1.40f }, {  6.0f, 34.5f, 0.0f }, 55.0f, true  },
+    { "ocean_wide",    {  0.00f, 1.60f, -3.00f }, { 14.0f, 10.0f, 0.0f }, 60.0f, true  },
+};
+
+constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical" };
+
+constexpr int kPresetFileVersion = 3;
+
+// Optional "key value" pairs appended after the fixed preset fields. Missing keys keep the
+// code defaults and unknown keys are skipped, so new parameters don't need a format bump.
+template <typename Preset, typename Fn>
+void ForEachExtraField(Preset& preset, Fn&& fn)
+{
+    fn("sunGlintPower", preset.water.sunGlintPower);
+    fn("sunGlintIntensity", preset.water.sunGlintIntensity);
+    fn("fresnelF0", preset.water.fresnelF0);
+    fn("normalStrength", preset.water.normalStrength);
+    fn("detailScale", preset.water.detailScale);
+}
+
+// Measured from assets/textures/skybox.dds (sun disk on the +Z face, just above the horizon).
+constexpr float kSkyboxSunYawDeg = 34.5f;
+constexpr float kSkyboxSunElevationDeg = 4.0f;
+constexpr float kCaptureTime = 12.0f;
 } // namespace
 
 bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
@@ -90,6 +136,14 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         return false;
     }
 
+    // 1024x1024 quads out to +-400 units: ~0.012 spacing at the center, ~0.25 at 20 units, reaching
+    // near the horizon. Together with the wave fade in the VS this keeps >= 5 vertices per wavelength.
+    oceanGrid_ = std::make_unique<Model>();
+    if (!oceanGrid_->InitializeGrid(d3d_->GetDevice(), 1024, 400.0f, 6.0f))
+    {
+        return false;
+    }
+
     colorShader_ = std::make_unique<ColorShader>();
     if (!colorShader_->Initialize(d3d_->GetDevice()))
     {
@@ -127,6 +181,25 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     LoadPresets();
     ApplyPreset(0);
 
+    // WaterShader.exe --capture <label> : save every preset x shot, then quit.
+    int argc = 0;
+    if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc))
+    {
+        for (int i = 1; i + 1 < argc; ++i)
+        {
+            if (std::wstring(argv[i]) == L"--capture")
+            {
+                const std::wstring label = argv[i + 1];
+                StartCaptureSet(std::string(label.begin(), label.end()), true);
+            }
+            else if (std::wstring(argv[i]) == L"--debug")
+            {
+                captureDebugMode_ = _wtoi(argv[i + 1]);
+            }
+        }
+        LocalFree(argv);
+    }
+
     return true;
 }
 
@@ -138,16 +211,32 @@ void Graphics::ApplyPreset(int index)
     }
 
     const int debugMode = water_.debugMode;
-    const ShaderPreset& preset = presets_[index];
+    ApplyPresetValues(presets_[index]);
+    water_.debugMode = debugMode;
+}
 
-    lightYawDeg_ = preset.lightYawDeg;
-    lightPitchDeg_ = preset.lightPitchDeg;
+void Graphics::ApplyPresetValues(const ShaderPreset& preset)
+{
+    sunYawDeg_ = preset.sunYawDeg;
+    sunElevationDeg_ = preset.sunElevationDeg;
     lightColor_ = preset.lightColor;
     lightIntensity_ = preset.lightIntensity;
     ambientColor_ = preset.ambientColor;
     ambientIntensity_ = preset.ambientIntensity;
     water_ = preset.water;
-    water_.debugMode = debugMode;
+}
+
+Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
+{
+    ShaderPreset preset;
+    preset.sunYawDeg = sunYawDeg_;
+    preset.sunElevationDeg = sunElevationDeg_;
+    preset.lightColor = lightColor_;
+    preset.lightIntensity = lightIntensity_;
+    preset.ambientColor = ambientColor_;
+    preset.ambientIntensity = ambientIntensity_;
+    preset.water = water_;
+    return preset;
 }
 
 void Graphics::SaveCurrentPreset(int index)
@@ -157,16 +246,101 @@ void Graphics::SaveCurrentPreset(int index)
         return;
     }
 
-    ShaderPreset& preset = presets_[index];
-    preset.lightYawDeg = lightYawDeg_;
-    preset.lightPitchDeg = lightPitchDeg_;
-    preset.lightColor = lightColor_;
-    preset.lightIntensity = lightIntensity_;
-    preset.ambientColor = ambientColor_;
-    preset.ambientIntensity = ambientIntensity_;
-    preset.water = water_;
-    preset.water.debugMode = 0;
+    presets_[index] = MakePresetFromCurrent();
+    presets_[index].water.debugMode = 0;
     SavePresets();
+}
+
+void Graphics::StartCaptureSet(const std::string& label, bool quitWhenDone)
+{
+    captureQueue_.clear();
+    for (int preset = 0; preset < static_cast<int>(presets_.size()); ++preset)
+    {
+        for (int shot = 0; shot < static_cast<int>(std::size(kCaptureShots)); ++shot)
+        {
+            captureQueue_.push_back({preset, shot});
+        }
+    }
+
+    // assets/ -> project root -> docs/features/water-polish/captures/<label>
+    const std::filesystem::path projectRoot =
+        std::filesystem::path(GetAssetPath(L"shader_presets.txt")).parent_path().parent_path();
+    captureDir_ = projectRoot / "docs" / "features" / "water-polish" / "captures" / label;
+    std::error_code ec;
+    std::filesystem::create_directories(captureDir_, ec);
+
+    captureRestore_ = {MakePresetFromCurrent(), cameraPosition_, cameraRotation_, cameraFovDeg_, elapsedTime_, oceanMode_};
+    quitAfterCapture_ = quitWhenDone;
+    captureStatus_ = "Capturing -> " + captureDir_.string();
+}
+
+bool Graphics::BeginCaptureFrame()
+{
+    if (captureQueue_.empty())
+    {
+        return false;
+    }
+
+    const CaptureJob job = captureQueue_.front();
+    captureQueue_.erase(captureQueue_.begin());
+
+    ApplyPresetValues(presets_[job.preset]);
+    water_.debugMode = captureDebugMode_;
+
+    const CaptureShot& shot = kCaptureShots[job.shot];
+    cameraPosition_ = shot.position;
+    cameraRotation_ = shot.rotation;
+    cameraFovDeg_ = shot.fovDeg;
+    oceanMode_ = shot.ocean;
+    camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
+    camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
+
+    // Fixed time so before/after frames show the same wave phase.
+    elapsedTime_ = kCaptureTime;
+
+    const std::string fileName = std::string(kPresetFileNames[job.preset]) + "_" + shot.name + ".jpg";
+    pendingCapturePath_ = captureDir_ / fileName;
+    return true;
+}
+
+void Graphics::EndCaptureFrame()
+{
+    // WIC needs COM; S_FALSE / RPC_E_CHANGED_MODE just mean it is already initialized.
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+
+    // JPEG keeps each step's capture set ~2MB in git instead of ~11MB as PNG.
+    const auto backBuffer = d3d_->GetBackBuffer();
+    const HRESULT hr = DirectX::SaveWICTextureToFile(
+        d3d_->GetDeviceContext(),
+        backBuffer.Get(),
+        GUID_ContainerFormatJpeg,
+        pendingCapturePath_.wstring().c_str(),
+        nullptr,
+        [](IPropertyBag2* props)
+        {
+            PROPBAG2 option = {};
+            option.pstrName = const_cast<wchar_t*>(L"ImageQuality");
+            VARIANT value;
+            VariantInit(&value);
+            value.vt = VT_R4;
+            value.fltVal = 0.95f;
+            props->Write(1, &option, &value);
+        });
+    OutputDebugStringA(((SUCCEEDED(hr) ? "[Capture] saved " : "[Capture] FAILED ") + pendingCapturePath_.string() + "\n").c_str());
+
+    if (!captureQueue_.empty())
+    {
+        return;
+    }
+
+    ApplyPresetValues(captureRestore_.preset);
+    cameraPosition_ = captureRestore_.cameraPosition;
+    cameraRotation_ = captureRestore_.cameraRotation;
+    cameraFovDeg_ = captureRestore_.cameraFovDeg;
+    oceanMode_ = captureRestore_.oceanMode;
+    elapsedTime_ = captureRestore_.elapsedTime;
+    captureStatus_ = "Saved -> " + captureDir_.string();
+    captureFinishedQuit_ = quitAfterCapture_;
 }
 
 void Graphics::LoadPresets()
@@ -174,8 +348,7 @@ void Graphics::LoadPresets()
     presets_[0] = ShaderPreset{};
 
     presets_[1] = ShaderPreset{};
-    presets_[1].lightYawDeg = 35.0f;
-    presets_[1].lightPitchDeg = -10.0f;
+    presets_[1].sunElevationDeg = 5.0f;
     presets_[1].lightColor = {1.0f, 0.58f, 0.35f};
     presets_[1].lightIntensity = 1.2f;
     presets_[1].ambientColor = {0.18f, 0.10f, 0.16f};
@@ -188,8 +361,7 @@ void Graphics::LoadPresets()
     presets_[1].water.specularSharpness = 72.0f;
 
     presets_[2] = ShaderPreset{};
-    presets_[2].lightYawDeg = 70.0f;
-    presets_[2].lightPitchDeg = -55.0f;
+    presets_[2].sunElevationDeg = 32.0f;
     presets_[2].lightColor = {0.92f, 1.0f, 0.94f};
     presets_[2].lightIntensity = 1.35f;
     presets_[2].ambientColor = {0.08f, 0.22f, 0.24f};
@@ -208,19 +380,29 @@ void Graphics::LoadPresets()
         return;
     }
 
+    // v2: second field is sun elevation (> 0 above the horizon); v1 stored an inverted pitch.
+    // v3: 4 Gerstner waves (dir.x dir.y amplitude wavelength speed steepness). Older files are ignored.
+    std::string line;
+    std::getline(file, line);
+    std::istringstream headerStream(line);
     std::string header;
     int version = 0;
-    file >> header >> version;
-    if (header != "WaterShaderPresets" || version != 1)
+    headerStream >> header >> version;
+    if (header != "WaterShaderPresets" || version != kPresetFileVersion)
     {
         return;
     }
 
     for (ShaderPreset& preset : presets_)
     {
-        file
-            >> preset.lightYawDeg
-            >> preset.lightPitchDeg
+        if (!std::getline(file, line))
+        {
+            break;
+        }
+        std::istringstream in(line);
+        in
+            >> preset.sunYawDeg
+            >> preset.sunElevationDeg
             >> preset.lightColor.x >> preset.lightColor.y >> preset.lightColor.z
             >> preset.lightIntensity
             >> preset.ambientColor.x >> preset.ambientColor.y >> preset.ambientColor.z
@@ -237,11 +419,25 @@ void Graphics::LoadPresets()
 
         for (auto& wave : preset.water.waves)
         {
-            file
+            in
                 >> wave.direction.x >> wave.direction.y
                 >> wave.amplitude
                 >> wave.wavelength
-                >> wave.speed;
+                >> wave.speed
+                >> wave.steepness;
+        }
+
+        std::string key;
+        float value = 0.0f;
+        while (in >> key >> value)
+        {
+            ForEachExtraField(preset, [&](const char* name, float& field)
+            {
+                if (key == name)
+                {
+                    field = value;
+                }
+            });
         }
     }
 }
@@ -257,12 +453,12 @@ void Graphics::SavePresets() const
         return;
     }
 
-    file << "WaterShaderPresets 1\n";
+    file << "WaterShaderPresets " << kPresetFileVersion << '\n';
     for (const ShaderPreset& preset : presets_)
     {
         file
-            << preset.lightYawDeg << ' '
-            << preset.lightPitchDeg << ' '
+            << preset.sunYawDeg << ' '
+            << preset.sunElevationDeg << ' '
             << preset.lightColor.x << ' ' << preset.lightColor.y << ' ' << preset.lightColor.z << ' '
             << preset.lightIntensity << ' '
             << preset.ambientColor.x << ' ' << preset.ambientColor.y << ' ' << preset.ambientColor.z << ' '
@@ -283,8 +479,14 @@ void Graphics::SavePresets() const
                 << ' ' << wave.direction.x << ' ' << wave.direction.y
                 << ' ' << wave.amplitude
                 << ' ' << wave.wavelength
-                << ' ' << wave.speed;
+                << ' ' << wave.speed
+                << ' ' << wave.steepness;
         }
+
+        ForEachExtraField(preset, [&](const char* name, const float& field)
+        {
+            file << ' ' << name << ' ' << field;
+        });
 
         file << '\n';
     }
@@ -326,6 +528,12 @@ void Graphics::Shutdown()
     {
         model_->Shutdown();
         model_.reset();
+    }
+
+    if (oceanGrid_)
+    {
+        oceanGrid_->Shutdown();
+        oceanGrid_.reset();
     }
 
     if (normalMap_)
@@ -400,6 +608,8 @@ bool Graphics::Render(float deltaTime)
     colorShader_->CheckHotReload(d3d_->GetDevice(), now);
     skyboxShader_->CheckHotReload(d3d_->GetDevice(), now);
 
+    const bool capturing = BeginCaptureFrame();
+
     camera_->Render();
 
     const float aspect = (screenHeight_ > 0)
@@ -422,10 +632,16 @@ bool Graphics::Render(float deltaTime)
 
     const XMFLOAT4 cameraPosWS(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z, 1.0f);
 
-    const float lightYawRad = XMConvertToRadians(lightYawDeg_);
-    const float lightPitchRad = XMConvertToRadians(lightPitchDeg_);
-    const float cosPitch = cosf(lightPitchRad);
-    const XMFLOAT4 lightDir(sinf(lightYawRad) * cosPitch, -sinf(lightPitchRad), cosf(lightYawRad) * cosPitch, 0.0f);
+    // Sun position on the sky (yaw uses the camera convention, elevation > 0 = above the horizon).
+    // g_LightDirection is the direction light travels, i.e. away from the sun.
+    const float sunYawRad = XMConvertToRadians(sunYawDeg_);
+    const float sunElevationRad = XMConvertToRadians(sunElevationDeg_);
+    const float cosElevation = cosf(sunElevationRad);
+    const XMFLOAT4 lightDir(
+        -sinf(sunYawRad) * cosElevation,
+        -sinf(sunElevationRad),
+        -cosf(sunYawRad) * cosElevation,
+        0.0f);
     const XMFLOAT4 lightColorPacked(lightColor_.x, lightColor_.y, lightColor_.z, lightIntensity_);
     const XMFLOAT4 ambientColorPacked(ambientColor_.x, ambientColor_.y, ambientColor_.z, ambientIntensity_);
 
@@ -450,10 +666,11 @@ bool Graphics::Render(float deltaTime)
     }
 
     d3d_->SetRasterizerWaterSurface();
-    model_->Render(d3d_->GetDeviceContext());
+    Model* waterMesh = oceanMode_ ? oceanGrid_.get() : model_.get();
+    waterMesh->Render(d3d_->GetDeviceContext());
     colorShader_->Render(
         d3d_->GetDeviceContext(),
-        model_->GetIndexCount(),
+        waterMesh->GetIndexCount(),
         world,
         view,
         projection,
@@ -469,14 +686,22 @@ bool Graphics::Render(float deltaTime)
         d3d_->GetWrapSampler());
     d3d_->SetRasterizerDefault();
 
-    DrawImGuiPanel();
+    if (!capturing)
+    {
+        DrawImGuiPanel();
+    }
 
     ImGui::Render();
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
+    if (capturing)
+    {
+        EndCaptureFrame();
+    }
+
     d3d_->EndScene();
 
-    return true;
+    return !captureFinishedQuit_;
 }
 
 void Graphics::DrawImGuiPanel()
@@ -541,17 +766,25 @@ void Graphics::DrawImGuiPanel()
     }
 
     ImGui::SeparatorText("Lighting");
-    ImGui::SliderFloat("Light Yaw (deg)", &lightYawDeg_, 0.0f, 360.0f);
-    ImGui::SliderFloat("Light Pitch (deg)", &lightPitchDeg_, -90.0f, 90.0f);
+    ImGui::SliderFloat("Sun Yaw (deg)", &sunYawDeg_, 0.0f, 360.0f);
+    ImGui::SliderFloat("Sun Elevation (deg)", &sunElevationDeg_, 0.0f, 90.0f);
+    ImGui::TextDisabled("Skybox sun: yaw %.1f, elevation %.1f", kSkyboxSunYawDeg, kSkyboxSunElevationDeg);
+    if (ImGui::Button("Match Skybox Sun"))
+    {
+        sunYawDeg_ = kSkyboxSunYawDeg;
+        sunElevationDeg_ = kSkyboxSunElevationDeg;
+    }
     ImGui::ColorEdit3("Light Color", &lightColor_.x);
     ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 3.0f);
     ImGui::SliderFloat("Specular Strength", &water_.specularStrength, 0.0f, 2.0f);
     ImGui::SliderFloat("Specular Sharpness", &water_.specularSharpness, 16.0f, 256.0f);
+    ImGui::SliderFloat("Sun Glint Power", &water_.sunGlintPower, 64.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Sun Glint Intensity", &water_.sunGlintIntensity, 0.0f, 50.0f);
     ImGui::Text("Time: %.2fs", elapsedTime_);
     if (ImGui::Button("Reset Light"))
     {
-        lightYawDeg_ = 45.0f;
-        lightPitchDeg_ = -45.0f;
+        sunYawDeg_ = kSkyboxSunYawDeg;
+        sunElevationDeg_ = 20.0f;
         lightColor_ = {1.0f, 1.0f, 1.0f};
         lightIntensity_ = 1.0f;
         ambientColor_ = {0.10f, 0.14f, 0.18f};
@@ -564,20 +797,24 @@ void Graphics::DrawImGuiPanel()
 
     ImGui::SeparatorText("Environment");
     ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
+    ImGui::Checkbox("Ocean Grid (open water to the horizon)", &oceanMode_);
     ImGui::SliderFloat("Reflection Strength", &water_.reflectionStrength, 0.0f, 1.0f);
 
     ImGui::SeparatorText("Water");
     ImGui::SliderFloat("Fresnel Power", &water_.fresnelPower, 1.0f, 8.0f);
     ImGui::ColorEdit3("Facing Color", &water_.facingColor.x);
     ImGui::ColorEdit3("Grazing Color", &water_.grazingColor.x);
+    ImGui::SliderFloat("Fresnel F0", &water_.fresnelF0, 0.0f, 0.6f);
     ImGui::SliderFloat("Normal Scale (tile)", &water_.normalScale, 0.1f, 5.0f);
+    ImGui::SliderFloat("Normal Strength", &water_.normalStrength, 0.0f, 3.0f);
+    ImGui::SliderFloat("Detail Layer Scale (B / A)", &water_.detailScale, 1.0f, 6.0f);
     ImGui::TextDisabled("Normal map UV scroll velocity (2 layers blended)");
     ImGui::SliderFloat("Layer A - U speed (per sec)", &water_.normalScroll1.x, -0.2f, 0.2f);
     ImGui::SliderFloat("Layer A - V speed (per sec)", &water_.normalScroll1.y, -0.2f, 0.2f);
     ImGui::SliderFloat("Layer B - U speed (per sec)", &water_.normalScroll2.x, -0.2f, 0.2f);
     ImGui::SliderFloat("Layer B - V speed (per sec)", &water_.normalScroll2.y, -0.2f, 0.2f);
 
-    for (int i = 0; i < 2; ++i)
+    for (int i = 0; i < ColorShader::kWaveCount; ++i)
     {
         char label[32];
         std::snprintf(label, sizeof(label), "Wave %d", i);
@@ -593,13 +830,26 @@ void Graphics::DrawImGuiPanel()
             ImGui::SliderFloat("Amplitude", &w.amplitude, 0.0f, 0.3f);
             ImGui::SliderFloat("Wavelength", &w.wavelength, 0.2f, 8.0f);
             ImGui::SliderFloat("Speed", &w.speed, 0.0f, 3.0f);
+            ImGui::SliderFloat("Steepness (Gerstner Q)", &w.steepness, 0.0f, 1.0f);
             ImGui::TreePop();
         }
     }
 
+    ImGui::SeparatorText("Capture");
+    ImGui::InputText("Label", captureLabel_, sizeof(captureLabel_));
+    if (ImGui::Button("Capture Set (presets x shots)"))
+    {
+        StartCaptureSet(captureLabel_, false);
+    }
+    ImGui::TextDisabled("Fixed time %.1fs, UI hidden. Saves to docs/features/water-polish/captures/<label>", kCaptureTime);
+    if (!captureStatus_.empty())
+    {
+        ImGui::TextWrapped("%s", captureStatus_.c_str());
+    }
+
     // Debug View — keep this section last so new ImGui controls always go above it.
     ImGui::SeparatorText("Debug View");
-    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face" };
+    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
     ImGui::TextWrapped("Normal Map Loader: %s", normalMapStatus_.c_str());
 

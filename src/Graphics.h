@@ -13,8 +13,10 @@
 #include <DirectXMath.h>
 
 #include <array>
+#include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 class Input;
 
@@ -35,10 +37,15 @@ private:
     void LoadPresets();
     void SavePresets() const;
 
+    // Before/after capture: renders preset x fixed camera shots at a fixed time and saves JPEGs.
+    void StartCaptureSet(const std::string& label, bool quitWhenDone);
+    bool BeginCaptureFrame();
+    void EndCaptureFrame();
+
     struct ShaderPreset
     {
-        float lightYawDeg = 45.0f;
-        float lightPitchDeg = -45.0f;
+        float sunYawDeg = 34.5f;
+        float sunElevationDeg = 20.0f;
         DirectX::XMFLOAT3 lightColor = {1.0f, 1.0f, 1.0f};
         float lightIntensity = 1.0f;
         DirectX::XMFLOAT3 ambientColor = {0.10f, 0.14f, 0.18f};
@@ -46,11 +53,31 @@ private:
         ColorShader::WaterParams water;
     };
 
+    ShaderPreset MakePresetFromCurrent() const;
+    void ApplyPresetValues(const ShaderPreset& preset);
+
+    struct CaptureJob
+    {
+        int preset = 0;
+        int shot = 0;
+    };
+
+    struct CaptureRestoreState
+    {
+        ShaderPreset preset;
+        DirectX::XMFLOAT3 cameraPosition;
+        DirectX::XMFLOAT3 cameraRotation;
+        float cameraFovDeg;
+        float elapsedTime;
+        bool oceanMode;
+    };
+
     std::unique_ptr<D3DClass> d3d_;
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Light> light_;
     std::unique_ptr<Texture> normalMap_;
     std::unique_ptr<Model> model_;
+    std::unique_ptr<Model> oceanGrid_;
     std::unique_ptr<ColorShader> colorShader_;
     std::unique_ptr<CubemapTexture> cubemap_;
     std::unique_ptr<Skybox> skybox_;
@@ -66,15 +93,26 @@ private:
     float cameraFovDeg_ = 60.0f;
     float cameraMoveSpeed_ = 2.0f;
     float cameraTurnSpeed_ = 90.0f;
-    float lightYawDeg_ = 45.0f;
-    float lightPitchDeg_ = -45.0f;
+    float sunYawDeg_ = 34.5f;
+    float sunElevationDeg_ = 20.0f;
     DirectX::XMFLOAT3 lightColor_ = {1.0f, 1.0f, 1.0f};
     float lightIntensity_ = 1.0f;
     DirectX::XMFLOAT3 ambientColor_ = {0.10f, 0.14f, 0.18f};
     float ambientIntensity_ = 0.35f;
     float elapsedTime_ = 0.0f;
     bool skyboxVisible_ = true;
+    bool oceanMode_ = false;
     ColorShader::WaterParams water_;
     std::string normalMapStatus_;
     std::array<ShaderPreset, 3> presets_{};
+
+    std::vector<CaptureJob> captureQueue_;
+    std::filesystem::path captureDir_;
+    std::filesystem::path pendingCapturePath_;
+    CaptureRestoreState captureRestore_{};
+    bool quitAfterCapture_ = false;
+    bool captureFinishedQuit_ = false;
+    int captureDebugMode_ = 0;
+    char captureLabel_[64] = "manual";
+    std::string captureStatus_;
 };
