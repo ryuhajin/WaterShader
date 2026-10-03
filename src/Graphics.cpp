@@ -351,7 +351,7 @@ void Graphics::SaveCurrentPreset(int index)
     SavePresets();
 }
 
-void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone)
+void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone, bool allowOverwrite)
 {
     captureQueue_.clear();
     for (int preset = 0; preset < static_cast<int>(presets_.size()); ++preset)
@@ -365,8 +365,13 @@ void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone)
     // assets/ -> project root -> docs/features/<feature>/captures/<label>
     const std::filesystem::path projectRoot =
         std::filesystem::path(GetAssetPath(L"shader_presets.txt")).parent_path().parent_path();
-    captureDir_ = projectRoot / "docs" / "features" / captureFeature_ / "captures" / label;
+    const std::filesystem::path capturesRoot = projectRoot / "docs" / "features" / captureFeature_ / "captures";
+    captureDir_ = capturesRoot / label;
     std::error_code ec;
+    for (int suffix = 2; !allowOverwrite && std::filesystem::exists(captureDir_, ec); ++suffix)
+    {
+        captureDir_ = capturesRoot / (label + L"_" + std::to_wstring(suffix));
+    }
     std::filesystem::create_directories(captureDir_, ec);
 
     captureRestore_ = {MakePresetFromCurrent(), MakeViewFromCurrent(), elapsedTime_};
@@ -1184,11 +1189,30 @@ void Graphics::DrawImGuiPanel()
 
     ImGui::SeparatorText("Capture");
     ImGui::InputText("Label", captureLabel_, sizeof(captureLabel_));
-    if (ImGui::Button("Capture Set (presets x shots)"))
+    // Two-step: a stray click only opens the confirmation, and UI captures never overwrite an
+    // existing folder (StartCaptureSet picks <label>_2, _3, ... instead). --capture still overwrites.
+    if (ImGui::Button("Capture Set (presets x shots)..."))
     {
-        StartCaptureSet(Utf8ToWide(captureLabel_), false);
+        ImGui::OpenPopup("Confirm capture");
     }
-    ImGui::TextDisabled("Fixed time %.1fs, UI hidden. Saves to docs/features/water-polish/captures/<label>", kCaptureTime);
+    if (ImGui::BeginPopupModal("Confirm capture", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Text("Capture %d images to", static_cast<int>(presets_.size() * std::size(kCaptureShots)));
+        ImGui::Text("docs/features/%s/captures/%s ?", WideToUtf8(captureFeature_).c_str(), captureLabel_);
+        ImGui::TextDisabled("An existing folder is kept; a numbered folder is created instead.");
+        if (ImGui::Button("Capture"))
+        {
+            StartCaptureSet(Utf8ToWide(captureLabel_), false, false);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+        {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::TextDisabled("Fixed time %.1fs, UI hidden.", kCaptureTime);
     if (!captureStatus_.empty())
     {
         ImGui::TextWrapped("%s", captureStatus_.c_str());
