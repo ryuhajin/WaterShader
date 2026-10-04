@@ -1,3 +1,5 @@
+# SUPERSEDED for ocean values: the ocean lines were retuned in the app after step3 and this table is stale.
+# Running it overwrites them. To change only the bench lines, use make_bench_presets.ps1.
 # Writes assets/shader_presets.txt (v4: bench + ocean) from the theme tables below. Waves follow GenerateWaves (src/WaveMacro.h),
 # so every preset loads as "Simple" (not Custom). Usage: powershell -ExecutionPolicy Bypass -File make_presets.ps1
 param([string]$Out = (Join-Path $PSScriptRoot "../../../assets/shader_presets.txt"))

@@ -23,7 +23,9 @@
 | Sunset | 바람 센 노을 바다 | 짧고 높고 빠름, chop 최대에 가깝게, 교차하는 spread | 0 Diagonal ripples(바람 정렬) + 4 Fine chop |
 | Tropical | 에메랄드빛 휴양지 바다 | Basic보다 길고 높음, 중간 chop | 2 Soft chop + 4 Fine chop |
 
-## 최종 값 (step3_bench)
+## 최종 값 (step3_bench 시점)
+
+> 이후 ocean 줄은 사용자가 앱에서 다듬었고, bench 줄은 step7에서 다시 만들었다. 현재 값의 원본은 `assets/shader_presets.txt`다. bench 덮어쓰기 값은 아래 "벤치 평면 세팅"에 있다.
 
 값의 원본은 `make_presets.ps1` 맨 위 표다. 이 스크립트가 `assets/shader_presets.txt`(v4, [mesh-presets](../mesh-presets/NOTES.md))를 쓴다. 벤치 평면과 오션 그리드 버전은 파도 크기만 다르고 나머지 값은 같다.
 
@@ -74,7 +76,35 @@
 | step2_tune | Basic 물 색을 조금 밝고 푸르게(반사 0.6 → 0.7). Sunset spread 50 → 40, 태양을 더 주황으로. Tropical Facing·Grazing 밝게, 노출 −0.7 → −0.5, 노멀 세기 0.6 → 0.7. | Sunset 원경 격자가 줄었다. Tropical이 에메랄드로 읽힌다. 하지만 벤치 평면(oblique/top/sunward)에서는 큰 파도 때문에 평면이 천처럼 접혔다. Sunset은 가파른 면 일부가 하늘을 반사해 하얗게 보였다. |
 | step3_bench | [ripple-flow-fix](../ripple-flow-fix/NOTES.md)와 [mesh-presets](../mesh-presets/NOTES.md)를 합쳤다. 벤치 버전 파도를 따로 뒀다: 1번 파 기울기 kA는 ocean과 같게 두고, 2×2 평면에 마루가 2개 정도 들어가도록 파장을 1.0~1.6으로 줄였다. | 벤치 샷의 접힘과 하얀 면이 사라졌고, 테마별 성격(잔잔 / 거친 / 중간)은 그대로다. ocean 샷은 값이 같다. Basic·Sunset은 레이어 A 정렬 때문에 흐름 수정으로 무늬 위상만 바뀌었다. |
 
-비교 시트: `compare/sunward.jpg`, `compare/oblique.jpg`, `compare/ocean_sunward.jpg`, `compare/ocean_wide.jpg`, `compare/ocean_away.jpg` (local-only).
+| (사용자) | 앱에서 ocean의 Sunset·Tropical 값을 직접 다듬어 저장했다. bench Basic의 태양도 (213.3°, 86.2°)로 옮겼다. | 이후 ocean 줄의 원본은 앱에서 저장한 `assets/shader_presets.txt`다. |
+| step4_bench_before | 위 상태 그대로 캡처 | 벤치 평면 기준. 아래 "벤치 평면 세팅" 참고 |
+| step5_bench_a | bench 줄을 "같은 테마의 ocean 줄 + 평면용 덮어쓰기"로 다시 만들었다(`make_bench_presets.ps1`). 파도 높이·chop을 낮추고, 노멀 타일링을 촘촘하게 했다. | 평면 가장자리 출렁임이 줄어 정사각형이 유지된다. 하지만 top에서 Sunset은 평평한 보라색이고, Tropical은 밝은 민트색 면이었다. |
+| step6_bench_b | Tropical: 태양 고도 70 → 62, Facing을 조금 어둡게, 노출 −0.8, 노멀 세기 1.0. Sunset: 태양을 더 세게, 환경광을 약하게, 노멀 세기 1.0. | Tropical top에 에메랄드색과 잔물결, 반짝임이 보인다. Sunset은 여전히 거의 평평하다. |
+| step7_bench_c | Sunset만 Facing을 짙은 남색에서 어스름한 보랏빛(0.36, 0.24, 0.40)으로 바꿨다. 태양 2.2, 환경광 0.45, 노멀 세기 1.2. | Sunset top에 해 받는 경사면이 주황 줄무늬로 드러나 거친 물결이 읽힌다. sunward 샷의 노을 느낌도 유지된다. |
+
+비교 시트: `compare/sunward.jpg`, `compare/oblique.jpg`, `compare/ocean_sunward.jpg`, `compare/ocean_wide.jpg`, `compare/ocean_away.jpg`, 벤치 단계는 `compare_bench/top.jpg`, `compare_bench/sunward.jpg`, `compare_bench/oblique.jpg` (local-only).
+
+## 벤치 평면 세팅 (step4~7)
+
+**목표:** 2×2 평면 모양을 해치지 않으면서, top 뷰(바로 위)에서도 테마가 읽히게 한다.
+
+**만드는 방식:** `make_bench_presets.ps1`은 ocean 줄을 읽어 bench 줄을 새로 쓴다. ocean 줄은 그대로 복사하고, 아래 덮어쓰기만 바꾼다. 하늘·물 색·노멀맵 조합 같은 테마 값은 ocean을 따르므로, 앱에서 ocean을 다시 다듬은 뒤 이 스크립트를 돌리면 bench도 따라간다.
+
+| 덮어쓰기 | Basic | Sunset | Tropical |
+|---|---|---|---|
+| 파도 size / height / chop | 1.0 / 0.012 / 0.20 (spread 25, speed 0.6) | 0.8 / 0.025 / 0.45 | 1.2 / 0.016 / 0.30 |
+| normalScale / normalStrength | 1.4 / 0.55 | 1.6 / 1.2 | 1.5 / 1.0 |
+| 태양 | (213.3°, 86.2°) 사용자 값 유지 | 세기 2.2 (방향은 ocean과 같은 노을 위치) | 고도 62° |
+| 그 외 | — | 환경광 0.45, Facing (0.36, 0.24, 0.40), F0 0.04 | Facing (0.10, 0.62, 0.50), 노출 −0.8 |
+
+**근거:**
+
+- **평면 모양:** Gerstner 파도는 꼭짓점을 수평으로도 움직인다. 크기는 `steepness × λ / 8π` 정도다. 가장자리가 출렁이지 않도록 chop을 0.2~0.45로 낮추고 파장을 0.8~1.2로 줄였다. 높이는 top에서는 보이지 않으니 낮게 두고, 물결 정보는 노멀맵이 맡는다.
+- **top 뷰에서 무엇이 보이나:** 바로 위에서 보면 Fresnel 반사가 F0 수준(2~4%)이라 하늘 반사가 거의 없다. 남는 건 두 가지다.
+  1. **태양 글린트:** 해가 거의 머리 위에 있을 때만 화면 안에 들어온다. Basic(86°)과 Tropical(62°)은 이것으로 수면이 읽힌다.
+  2. **해를 받는 경사면의 밝기(N·L) 차이:** Sunset은 노을 위치(고도 4°)를 바꿀 수 없어 이쪽을 키웠다. 깊은 파랑은 주황 햇빛을 거의 반사하지 않아(선형값으로 R ≈ 0.03) 효과가 없었다. 그래서 물 색을 노을빛을 받는 보랏빛으로 옮기고, 환경광을 줄여 대비를 살렸다.
+- **노멀 타일링:** ocean 값(0.8~1.0)은 2×2 평면에 무늬가 한 번 남짓 들어가 top에서 너무 크다. 1.4~1.6으로 촘촘하게 했다.
+- **Basic의 태양:** 사용자가 bench Basic에 직접 넣은 머리 위 태양을 그대로 두었다. top 반짝임이 가장 잘 사는 값이다. 대신 sunward/oblique 샷의 반짝임 길은 약해진다.
 
 ## 검증 (AI agent)
 
