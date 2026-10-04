@@ -22,21 +22,24 @@
 - 셰이더 프리셋을 3 → 4개로 늘린다(`hero`). 4번째 줄이 없는 기존 파일은 Hero = Basic으로 읽는다.
 - 캡처 도구: `--camera-file`, `--capture-presets`, `--capture-shots`(카메라 슬롯 `slot1`~`slot4` 포함), `--render-size WxH`, `--capture-format png`.
 
-**셰이더 (`PixelShader.hlsl`, 새 상수 `g_DetailParams`)**
+**셰이더 (`PixelShader.hlsl`의 `OCEAN_DETAIL` 변형, 새 상수 `g_DetailParams`, `g_DetailParams2`)**
+
+기존 프로그램은 그대로 두고 같은 파일을 `OCEAN_DETAIL=1`로 한 번 더 컴파일한다. 값이 켜졌을 때만 변형을 쓴다(분기만 추가해도 드라이버 코드 배치가 바뀌어 기존 화면이 1~4 레벨 달라졌다 — NOTES).
 
 ```
-// a. 리플 원경 거칠기 (Toksvig): mip 평균으로 짧아진 normal 길이 → 경사 분산
-σ²_ripple = Σ_layer (1 - |n|) / |n|  ×  rippleRoughness
+// a. 리플 원경 거칠기: 노멀맵 mip 레벨만큼 그 맵의 (측정한) 경사 분산을 σ²에 더함
+σ²_ripple = Σ_layer slopeVariance_layer × smoothstep(1, 5, mipLevel) × strength² × rippleRoughness
 // b. 돌풍 패치: 월드 XZ value noise 2옥타브, 바람 방향으로 흐름
-gust = noise(xz / gustScale - wind·t)   → normalStrength, σ² 를 ±gustStrength 만큼 변조
-// c. 수평선 대기 원근
-color = lerp(color, Sky(수평 시선), hazeStrength × (1 - exp(-dist / hazeDistance)))
+gust = noise(xz / gustScale - wind·t)   → 리플 기울기 ±gustStrength, 파도 법선 기울기 ±gustStrength/2
+// c. 수평선 대기 원근 (하늘색 = 같은 방위 앙각 ~10°, 흐린 mip)
+color = lerp(color, Sky, hazeStrength × (1 - exp(-dist / hazeDistance)))
+// d. 먼 파도 마루: 픽셀 구간 가중치 중 (1 - farWaveCrests)를 거칠기 구간으로
 ```
 
 **참고 자료:**
 
-- Toksvig, "Mipmapping Normal Maps" (2005) — 평균 normal 길이로 거칠기 추정
 - Bruneton et al., "Real-time Realistic Ocean Lighting using Seamless Transitions from Geometry to BRDF" (2010)
+- Toksvig, "Mipmapping Normal Maps" (2005) — 검토 후 미채택(이 맵들의 mip은 재정규화되어 있음)
 
 ## 3. Inputs / Outputs
 
@@ -47,7 +50,10 @@ color = lerp(color, Sky(수평 시선), hazeStrength × (1 - exp(-dist / hazeDis
 | CBuffer | `g_DetailParams.z` | float | gustScale 5~200 (월드 단위), 기본 30 |
 | CBuffer | `g_DetailParams.w` | float | hazeStrength 0~1, 기본 0 |
 | CBuffer | `g_FarParams.y` | float | hazeDistance 20~600, 기본 150 |
-| ImGui | Water › Ocean detail | slider | 위 5개 |
+| CBuffer | `g_FarParams.zw` | float2 | 레이어 A / B 노멀맵 경사 분산 (`kNormalMaps.slopeVariance`, 저장 안 함) |
+| CBuffer | `g_DetailParams2.x` | float | farWaveCrests 0~1, 기본 1 |
+| ImGui | Water › Ocean Detail | slider | 위 6개 |
+| Debug | 모드 7 | view | R = 리플 거칠기 ×20, G = 돌풍, B = 연무 |
 | Preset | `hero` | 줄 | bench / ocean 각 1줄 |
 | Camera | 슬롯 4 | 줄 | 최종 선택 구도 |
 | CLI | `--camera-file` `--capture-presets` `--capture-shots` `--render-size` `--capture-format` | string | 샘플 · 최종 렌더 |
@@ -56,13 +62,15 @@ color = lerp(color, Sky(수평 시선), hazeStrength × (1 - exp(-dist / hazeDis
 
 ## 4. Acceptance Criteria / Test Plan
 
-- [ ] Debug/Release 빌드 경고 0
-- [ ] 기존 Basic / Sunset / Tropical 18장이 수정 전과 해시까지 같다
-- [ ] 기존 3줄 프리셋 파일을 읽으면 Hero = Basic, 저장 후 재시작해도 Hero 값 유지
-- [ ] 디버그 모드 7(σ² / 돌풍 / haze)로 분포 확인
-- [ ] 구도 4종 × 웨이브 4종 샘플 비교 시트
-- [ ] 사용자가 고른 조합을 Hero 프리셋 + 카메라 슬롯 4에 저장, 2560×1440 PNG 최종 렌더
-- [ ] NOTES
+- [x] Debug/Release 빌드 경고 0
+- [x] 기존 Basic / Sunset / Tropical 18장이 수정 전과 해시까지 같다
+- [x] 기존 3줄 프리셋 파일을 읽으면 Hero = Basic (6샷 해시 동일), Hero 줄이 있는 파일을 읽으면 그 값 (샘플과 해시 동일)
+- [ ] UI `Save Current`로 Hero 저장 → 재시작 후 유지 (UI 조작 필요, 미확인)
+- [x] 디버그 모드 7(σ² / 돌풍 / haze)로 분포 확인
+- [x] 구도 4종 × 웨이브 4종 샘플 비교 시트
+- [x] 사용자가 고른 조합을 Hero 프리셋 + 카메라 슬롯 4에 저장, 2560×1440 PNG 최종 렌더
+- [ ] 최종 이미지 사용자 승인
+- [x] NOTES
 
 ## 5. Notes
 

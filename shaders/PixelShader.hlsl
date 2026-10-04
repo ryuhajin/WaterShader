@@ -64,6 +64,13 @@ FarWaves EvaluateFarWaves(float3 restPosLocal)
         float pixelFade = 1.0 - smoothstep(kPixelFadeStart, kPixelFadeEnd, footprint);
         float w = (1.0 - vertexFade) * pixelFade;
         float rough = (1.0 - vertexFade) * (1.0 - pixelFade);
+#if OCEAN_DETAIL
+        // "Far wave crests" < 1: past the mesh fade, two crossing sines read as a regular lattice (rows of
+        // dashes head-on, radial streaks at an angle). Hand that share of the pixel band to the roughness.
+        float keepCrests = g_DetailParams2.x;
+        rough += w * (1.0 - keepCrests);
+        w *= keepCrests;
+#endif
 
         float waveNumber = 6.2831853 / wave.wavelength;
         float phase = dot(wave.direction, restPosLocal.xz) * waveNumber - waveNumber * wave.speed * g_WaterParams.x;
@@ -102,6 +109,53 @@ float2 RotateRippleSlope(float2 slope, float2 rotation)
     return float2(rotation.x * slope.x - rotation.y * slope.y, rotation.y * slope.x + rotation.x * slope.y);
 }
 
+// ---- Ocean detail (ocean-hero) ----
+// Compiled only into the OCEAN_DETAIL permutation, which ColorShader binds while a detail value is above 0.
+// The plain program stays the exact code the older presets were made with (bit-exact captures).
+#if OCEAN_DETAIL
+
+// How much of a normal map's ripples its mips have averaged away at this pixel: still all there up to mip 1,
+// gone by mip 5 (16 texels per pixel). (Toksvig's |n| estimate does not work here: the mips of these maps
+// are renormalized, so their normals never get shorter.)
+float RippleLostFraction(Texture2D map, float2 uv)
+{
+    return smoothstep(1.0, 5.0, map.CalculateLevelOfDetail(g_NormalSampler, uv));
+}
+
+float Hash21(float2 p)
+{
+    p = frac(p * float2(233.34, 851.73));
+    p += dot(p, p + 23.45);
+    return frac(p.x * p.y);
+}
+
+float ValueNoise(float2 p)
+{
+    float2 cell = floor(p);
+    float2 f = frac(p);
+    float2 u = f * f * (3.0 - 2.0 * f);
+    float a = Hash21(cell);
+    float b = Hash21(cell + float2(1.0, 0.0));
+    float c = Hash21(cell + float2(0.0, 1.0));
+    float d = Hash21(cell + float2(1.0, 1.0));
+    return lerp(lerp(a, b, u.x), lerp(c, d, u.x), u.y);
+}
+
+// Wind gust patches ("cat's paws"): broad areas where the wind ruffles the surface more or less.
+// Two octaves of value noise in world XZ, drifting downwind. Returns about -1..1.
+float GustMask(float2 positionXZ, float time)
+{
+    float gustScale = max(g_DetailParams.z, 1.0);
+    float2 wind = g_Waves[0].direction;
+    float2 p = (positionXZ - wind * (time * g_Waves[0].speed * 1.5)) / gustScale;
+    // The second octave is turned and offset so the two lattices never line up.
+    float2 q = float2(p.x * 0.8 - p.y * 0.6, p.x * 0.6 + p.y * 0.8) * 2.03 + 17.1;
+    float n = 0.65 * ValueNoise(p) + 0.35 * ValueNoise(q);
+    return saturate((n - 0.5) * 1.6 + 0.5) * 2.0 - 1.0; // a little more contrast than the raw noise
+}
+
+#endif // OCEAN_DETAIL
+
 // SV_IsFrontFace = rasterizer stage에서 결정되는 system value. 픽셀이 front face에 속하면 true.
 float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
@@ -129,15 +183,53 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float3 n2 = g_NormalMapB.Sample(g_NormalSampler, uv2).xyz * 2.0 - 1.0;
     n1.xy = RotateRippleSlope(n1.xy, g_NormalRotation.xy);
     n2.xy = RotateRippleSlope(n2.xy, g_NormalRotation.zw);
+
     // Whiteout blend: add the slopes (xy), multiply the z. Plain n1 + n2 halves the detail of each layer.
     float3 blendedNormalTS = float3((n1.xy + n2.xy) * normalStrength, n1.z * n2.z);
+
+#if OCEAN_DETAIL
+    // Gust patches scale the ripple slopes (and with them the ripple roughness below).
+    float gustStrength = g_DetailParams.y;
+    float gust = 0.0;
+    float gustFactor = 1.0;
+    [branch] if (gustStrength > 0.0)
+    {
+        gust = GustMask(input.worldPos.xz, time);
+        gustFactor = max(1.0 + gustStrength * gust, 0.0);
+        blendedNormalTS.xy *= gustFactor;
+    }
+
+    // Ripple slopes the mips averaged away (far field) become glint width instead of vanishing
+    // (each map's own slope variance, measured from the texture: g_FarParams.zw).
+    // Slopes scale with the ripple strength, so their variance scales with its square.
+    float rippleRoughness = g_DetailParams.x;
+    float rippleVariance = 0.0;
+    [branch] if (rippleRoughness > 0.0)
+    {
+        float rippleStrength = normalStrength * gustFactor;
+        rippleVariance = (g_FarParams.z * RippleLostFraction(g_NormalMap, uv1) + g_FarParams.w * RippleLostFraction(g_NormalMapB, uv2))
+            * rippleStrength * rippleStrength * rippleRoughness;
+    }
+#endif
     blendedNormalTS = normalize(blendedNormalTS);
 
     // Plane TBN: tangent = world X, bitangent = world Z, normal = vertex normal (+ far-field wave slopes).
     FarWaves farWaves = EvaluateFarWaves(input.restPosLocal);
     float farWaveNormals = g_SurfaceParams.w; // 0 = off: no far normals, no roughness (renders as before)
     float slopeVariance = farWaves.slopeVariance * farWaveNormals * g_FarParams.x; // Light window "Far spread"
+#if OCEAN_DETAIL
+    slopeVariance += rippleVariance;
+#endif
     float3 baseNormalWS = normalize(input.normalWS + farWaveNormals * mul(farWaves.normalDelta, (float3x3)g_World));
+#if OCEAN_DETAIL
+    // Gusts also roughen / calm the waves themselves (half as much as the ripples): calm patches turn
+    // into smoother sky mirrors, rough ones scatter it - what makes cat's paws visible from the air.
+    [branch] if (gustStrength > 0.0)
+    {
+        float3 upWS = normalize(mul(float3(0, 1, 0), (float3x3)g_World));
+        baseNormalWS = normalize(lerp(upWS, baseNormalWS, max(1.0 + 0.5 * gustStrength * gust, 0.0)));
+    }
+#endif
     float3 tangentWS  = normalize(mul(float3(1, 0, 0), (float3x3)g_World));
     float3 bitangentWS  = normalize(mul(float3(0, 0, 1), (float3x3)g_World));
     float3 finalNormalWS  = normalize(blendedNormalTS.x * tangentWS + blendedNormalTS.y * bitangentWS + blendedNormalTS.z * baseNormalWS);
@@ -198,6 +290,28 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float sunGlintIntensity = g_SpecularParams.w;
     float lobe = SunGlintFactor(reflectionDirWS, lightDirWS, sunGlintPower) * (sunGlintPower + 2.0) * 0.5;
     finalColor += lobe * sunGlintIntensity * reflectionAmount * g_LightColor.rgb * g_LightColor.a;
+
+#if OCEAN_DETAIL
+    // Aerial perspective toward the horizon: far water (glint included) fades into the sky just above the
+    // horizon in the same direction, so the ocean meets the sky without a hard reflective band.
+    float hazeStrength = g_DetailParams.w;
+    float hazeAmount = 0.0;
+    [branch] if (hazeStrength > 0.0)
+    {
+        float distanceToPoint = length(input.worldPos - g_CameraPositionWS.xyz);
+        hazeAmount = hazeStrength * (1.0 - exp(-distanceToPoint / max(g_FarParams.y, 1.0)));
+        // Sky ~10 deg up in the same heading, from a coarse mip: right at the horizon these skies show
+        // hills and trees, which every column picked up separately as radial streaks on the water.
+        float2 horizontal = -viewDirWS.xz;
+        horizontal *= rsqrt(max(dot(horizontal, horizontal), 1e-8));
+        float3 hazeDirWS = normalize(float3(horizontal.x, 0.18, horizontal.y));
+        float3 hazeColor = g_Skybox.SampleLevel(g_Sampler, hazeDirWS, 7.0).rgb;
+        finalColor = lerp(finalColor, hazeColor, hazeAmount);
+    }
+
+    // 7 = ocean detail: R = ripple roughness (x20), G = gust mask, B = haze amount
+    if (debugMode == 7) { return DebugOut(float3(rippleVariance * 20.0, gust * 0.5 + 0.5, hazeAmount)); }
+#endif
 
     // Linear HDR radiance. Values above 1 (glint, bright sky) are kept; the tonemap pass compresses
     // the whole frame, sky included, with one curve.
