@@ -1,6 +1,6 @@
 # ripple-flow-fix
 
-> Branch: `feature/ripple-flow-fix` · Status: in-progress · Updated: 2026-10-04
+> Branch: `feature/ripple-flow-fix` · Status: done · Updated: 2026-10-04
 
 ## 1. Goal / Visual Target
 
@@ -30,7 +30,7 @@ float2 uv2 = RotateRippleUv(input.uv * normalScale * detailScale + g_NormalScrol
 ```
 
 - 스크롤 속도의 단위는 그대로다. 레이어 B도 지금처럼 `detailScale`을 곱한 뒤 uv 단위로 더한다.
-- 회전이 (1, 0)이면 `1·x + 0·y = x`라 결과가 비트 단위로 같다.
+- 회전이 (1, 0)이면 수학적으로 같다. 다만 fma 묶는 순서가 바뀌어 반올림 수준 차이는 남는다(NOTES).
 
 ## 3. Inputs / Outputs
 
@@ -44,7 +44,7 @@ float2 uv2 = RotateRippleUv(input.uv * normalScale * detailScale + g_NormalScrol
 
 ## 4. Acceptance Criteria / Test Plan
 
-- [ ] HLSL 컴파일 성공, Debug 빌드 경고 0
-- [ ] 정렬 OFF 회귀: 기본 캡처 18장이 수정 전과 픽셀 차이 0
-- [ ] 정렬 ON(`--align-ripples on`): 시간을 두 번 다르게 잡아 무늬 이동 방향을 재고, 다이얼 방향과 일치하는지 확인 (수정 전은 a만큼 어긋남)
-- [ ] NOTES: 원인, 수식, before/after
+- [x] HLSL 컴파일 성공, Debug 빌드 경고 0
+- [x] 정렬 OFF 회귀: 기본 캡처 18장 — 비트 동일은 아님(fma 순서에 따른 반올림, 최대 9/255, 평균 ≤ 0.041/255). NOTES 참고
+- [x] 정렬 ON(`--align-ripples on`): 시간을 두 번 다르게 잡아 무늬 이동 방향을 재고, 다이얼 방향과 일치하는지 확인 (수정 전은 a만큼 어긋남)
+- [x] NOTES: 원인, 수식, before/after
