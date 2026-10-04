@@ -32,6 +32,6 @@ study/
 # 개인용 UI 사용 가이드 — 로컬에만 둠
 docs/UI_GUIDE.md
 
-# 기능별 캡처와 비교 시트 (로컬 전용, 대용량). README 이미지는 docs/images/에 있어 계속 추적
+# 기능별 캡처와 비교 시트 (로컬 전용, 대용량). README 이미지는 docs/readme-images/에 있어 계속 추적
 docs/features/*/captures/
 docs/features/*/compare*/

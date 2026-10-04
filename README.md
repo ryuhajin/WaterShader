@@ -9,7 +9,7 @@
 ![CMake](https://img.shields.io/badge/CMake-3.24%2B-064F8C?logo=cmake&logoColor=white)
 ![vcpkg](https://img.shields.io/badge/vcpkg-manifest-5C2D91)
 
-![태양 쪽을 바라본 수면 — 빛의 길과 HDR 하늘 반사](docs/images/hero.jpg)
+![태양 쪽을 바라본 수면 — 빛의 길과 HDR 하늘 반사](docs/readme-images/hero.jpg)
 
 ## 프로젝트 개요
 
@@ -27,9 +27,9 @@
 
 | | |
 |---|---|
-| ![프리셋 비교](docs/images/presets.jpg) | ![2026-05 vs 2026-10](docs/images/before-after.jpg) |
+| ![프리셋 비교](docs/readme-images/presets.jpg) | ![2026-05 vs 2026-10](docs/readme-images/before-after.jpg) |
 | **프리셋**: Basic / Sunset / Tropical (오션 그리드) | **업데이트 전후**: 2026-05 기존 버전 vs 2026-10 |
-| ![디버그 뷰](docs/images/debug-views.jpg) | ![설정 창 3개](docs/images/ui-panels.jpg) |
+| ![디버그 뷰](docs/readme-images/debug-views.jpg) | ![설정 창 3개](docs/readme-images/ui-panels.jpg) |
 | **디버그 뷰**: 최종 / 노멀맵 / 월드 법선 / 조명 항 | **설정 창**: View [1] · Light [2] · Water [3] |
 
 ## 빌드와 실행
