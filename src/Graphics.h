@@ -99,13 +99,14 @@ private:
     bool IsTopShotView() const; // camera exactly on the fixed "top" shot (position, rotation, mesh)
     void ApplyView(const CameraView& view);
     void ApplyCameraShot(int shotIndex);
+    std::filesystem::path CameraFilePath() const; // --camera-file, else assets/camera_presets.txt
     void LoadCameraSlots();
     void SaveCameraSlots() const;
 
     struct CaptureJob
     {
         int preset = 0;
-        int shot = 0;
+        int shot = 0; // index into kCaptureShots, or kCaptureShots size + camera slot (slot1..slot4)
     };
 
     struct CaptureRestoreState
@@ -131,6 +132,7 @@ private:
     int normalOverrideA_ = -1; // --normal-a / --normal-b / --normal-map: win over the preset
     int normalOverrideB_ = -1;
     std::vector<float> normalMapAxisDeg_; // per normal map: ripple travel axis (NormalMapEntry::rippleAxisDeg)
+    std::vector<float> normalMapSlopeVariance_; // per normal map: NormalMapEntry::slopeVariance
     bool rippleAlignA_ = false; // "Align to wind" per layer (saved in the presets)
     bool rippleAlignB_ = false;
     int rippleAlignOverride_ = -1; // --align-ripples: wins over the presets
@@ -200,6 +202,11 @@ private:
     int captureDebugMode_ = 0;
     std::wstring captureFeature_ = L"water-polish";
     std::filesystem::path presetFileOverride_; // --preset-file
+    std::filesystem::path cameraFileOverride_; // --camera-file
+    std::vector<std::string> capturePresetFilter_; // --capture-presets (file names, e.g. "hero"); empty = all
+    std::vector<std::string> captureShotFilter_;   // --capture-shots (shot names or slot1..slot4); empty = all fixed shots
+    bool capturePng_ = false;                      // --capture-format png (lossless; default JPEG)
+    bool fixedRenderSize_ = false;                 // --render-size: back buffer size independent of the window
     char captureLabel_[64] = "manual";
 
     // Settings windows (closed at start; --ui opens them for screenshots).

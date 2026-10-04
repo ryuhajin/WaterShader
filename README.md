@@ -19,7 +19,7 @@
 
 - **물의 색과 반사** : 물은 내려다보면 속이 비치고, 수평에 가깝게 볼수록 하늘을 비춥니다. 프레넬(Fresnel) 효과로 보는 각도에 따라 이 둘의 비율이 바뀌게 했습니다.
 
-- **물의 모양** : 바다의 물은 위아래로만 움직이지 않고 작은 원을 그리며, 그래서 마루는 뾰족하고 골은 넓습니다. 이 움직임을 Gerstner 파도 여러 개로 겹쳐 표현했습니다. 멀리 있어 메시로 표현할 수 없는 파도는 픽셀 단위의 기울기로, 그보다 작아지면 표면 거칠기(넓은 햇빛 반짝임)로 이어 그려 수평선까지 바람 방향이 유지됩니다.
+- **물의 모양** : 바다의 물은 위아래로만 움직이지 않고 작은 원을 그리며, 그래서 마루는 뾰족하고 골은 넓습니다. 이 움직임을 Gerstner 파도 여러 개로 겹쳐 표현했습니다. 멀리 있어 메시로 표현할 수 없는 파도는 픽셀 단위의 기울기로, 그보다 작아지면 표면 거칠기(넓은 햇빛 반짝임)로 이어 그려 수평선까지 바람 방향이 유지됩니다. 선택 기능 Ocean Detail은 바람에 흐르는 돌풍 패치, 원경 잔물결의 반짝임, 수평선 연무로 근경에서 원경으로 넘어가는 부분을 다듬습니다.
 
 - **빛** : 조명 값을 임의로 설정하지 않고 HDR 하늘에서 해의 방향, 색, 밝기와 주변광을 읽어 왔습니다. 하늘을 바꾸면 물에 닿는 빛도 함께 바뀝니다.
 
@@ -55,11 +55,13 @@ cmake --build --preset vs2022-debug       # Release는 vs2022-release
 
 | 옵션 | 동작 |
 |---|---|
-| `--capture <label>` | 프리셋 3개 × 고정 샷 6개를 저장하고 종료 (무인 모드 포함) |
+| `--capture <label>` | 프리셋 3개 × 고정 샷 7개를 저장하고 종료 (무인 모드 포함) |
 | `--capture-feature <name>` | 저장 위치 `docs/features/<name>/captures/<label>/` |
-| `--preset-file <path>` | 프리셋을 이 파일에서 읽고 저장 (작업용 프리셋과 별개로 고정 값 캡처) |
-| `--debug <0-6>` | 캡처할 디버그 뷰 (6 = 파도 구간: 메시 / 픽셀 / 거칠기) |
-| `--shot <name>` | 시작 카메라 샷 (`oblique`, `top`, `sunward`, `ocean_surface`, `ocean_aerial`, `ocean_tele`) |
+| `--capture-presets <a,b>` / `--capture-shots <a,b>` | 캡처할 프리셋(`basic`, `sunset`, `tropical`) / 샷만 고르기. 샷에 `slot1`~`slot4`를 쓰면 저장한 카메라 슬롯 |
+| `--capture-format <jpg\|png>`, `--render-size <WxH>` | 무손실 PNG(sRGB 태그) / 창 크기와 별개인 렌더 해상도 (예: `2560x1440` 고해상도 컷, 물결 세밀도는 720p 창과 같은 기준) |
+| `--preset-file <path>` / `--camera-file <path>` | 프리셋 / 카메라 슬롯을 이 파일에서 읽고 저장 (작업용 파일과 별개로 고정 값 캡처) |
+| `--debug <0-7>` | 캡처할 디버그 뷰 (6 = 파도 구간: 메시 / 픽셀 / 거칠기, 7 = Ocean Detail: 리플 거칠기 / 돌풍 / 연무) |
+| `--shot <name>` | 시작 카메라 샷 (`oblique`, `top`, `sunward`, `ocean_surface`, `ocean_aerial`, `ocean_tele`, `ocean_hero`) |
 | `--far-waves <on\|off>` | 먼 바다 파도 기울기·거칠기 켜기/끄기 (비교용) |
 | `--align-ripples <on\|off>` | 노멀맵 바람 정렬(Align to wind)을 프리셋 대신 지정 |
 | `--ui <view\|light\|water\|all>` | 설정 창을 연 상태로 시작 |
@@ -82,9 +84,9 @@ cmake --build --preset vs2022-debug       # Release는 vs2022-release
 
 | 창 | 섹션 |
 |---|---|
-| **View Settings [1]** | Presets(Apply / Save Current), Camera, Camera Presets(고정 샷 6개 + 슬롯 4개), Scene(Ocean Grid, Skybox), Capture, Debug View |
+| **View Settings [1]** | Presets(Apply / Save Current), Camera, Camera Presets(고정 샷 7개 + 슬롯 4개), Scene(Ocean Grid, Skybox), Capture, Debug View |
 | **Light Settings [2]** | Sky / Environment(하늘 선택, Calibrate From Sky), Sun(방향·색·세기), Sun Glint(날카로움·세기·먼 바다 확산 Far spread), Ambient, Tonemapping(커브·노출) |
-| **Water Settings [3]** | Water Color, Reflection, Normal Map(레이어 A/B: 텍스처·바람 정렬·크기·흐름), Waves(Simple: 바람 방향·퍼짐·크기·높이·거칠기·속도로 파도 4개 생성 / Advanced: 파도 4개 개별 조정 / Far waves 토글) |
+| **Water Settings [3]** | Water Color, Reflection, Normal Map(레이어 A/B: 텍스처·바람 정렬·크기·흐름), Ocean Detail(먼 파도 마루·원경 리플 글리터·돌풍 패치·수평선 연무), Waves(Simple: 바람 방향·퍼짐·크기·높이·거칠기·속도로 파도 4개 생성 / Advanced: 파도 4개 개별 조정 / Far waves 토글) |
 
 좌측 상단 Stats에는 FPS, CPU/GPU 시간, VSync 토글, 단축키 안내가 표시됩니다.
 
@@ -115,7 +117,7 @@ flowchart LR
     UI[ImGui<br/>View · Light · Water] --> G[Graphics]
     G --> CB[ColorShader<br/>PerFrameCB · b0]
     CB --> VS[vertexShader.hlsl<br/>Gerstner 4파 + 해석적 법선]
-    VS --> PS[PixelShader.hlsl<br/>노멀맵 · 먼 바다 파도 기울기·거칠기<br/>조명 · Fresnel · 글린트]
+    VS --> PS[PixelShader.hlsl<br/>노멀맵 · 먼 바다 파도 기울기·거칠기<br/>조명 · Fresnel · 글린트<br/>+ OCEAN_DETAIL 변형: 돌풍·원경 글리터·연무]
     SKY[skybox.hlsl<br/>HDR 큐브맵 + 해석적 태양] --> HDR[HDR RT<br/>R16G16B16A16_FLOAT]
     PS --> HDR
     HDR --> TM[tonemap.hlsl<br/>노출 · 톤 커브 · sRGB]
@@ -125,7 +127,7 @@ flowchart LR
 
 ## 업데이트 내역
 
-2026-09 ~ 10에 진행한 버그 수정 17건과 퀄리티 업 12건은 [업데이트 내역](docs/CHANGELOG.md)에 증상·원인·해결과 기록 문서 링크로 정리했습니다.
+2026-09 ~ 10에 진행한 버그 수정 23건과 퀄리티 업 19건은 [업데이트 내역](docs/CHANGELOG.md)에 증상·원인·해결과 기록 문서 링크로 정리했습니다.
 
 ## 문서
 

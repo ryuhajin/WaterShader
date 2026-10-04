@@ -6,6 +6,7 @@
 
 #include <d3dcompiler.h>
 
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
@@ -52,12 +53,16 @@ struct PerFrameCB
     // x = Fresnel F0, y = normal strength, z = detail layer scale, w = far wave normals (0/1)
     DirectX::XMFLOAT4 surfaceParams;
     DirectX::XMFLOAT4 normalRotation; // xy = cos/sin layer A, zw = layer B
-    DirectX::XMFLOAT4 farParams;      // x = far glint spread (slope variance scale)
+    DirectX::XMFLOAT4 farParams;      // x = far glint spread (slope variance scale), y = haze distance, zw = map A / B slope variance
+    // x = ripple roughness, y = gust strength, z = gust scale, w = haze strength
+    DirectX::XMFLOAT4 detailParams;
+    DirectX::XMFLOAT4 detailParams2; // x = far wave crests (1 = as before)
 };
 static_assert(sizeof(WaveParams) == 32, "WaveParams must match the 2-register HLSL layout");
 static_assert(sizeof(PerFrameCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
 
-bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
+bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError,
+    const D3D_SHADER_MACRO* defines = nullptr)
 {
     UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
 #if defined(_DEBUG)
@@ -67,7 +72,7 @@ bool CompileShader(const wchar_t* path, const char* entryPoint, const char* targ
     Microsoft::WRL::ComPtr<ID3DBlob> errors;
     const HRESULT result = D3DCompileFromFile(
         path,
-        nullptr,
+        defines,
         D3D_COMPILE_STANDARD_FILE_INCLUDE,
         entryPoint,
         target,
@@ -217,6 +222,16 @@ bool ColorShader::Reload(ID3D11Device* device)
         lastError_ = error;
         return false;
     }
+    // Ocean detail permutation. A separate program, so the plain one stays the exact code older presets
+    // were made with: any extra code, even in a branch that is never taken, changes the driver's
+    // instruction scheduling and moves a few pixels by 1-4 levels (ocean-hero NOTES).
+    Microsoft::WRL::ComPtr<ID3DBlob> psDetailBuffer;
+    const D3D_SHADER_MACRO detailDefines[] = { {"OCEAN_DETAIL", "1"}, {nullptr, nullptr} };
+    if (!CompileShader(psPath_.c_str(), "PSMain", "ps_5_0", &psDetailBuffer, &error, detailDefines))
+    {
+        lastError_ = "[OCEAN_DETAIL] " + error;
+        return false;
+    }
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> newVS;
     if (FAILED(device->CreateVertexShader(vsBuffer->GetBufferPointer(), vsBuffer->GetBufferSize(), nullptr, &newVS)))
@@ -229,6 +244,13 @@ bool ColorShader::Reload(ID3D11Device* device)
     if (FAILED(device->CreatePixelShader(psBuffer->GetBufferPointer(), psBuffer->GetBufferSize(), nullptr, &newPS)))
     {
         lastError_ = "CreatePixelShader failed.";
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> newDetailPS;
+    if (FAILED(device->CreatePixelShader(psDetailBuffer->GetBufferPointer(), psDetailBuffer->GetBufferSize(), nullptr, &newDetailPS)))
+    {
+        lastError_ = "CreatePixelShader (OCEAN_DETAIL) failed.";
         return false;
     }
 
@@ -252,6 +274,7 @@ bool ColorShader::Reload(ID3D11Device* device)
 
     vertexShader_ = newVS;
     pixelShader_ = newPS;
+    pixelShaderDetail_ = newDetailPS;
     layout_ = newLayout;
 
     lastError_.clear();
@@ -295,6 +318,7 @@ void ColorShader::ShutdownShader()
 {
     perFrameCB_.Reset();
     layout_.Reset();
+    pixelShaderDetail_.Reset();
     pixelShader_.Reset();
     vertexShader_.Reset();
 }
@@ -360,7 +384,14 @@ void ColorShader::RenderShader(
             water.detailScale,
             water.farWaveNormals);
         data->normalRotation = water.normalRotation;
-        data->farParams = DirectX::XMFLOAT4(water.farGlintSpread, 0.0f, 0.0f, 0.0f);
+        data->farParams = DirectX::XMFLOAT4(water.farGlintSpread, water.hazeDistance,
+            water.rippleSlopeVarianceA, water.rippleSlopeVarianceB);
+        data->detailParams = DirectX::XMFLOAT4(
+            water.rippleRoughness,
+            water.gustStrength,
+            water.gustScale,
+            water.hazeStrength);
+        data->detailParams2 = DirectX::XMFLOAT4(water.farWaveCrests, water.lodScale, std::log2(water.lodScale), 0.0f);
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
@@ -369,7 +400,9 @@ void ColorShader::RenderShader(
 
     deviceContext->IASetInputLayout(layout_.Get());
     deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
-    deviceContext->PSSetShader(pixelShader_.Get(), nullptr, 0);
+    const bool oceanDetail = water.rippleRoughness > 0.0f || water.gustStrength > 0.0f ||
+        water.hazeStrength > 0.0f || water.farWaveCrests < 1.0f || water.lodScale != 1.0f || water.debugMode == 7;
+    deviceContext->PSSetShader(oceanDetail ? pixelShaderDetail_.Get() : pixelShader_.Get(), nullptr, 0);
     deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->PSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->PSSetShaderResources(0, 3, srvs);

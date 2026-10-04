@@ -20,9 +20,12 @@ New-Item -ItemType Directory -Force $outDir | Out-Null
 
 $presets = @("basic", "sunset", "tropical")
 # A feature that only touches one preset keeps only that preset's captures; drop the empty rows.
-$presets = @($presets | Where-Object { $p = $_; $Steps | Where-Object { Test-Path (Join-Path $root "$_\$($p)_oblique.jpg") } })
-# Current shots, then the ocean shots used before ocean-shots (kept so older capture sets still compare).
-$shots = @("oblique", "top", "sunward", "ocean_surface", "ocean_aerial", "ocean_tele", "ocean_sunward", "ocean_wide", "ocean_away")
+# (--capture-presets / --capture-shots sets may hold any subset of shots, so look for any of its images.)
+$presets = @($presets | Where-Object { $p = $_; $Steps | Where-Object { Test-Path (Join-Path $root "$_\$($p)_*.jpg") } })
+# Current shots, then the ocean shots used before ocean-shots (kept so older capture sets still compare),
+# then the camera slots (--capture-shots slot1..slot4).
+$shots = @("oblique", "top", "sunward", "ocean_surface", "ocean_aerial", "ocean_tele", "ocean_hero", "ocean_sunward", "ocean_wide", "ocean_away",
+           "slot1", "slot2", "slot3", "slot4")
 $cellW = 480; $cellH = 270; $labelH = 28
 
 $jpeg = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq "image/jpeg" }

@@ -30,10 +30,14 @@ cbuffer PerFrameCB : register(b0)
     float4 g_SpecularParams;   // x=strength, y=sharpness, z=sun glint power, w=sun glint intensity
 
     WaveParams g_Waves[4];
-    float4 g_DebugParams;      // x = debug mode: 0 render, 1 normal map, 2 world N, 3 UV, 4 front/back face, 5 lighting terms, 6 wave LOD
+    float4 g_DebugParams;      // x = debug mode: 0 render, 1 normal map, 2 world N, 3 UV, 4 front/back face, 5 lighting terms, 6 wave LOD, 7 ocean detail
     float4 g_SurfaceParams;    // x = Fresnel F0, y = normal strength, z = detail layer scale, w = far wave normals (0/1)
     float4 g_NormalRotation;   // normal map rotation on the water as cos/sin: xy = layer A, zw = layer B
     float4 g_FarParams;        // x = far glint spread: scales the far-field slope variance (1 = physical, 0 = off)
+                               // y = haze distance (world units), zw = slope variance of normal map A / B (measured)
+    float4 g_DetailParams;     // ocean detail, 0 = off: x = ripple roughness, y = gust strength, z = gust scale, w = haze strength
+    float4 g_DetailParams2;    // x = far wave crests (1 = as before; lower turns the pixel-band crests into glint roughness)
+                               // y = render height / 720 (--render-size, else 1), z = log2(y): LOD as a 720p frame
 };
 
 struct VSInput
