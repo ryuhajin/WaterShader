@@ -143,6 +143,8 @@
 - [x] `feature/wave-macro` — 파도 Simple 모드(상위 값 6개로 파도 4개 생성) + Advanced, Custom 판정 ([NOTES](features/wave-macro/NOTES.md))
 - [x] `feature/wave-far-normals` — 먼 바다 파도 기울기·거칠기 3구간, 노멀맵 바람 정렬, 오션 그리드 UV 버그 수정, 반사 흐림 제거, Far spread ([NOTES](features/wave-far-normals/NOTES.md))
 - [x] `feature/ripple-flow-fix` — 바람 정렬한 노멀맵이 Flow 다이얼 방향으로 흐르도록 스크롤을 회전 전에 적용 ([NOTES](features/ripple-flow-fix/NOTES.md))
+- [x] `feature/mesh-presets` — 프리셋을 벤치 평면 / 오션 그리드별로 따로 저장, 평면 전환 시 자동 적용, 파일 v4 ([NOTES](features/mesh-presets/NOTES.md))
+- [x] `feature/top-view-sun` — top 고정 샷 전용 태양(방향 + 세기)을 프리셋마다 저장 ([NOTES](features/top-view-sun/NOTES.md))
 - [x] `feature/preset-themes` — Basic/Sunset/Tropical 3테마 재튜닝: 테마별 파도 Simple 값·노멀맵 조합·조명·색 ([NOTES](features/preset-themes/NOTES.md))
 
 ---
