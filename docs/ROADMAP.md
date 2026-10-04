@@ -142,6 +142,7 @@
 - [x] `feature/ui-panels` — 설정 UI를 View/Light/Water 3창 + 1/2/3 단축키로, 초보자용 Water UI ([NOTES](features/ui-panels/NOTES.md))
 - [x] `feature/wave-macro` — 파도 Simple 모드(상위 값 6개로 파도 4개 생성) + Advanced, Custom 판정 ([NOTES](features/wave-macro/NOTES.md))
 - [x] `feature/wave-far-normals` — 먼 바다 파도 기울기·거칠기 3구간, 노멀맵 바람 정렬, 오션 그리드 UV 버그 수정, 반사 흐림 제거, Far spread ([NOTES](features/wave-far-normals/NOTES.md))
+- [x] `feature/ripple-flow-fix` — 바람 정렬한 노멀맵이 Flow 다이얼 방향으로 흐르도록 스크롤을 회전 전에 적용 ([NOTES](features/ripple-flow-fix/NOTES.md))
 
 ---
 
