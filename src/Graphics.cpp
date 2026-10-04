@@ -623,7 +623,12 @@ void Graphics::EndCaptureFrame()
             d3d_->GetDeviceContext(),
             backBuffer.Get(),
             GUID_ContainerFormatPng,
-            pendingCapturePath_.wstring().c_str())
+            pendingCapturePath_.wstring().c_str(),
+            nullptr,
+            nullptr,
+            // The back buffer is UNORM but holds sRGB-encoded values (the tonemap pass encodes them).
+            // Without this ScreenGrab tags the PNG gAMA 1.0 (linear) and viewers show it washed out.
+            true)
         : DirectX::SaveWICTextureToFile(
         d3d_->GetDeviceContext(),
         backBuffer.Get(),
@@ -1206,6 +1211,8 @@ bool Graphics::Render(float deltaTime)
     }
     water_.rippleSlopeVarianceA = normalMapSlopeVariance_[normalMapA_];
     water_.rippleSlopeVarianceB = normalMapSlopeVariance_[normalMapB_];
+    // A --render-size frame keeps the look of the 720p window it was set up in (ocean-hero NOTES).
+    water_.lodScale = fixedRenderSize_ ? static_cast<float>(screenHeight_) / static_cast<float>(SCREEN_HEIGHT) : 1.0f;
     Model* waterMesh = oceanMode_ ? oceanGrid_.get() : model_.get();
     waterMesh->Render(d3d_->GetDeviceContext());
     colorShader_->Render(

@@ -50,6 +50,9 @@ public:
         // Set every frame from the selected normal maps (NormalMapEntry::slopeVariance), not saved in presets.
         float rippleSlopeVarianceA = 0.0f;
         float rippleSlopeVarianceB = 0.0f;
+        // --render-size only: render height / 720, so pixel-based LOD (far wave bands, normal map mips) picks
+        // what a 720p frame would. 1 = off. Set every frame, not saved.
+        float lodScale = 1.0f;
         // Wavelengths spread ~1.5x apart and directions fanned around the wind so no single crest dominates.
         Wave waves[kWaveCount] = {
             { { 0.940f,  0.342f}, 0.030f, 1.60f, 0.55f, 0.55f },

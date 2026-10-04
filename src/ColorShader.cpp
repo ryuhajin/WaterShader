@@ -6,6 +6,7 @@
 
 #include <d3dcompiler.h>
 
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
@@ -390,7 +391,7 @@ void ColorShader::RenderShader(
             water.gustStrength,
             water.gustScale,
             water.hazeStrength);
-        data->detailParams2 = DirectX::XMFLOAT4(water.farWaveCrests, 0.0f, 0.0f, 0.0f);
+        data->detailParams2 = DirectX::XMFLOAT4(water.farWaveCrests, water.lodScale, std::log2(water.lodScale), 0.0f);
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
@@ -400,7 +401,7 @@ void ColorShader::RenderShader(
     deviceContext->IASetInputLayout(layout_.Get());
     deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
     const bool oceanDetail = water.rippleRoughness > 0.0f || water.gustStrength > 0.0f ||
-        water.hazeStrength > 0.0f || water.farWaveCrests < 1.0f || water.debugMode == 7;
+        water.hazeStrength > 0.0f || water.farWaveCrests < 1.0f || water.lodScale != 1.0f || water.debugMode == 7;
     deviceContext->PSSetShader(oceanDetail ? pixelShaderDetail_.Get() : pixelShader_.Get(), nullptr, 0);
     deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->PSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());

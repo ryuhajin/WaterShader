@@ -61,6 +61,11 @@ FarWaves EvaluateFarWaves(float3 restPosLocal)
         // How many wavelengths one pixel spans along the travel direction: crests running toward the
         // camera stay resolvable much farther than crests running across the view.
         float footprint = max(abs(dot(dx, wave.direction)), abs(dot(dy, wave.direction))) / wave.wavelength;
+#if OCEAN_DETAIL
+        // --render-size: measure the footprint in 720p pixels, so a high-resolution frame keeps the
+        // 720p band split instead of carrying fine crests twice as far (which averages into grey).
+        footprint *= g_DetailParams2.y > 0.0 ? g_DetailParams2.y : 1.0; // 0 = an older build: off
+#endif
         float pixelFade = 1.0 - smoothstep(kPixelFadeStart, kPixelFadeEnd, footprint);
         float w = (1.0 - vertexFade) * pixelFade;
         float rough = (1.0 - vertexFade) * (1.0 - pixelFade);
@@ -119,7 +124,7 @@ float2 RotateRippleSlope(float2 slope, float2 rotation)
 // are renormalized, so their normals never get shorter.)
 float RippleLostFraction(Texture2D map, float2 uv)
 {
-    return smoothstep(1.0, 5.0, map.CalculateLevelOfDetail(g_NormalSampler, uv));
+    return smoothstep(1.0, 5.0, map.CalculateLevelOfDetail(g_NormalSampler, uv) + g_DetailParams2.z);
 }
 
 float Hash21(float2 p)
@@ -179,8 +184,14 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float2 uv1 = RotateRippleUv(input.uv * normalScale + g_NormalScroll.xy * time, g_NormalRotation.xy);
     float2 uv2 = RotateRippleUv(input.uv * normalScale * detailScale + g_NormalScroll.zw * time, g_NormalRotation.zw);
     // rgb [0~1] -> normal vector [-1~1] 범위로 만들기 위해 * 2.0 - 1.0
+#if OCEAN_DETAIL
+    // --render-size: the mip a 720p frame would use (bias = log2 of the size ratio), same reason as above.
+    float3 n1 = g_NormalMap.SampleBias(g_NormalSampler, uv1, g_DetailParams2.z).xyz * 2.0 - 1.0;
+    float3 n2 = g_NormalMapB.SampleBias(g_NormalSampler, uv2, g_DetailParams2.z).xyz * 2.0 - 1.0;
+#else
     float3 n1 = g_NormalMap.Sample(g_NormalSampler, uv1).xyz * 2.0 - 1.0;
     float3 n2 = g_NormalMapB.Sample(g_NormalSampler, uv2).xyz * 2.0 - 1.0;
+#endif
     n1.xy = RotateRippleSlope(n1.xy, g_NormalRotation.xy);
     n2.xy = RotateRippleSlope(n2.xy, g_NormalRotation.zw);
 

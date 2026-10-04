@@ -42,7 +42,12 @@ gust = noise(xz / gustScale - wind·t)   → 리플 기울기 ×(1 ± gustStreng
 // c. 수평선 연무 (하늘색 = 같은 방위 앙각 ~10°, 흐린 mip) — 최종 색만
 color = lerp(color, Sky, hazeStrength × (1 - exp(-dist / hazeDistance)))
 // d. 먼 파도 마루: 픽셀 구간 가중치 중 (1 - farWaveCrests)를 거칠기 구간으로
+// e. --render-size: LOD를 720p 기준으로 — footprint × (렌더 높이 / 720), 노멀맵 mip bias log2(같은 값)
 ```
+
+**고해상도 PNG**
+
+`--capture-format png`는 sRGB 태그(`forceSRGB`)로 저장한다. 백 버퍼 값은 tonemap이 sRGB로 인코딩한 것이다.
 
 **참고 자료:**
 
@@ -61,6 +66,7 @@ color = lerp(color, Sky, hazeStrength × (1 - exp(-dist / hazeDistance)))
 | CBuffer | `g_FarParams.y` | float | hazeDistance 20~600, 기본 150 |
 | CBuffer | `g_FarParams.zw` | float2 | 레이어 A / B 노멀맵 경사 분산 (`kNormalMaps.slopeVariance`, 저장하지 않음) |
 | CBuffer | `g_DetailParams2.x` | float | farWaveCrests 0~1, 기본 1 |
+| CBuffer | `g_DetailParams2.yz` | float2 | 렌더 높이 / 720, log2(그 값) — `--render-size`일 때만, 아니면 1 / 0 (저장하지 않음) |
 | ImGui | Water › Ocean Detail | slider | 위 6개, 프리셋 extra key로 저장 |
 | Debug | 모드 7 | view | R = 리플 거칠기 ×20, G = 돌풍, B = 연무 |
 | CLI | `--camera-file` `--capture-presets` `--capture-shots` `--render-size` `--capture-format` | string | 샘플 · 고해상도 렌더 |
@@ -74,6 +80,8 @@ color = lerp(color, Sky, hazeStrength × (1 - exp(-dist / hazeDistance)))
 - [x] `ocean_hero`에서 세 프리셋이 같은 위치, 각자의 태양·색으로 찍힌다
 - [x] 디버그 모드 7(σ² / 돌풍 / 연무)로 분포 확인
 - [x] Ocean Detail 변형 비교 샘플(`make_samples.ps1`)
+- [x] 2560×1440 렌더가 720p 창과 같은 대비(밝기 표준편차 37.6 대 37.2)
+- [x] PNG가 sRGB 태그로 저장됨(픽셀 데이터는 그대로)
 - [ ] `ocean_hero` 구도와 최종 이미지 사용자 승인
 - [x] NOTES
 
