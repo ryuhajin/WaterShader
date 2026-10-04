@@ -23,9 +23,9 @@
 | Sunset | 바람 센 노을 바다 | 짧고 높고 빠름, chop 최대에 가깝게, 교차하는 spread | 0 Diagonal ripples(바람 정렬) + 4 Fine chop |
 | Tropical | 에메랄드빛 휴양지 바다 | Basic보다 길고 높음, 중간 chop | 2 Soft chop + 4 Fine chop |
 
-## 최종 값 (step2_tune)
+## 최종 값 (step3_bench)
 
-값의 원본은 `make_presets.ps1` 맨 위 표다. 이 스크립트가 `assets/shader_presets.txt`를 쓴다.
+값의 원본은 `make_presets.ps1` 맨 위 표다. 이 스크립트가 `assets/shader_presets.txt`(v4, [mesh-presets](../mesh-presets/NOTES.md))를 쓴다. 벤치 평면과 오션 그리드 버전은 파도 크기만 다르고 나머지 값은 같다.
 
 | | Basic | Sunset | Tropical |
 |---|---|---|---|
@@ -37,7 +37,8 @@
 | 반사 세기 / F0 / Fresnel 지수 | 0.7 / 0.04 / 5 | 1.0 / 0.02 / 5 | 0.8 / 0.02 / 5 |
 | 글린트 sharpness / 세기 / Far spread | 1200 / 1.2 / 0.8 | 300 / 1.0 / 1.6 | 900 / 1.0 / 1.0 |
 | 파도 wind / spread | −105 / 25 | −125 / 40 | −80 / 35 |
-| 파도 size / height / chop / speed | 3.6 / 0.05 / 0.30 / 0.6 | 3.0 / 0.12 / 0.75 / 1.35 | 4.8 / 0.10 / 0.50 / 0.85 |
+| 파도 size / height / chop / speed (ocean) | 3.6 / 0.05 / 0.30 / 0.6 | 3.0 / 0.12 / 0.75 / 1.35 | 4.8 / 0.10 / 0.50 / 0.85 |
+| 파도 size / height (bench, 나머지는 ocean과 같음) | 1.2 / 0.0166 | 1.0 / 0.04 | 1.6 / 0.0334 |
 | 1번 파 기울기 kA | 0.087 | 0.251 | 0.131 |
 | 노멀맵 A / B (Align) | 3 / 1 (A만) | 0 / 4 (A만) | 2 / 4 (없음) |
 | normalScale / detail / strength | 0.8 / 2.5 / 0.45 | 1.3 / 3.2 / 0.9 | 1.0 / 3.0 / 0.7 |
@@ -70,9 +71,10 @@
 |---|---|---|
 | before | 기존 프리셋 (`before_presets.txt`) | — |
 | step1_initial | 계획한 초기값 전부 | Basic이 잔잔해지고 반짝임 길이 생겼다. Sunset이 확실히 거칠어졌다. 하지만 Sunset 원경에 격자가 보였고, Tropical은 탁하고 어두웠다. |
-| step2_tune | Basic 물 색을 조금 밝고 푸르게(반사 0.6 → 0.7). Sunset spread 50 → 40, 태양을 더 주황으로. Tropical Facing·Grazing 밝게, 노출 −0.7 → −0.5, 노멀 세기 0.6 → 0.7. | Sunset 원경 격자가 줄었다. Tropical이 에메랄드로 읽힌다. |
+| step2_tune | Basic 물 색을 조금 밝고 푸르게(반사 0.6 → 0.7). Sunset spread 50 → 40, 태양을 더 주황으로. Tropical Facing·Grazing 밝게, 노출 −0.7 → −0.5, 노멀 세기 0.6 → 0.7. | Sunset 원경 격자가 줄었다. Tropical이 에메랄드로 읽힌다. 하지만 벤치 평면(oblique/top/sunward)에서는 큰 파도 때문에 평면이 천처럼 접혔다. Sunset은 가파른 면 일부가 하늘을 반사해 하얗게 보였다. |
+| step3_bench | [ripple-flow-fix](../ripple-flow-fix/NOTES.md)와 [mesh-presets](../mesh-presets/NOTES.md)를 합쳤다. 벤치 버전 파도를 따로 뒀다: 1번 파 기울기 kA는 ocean과 같게 두고, 2×2 평면에 마루가 2개 정도 들어가도록 파장을 1.0~1.6으로 줄였다. | 벤치 샷의 접힘과 하얀 면이 사라졌고, 테마별 성격(잔잔 / 거친 / 중간)은 그대로다. ocean 샷은 값이 같다. Basic·Sunset은 레이어 A 정렬 때문에 흐름 수정으로 무늬 위상만 바뀌었다. |
 
-비교 시트: `compare/ocean_sunward.jpg`, `compare/ocean_wide.jpg`, `compare/ocean_away.jpg` (local-only).
+비교 시트: `compare/sunward.jpg`, `compare/oblique.jpg`, `compare/ocean_sunward.jpg`, `compare/ocean_wide.jpg`, `compare/ocean_away.jpg` (local-only).
 
 ## 검증 (AI agent)
 
@@ -89,10 +91,6 @@
 
 ## 남은 점
 
-- **벤치 평면(oblique / top / sunward 샷):** 2×2 평면은 Sunset의 파장 3, 높이 0.12 파도를 담기에 작다. 천처럼 접혀 보이고, 가파른 면 일부가 하늘을 반사해 하얗게 보인다. 포트폴리오 샷은 ocean 그리드를 쓰므로 그대로 둔다.
-- **Align을 켠 레이어의 흐름 방향 (코드 문제, 이번 범위 밖):**
-  - `PixelShader.hlsl:122-124` 주석은 "스크롤은 평면 uv 기준이라 Flow direction 의미가 유지된다"고 한다.
-  - 하지만 `uv = Rotate(uv × scale) + scroll × t` 구조에서는 무늬가 월드에서 `−R⁻¹ × scroll` 방향으로 움직인다. 정렬 회전각만큼 돌아간 방향이다(수식상 확인, 화면 측정은 하지 않음).
-  - 이번 프리셋에서 회전각은 Basic A −14°, Sunset A −49°다. 실제 흐름은 UI에 표시된 방향보다 그만큼 돌아가 있다.
-  - 프리셋 값으로 보정하지 않았다. 셰이더를 고치면 보정값이 틀어지기 때문이다. 수정하려면 스크롤을 회전 전에 더하면 된다. `Rotate(uv × scale + scroll × t)`
+- ~~벤치 평면에서 큰 파도가 접힘~~ → step3에서 평면별 프리셋으로 해결.
+- ~~Align을 켠 레이어가 Flow 다이얼과 다른 방향으로 흐름~~ → [ripple-flow-fix](../ripple-flow-fix/NOTES.md)에서 셰이더를 수정했다. 원인은 회전한 뒤에 스크롤을 더한 것이었다. 실측으로 확인했다. 흐름 값은 다이얼 기준으로 정했으므로 프리셋은 보정하지 않았다.
 - 앱에서 Save Current로 값을 고치면 `make_presets.ps1`의 표와 달라진다. 이후 원본은 `assets/shader_presets.txt`다.

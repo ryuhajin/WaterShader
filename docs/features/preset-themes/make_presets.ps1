@@ -1,4 +1,4 @@
-# Writes assets/shader_presets.txt (v3) from the theme tables below. Waves follow GenerateWaves (src/WaveMacro.h),
+# Writes assets/shader_presets.txt (v4: bench + ocean) from the theme tables below. Waves follow GenerateWaves (src/WaveMacro.h),
 # so every preset loads as "Simple" (not Custom). Usage: powershell -ExecutionPolicy Bypass -File make_presets.ps1
 param([string]$Out = (Join-Path $PSScriptRoot "../../../assets/shader_presets.txt"))
 
@@ -10,6 +10,8 @@ $basic = @{
     normalScale = 0.8; detail = 2.5; normalStrength = 0.45; maps = 3, 1; align = 1, 0
     flowA = -105, 0.020; flowB = -75, 0.012
     wave = @{ wind = -105; spread = 25; size = 3.6; height = 0.05; chop = 0.30; speed = 0.6 }
+    # 2x2 bench plane: same slope kA as the ocean, wavelength short enough for a few crests on the plane
+    benchWave = @{ wind = -105; spread = 25; size = 1.2; height = 0.0166; chop = 0.30; speed = 0.6 }
 }
 $sunset = @{
     sunYaw = 34.5; sunElev = 4; light = 1, 0.50, 0.22; lightI = 1.0; amb = 0.93, 0.85, 1; ambI = 0.9
@@ -18,6 +20,7 @@ $sunset = @{
     normalScale = 1.3; detail = 3.2; normalStrength = 0.9; maps = 0, 4; align = 1, 0
     flowA = -125, 0.050; flowB = -100, 0.035
     wave = @{ wind = -125; spread = 40; size = 3.0; height = 0.12; chop = 0.75; speed = 1.35 }
+    benchWave = @{ wind = -125; spread = 40; size = 1.0; height = 0.04; chop = 0.75; speed = 1.35 }
 }
 $tropical = @{
     sunYaw = 236.4; sunElev = 25.2; light = 0.98, 1, 0.92; lightI = 1.74; amb = 0.586, 0.753, 1; ambI = 0.60
@@ -26,6 +29,7 @@ $tropical = @{
     normalScale = 1.0; detail = 3.0; normalStrength = 0.7; maps = 2, 4; align = 0, 0
     flowA = -80, 0.025; flowB = -50, 0.018
     wave = @{ wind = -80; spread = 35; size = 4.8; height = 0.10; chop = 0.50; speed = 0.85 }
+    benchWave = @{ wind = -80; spread = 35; size = 1.6; height = 0.0334; chop = 0.50; speed = 0.85 }
 }
 
 $inv = [Globalization.CultureInfo]::InvariantCulture
@@ -53,10 +57,10 @@ function Flow([double]$deg, [double]$speed) {
     @((-[Math]::Cos($r) * $speed), (-[Math]::Sin($r) * $speed))
 }
 
-function Line($p) {
+function Line($p, [string]$mesh) {
     $fixed = @($p.sunYaw, $p.sunElev) + $p.light + @($p.lightI) + $p.amb + @($p.ambI) + $p.facing + $p.grazing +
              @($p.refl, $p.fresnelPow, $p.normalScale, 0, 128) + (Flow $p.flowA[0] $p.flowA[1]) + (Flow $p.flowB[0] $p.flowB[1])
-    $m = $p.wave
+    $m = if ($mesh -eq "bench") { $p.benchWave } else { $p.wave }
     $all = $fixed + (Waves $m)
     $s = ($all | ForEach-Object { F $_ }) -join " "
     $kv = [ordered]@{
@@ -71,6 +75,8 @@ function Line($p) {
 }
 
 
-$lines = @("WaterShaderPresets 3", (Line $basic), (Line $sunset), (Line $tropical))
+# v4: bench lines (Basic, Sunset, Tropical), then ocean lines, each led by its mesh
+$lines = @("WaterShaderPresets 4")
+foreach ($mesh in "bench", "ocean") { foreach ($t in $basic, $sunset, $tropical) { $lines += "$mesh " + (Line $t $mesh) } }
 [IO.File]::WriteAllText($Out, ($lines -join "`r`n") + "`r`n", (New-Object Text.UTF8Encoding($false)))
 Get-Content $Out
