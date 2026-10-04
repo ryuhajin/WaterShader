@@ -42,9 +42,9 @@ sunIntensity = topSunActive ? topSun.intensity : lightIntensity
 
 ## 4. Acceptance Criteria / Test Plan
 
-- [ ] Debug/Release 빌드 경고 0
-- [ ] `topSun` 키가 없는 파일: 캡처 18장이 수정 전과 같음
-- [ ] top 샷에서만 바뀜: `topSun`을 켠 파일로 top 3장만 다르고 나머지 15장은 같음
-- [ ] 저장 왕복: Save Current 후 다시 읽어도 같음
-- [ ] 카메라를 움직이면 원래 태양으로 돌아감 (사용자 확인)
-- [ ] bench 세 테마에 top 태양 세팅 + 캡처 + NOTES
+- [x] Debug/Release 빌드 경고 0
+- [x] `topSun` 키가 없는 파일: 캡처 18장이 수정 전과 같음
+- [x] top 샷에서만 바뀜: `topSun`을 켠 파일로 top 3장만 다르고 나머지 15장은 같음
+- [x] 저장 왕복: Save Current 후 다시 읽어도 같음
+- [x] 카메라를 움직이면 원래 태양으로 돌아감 (1 mm 이동 캡처로 확인, NOTES step2)
+- [x] bench 세 테마에 top 태양 세팅 + 캡처 + NOTES

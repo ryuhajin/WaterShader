@@ -84,6 +84,10 @@ constexpr CaptureShot kCaptureShots[] = {
 
 // Startup / Reset Camera framing: the step2_sun_glint "sunward" shot (bench plane, glint visible).
 constexpr int kDefaultShotIndex = 2;
+// The shot that switches to the preset's Top View Sun.
+constexpr int kTopShotIndex = 1;
+static_assert(kCaptureShots[kTopShotIndex].position.y == 2.40f && kCaptureShots[kTopShotIndex].rotation.x == 89.9f,
+    "kTopShotIndex must point at the \"top\" shot");
 
 constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical" };
 
@@ -115,6 +119,10 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("waveHeight", preset.waveMacro.height);
     fn("waveChop", preset.waveMacro.chop);
     fn("waveSpeed", preset.waveMacro.speedScale);
+    fn("topSun", preset.topSun.enabled);
+    fn("topSunYawDeg", preset.topSun.yawDeg);
+    fn("topSunElevationDeg", preset.topSun.elevationDeg);
+    fn("topSunIntensity", preset.topSun.intensity);
 }
 
 // Tangent-space water normal maps (RGBA8 UNORM + mips, converted with texconv --ignore-srgb so the
@@ -183,6 +191,8 @@ constexpr Environment kEnvironments[] = {
 
 // Real sun: angular radius ~0.2665 deg.
 constexpr float kSunAngularRadiusDeg = 0.2665f;
+// Status text that needs to stand out (wave "Custom", Top View Sun in use).
+const ImVec4 kHighlightColor(1.0f, 0.78f, 0.3f, 1.0f);
 constexpr int kEnvironmentCount = static_cast<int>(std::size(kEnvironments));
 
 constexpr float kCaptureTime = 12.0f;
@@ -399,6 +409,7 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     sunElevationDeg_ = preset.sunElevationDeg;
     lightColor_ = preset.lightColor;
     lightIntensity_ = preset.lightIntensity;
+    topSun_ = preset.topSun;
     ambientColor_ = preset.ambientColor;
     ambientIntensity_ = preset.ambientIntensity;
     environmentIndex_ = std::clamp(preset.environment, 0, kEnvironmentCount - 1);
@@ -419,6 +430,7 @@ Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
     preset.sunElevationDeg = sunElevationDeg_;
     preset.lightColor = lightColor_;
     preset.lightIntensity = lightIntensity_;
+    preset.topSun = topSun_;
     preset.ambientColor = ambientColor_;
     preset.ambientIntensity = ambientIntensity_;
     preset.environment = environmentIndex_;
@@ -546,6 +558,16 @@ void Graphics::EndCaptureFrame()
 Graphics::CameraView Graphics::MakeViewFromCurrent() const
 {
     return {cameraPosition_, cameraRotation_, cameraFovDeg_, oceanMode_, modelRotation_};
+}
+
+// Exact match on purpose: the Top View Sun belongs to the fixed shot, so any camera move leaves it.
+// FOV is not compared (zooming keeps the straight-down framing).
+bool Graphics::IsTopShotView() const
+{
+    const CaptureShot& top = kCaptureShots[kTopShotIndex];
+    return oceanMode_ == top.ocean
+        && cameraPosition_.x == top.position.x && cameraPosition_.y == top.position.y && cameraPosition_.z == top.position.z
+        && cameraRotation_.x == top.rotation.x && cameraRotation_.y == top.rotation.y && cameraRotation_.z == top.rotation.z;
 }
 
 void Graphics::ApplyView(const CameraView& view)
@@ -1014,15 +1036,18 @@ bool Graphics::Render(float deltaTime)
 
     // Sun position on the sky (yaw uses the camera convention, elevation > 0 = above the horizon).
     // g_LightDirection is the direction light travels, i.e. away from the sun.
-    const float sunYawRad = XMConvertToRadians(sunYawDeg_);
-    const float sunElevationRad = XMConvertToRadians(sunElevationDeg_);
+    // On the fixed top shot the preset may swap in its Top View Sun (direction and intensity).
+    const bool topSunActive = topSun_.enabled != 0 && IsTopShotView();
+    const float sunYawRad = XMConvertToRadians(topSunActive ? topSun_.yawDeg : sunYawDeg_);
+    const float sunElevationRad = XMConvertToRadians(topSunActive ? topSun_.elevationDeg : sunElevationDeg_);
+    const float sunIntensity = topSunActive ? topSun_.intensity : lightIntensity_;
     const float cosElevation = cosf(sunElevationRad);
     const XMFLOAT4 lightDir(
         -sinf(sunYawRad) * cosElevation,
         -sinf(sunElevationRad),
         -cosf(sunYawRad) * cosElevation,
         0.0f);
-    const XMFLOAT4 lightColorPacked(lightColor_.x, lightColor_.y, lightColor_.z, lightIntensity_);
+    const XMFLOAT4 lightColorPacked(lightColor_.x, lightColor_.y, lightColor_.z, sunIntensity);
     const XMFLOAT4 ambientColorPacked(ambientColor_.x, ambientColor_.y, ambientColor_.z, ambientIntensity_);
 
     ImGui_ImplDX11_NewFrame();
@@ -1042,7 +1067,7 @@ bool Graphics::Render(float deltaTime)
         const float cosSunRadius = cosf(XMConvertToRadians(kSunAngularRadiusDeg));
         const float sunSolidAngle = XM_2PI * (1.0f - cosSunRadius);
         const XMFLOAT4 sunLightLinear = SrgbToLinear(lightColorPacked);
-        const float sunRadianceScale = kEnvironments[environmentIndex_].hdr ? XM_PI * lightIntensity_ / sunSolidAngle : 0.0f;
+        const float sunRadianceScale = kEnvironments[environmentIndex_].hdr ? XM_PI * sunIntensity / sunSolidAngle : 0.0f;
         skyboxShader_->Render(
             d3d_->GetDeviceContext(),
             skybox_->GetIndexCount(),
@@ -1173,6 +1198,14 @@ void Graphics::DrawStatsOverlay()
         ImGui::SameLine();
         ImGui::TextDisabled(vsync ? "(FPS capped by display)" : "(uncapped)");
         ImGui::Text("Mesh: %s", oceanMode_ ? "ocean grid 1024^2" : "bench plane 32^2");
+        if (topSun_.enabled != 0 && IsTopShotView())
+        {
+            ImGui::TextColored(kHighlightColor, "Sun:  Top View Sun (top shot)");
+        }
+        else
+        {
+            ImGui::Text("Sun:  preset sun");
+        }
         ImGui::Separator();
         ImGui::TextDisabled("Keys: [1] View  [2] Light  [3] Water");
     }
@@ -1505,11 +1538,44 @@ void Graphics::DrawLightWindow()
     }
     ImGui::TextDisabled("Sun in this sky: yaw %.1f, elevation %.1f", currentEnv.sunYawDeg, currentEnv.sunElevationDeg);
 
+    // Which sun lights the frame is easy to miss (the Sun sliders don't move when the top sun takes over),
+    // so both sections say it in the highlight color.
+    const bool topShot = IsTopShotView();
+    const bool topSunActive = topSun_.enabled != 0 && topShot;
     ImGui::SeparatorText("Sun");
+    if (topSunActive)
+    {
+        ImGui::TextColored(kHighlightColor, "Not in use on the top shot: Top View Sun below\nlights it. These sliders are for every other view.");
+    }
     ImGui::SliderFloat("Yaw (deg)", &sunYawDeg_, 0.0f, 360.0f, "%.1f");
     ImGui::SliderFloat("Elevation (deg)", &sunElevationDeg_, 0.0f, 90.0f, "%.1f");
     ImGui::ColorEdit3("Color", &lightColor_.x);
     ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 5.0f);
+
+    ImGui::SeparatorText("Top View Sun (top shot only)");
+    bool topSunEnabled = topSun_.enabled != 0;
+    if (ImGui::Checkbox("Own sun for the top shot", &topSunEnabled))
+    {
+        topSun_.enabled = topSunEnabled ? 1 : 0;
+    }
+    if (topSunActive)
+    {
+        ImGui::TextColored(kHighlightColor, "IN USE: the camera is on the top shot");
+    }
+    else if (topSunEnabled)
+    {
+        ImGui::TextDisabled("Waiting: used once the camera is on\nView > Camera Presets > top (any move leaves it)");
+    }
+    else
+    {
+        ImGui::TextDisabled("Off: the top shot uses the Sun above");
+    }
+    ImGui::BeginDisabled(!topSunEnabled);
+    ImGui::SliderFloat("Yaw (deg)##top", &topSun_.yawDeg, 0.0f, 360.0f, "%.1f");
+    ImGui::SliderFloat("Elevation (deg)##top", &topSun_.elevationDeg, 0.0f, 90.0f, "%.1f");
+    ImGui::SliderFloat("Intensity##top", &topSun_.intensity, 0.0f, 5.0f);
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("Elevation 90 = sun right above the plane,\nso its glint faces the top camera. Color = Sun color.");
 
     ImGui::SeparatorText("Sun Glint (sun mirrored on the water)");
     ImGui::SliderFloat("Sharpness", &water_.sunGlintPower, 64.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
@@ -1615,7 +1681,7 @@ void Graphics::DrawWaterWindow()
     }
     else
     {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.78f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, kHighlightColor);
         ImGui::TextWrapped("Custom - edited in Advanced. Moving any slider here rebuilds all 4 waves.");
         ImGui::PopStyleColor();
     }

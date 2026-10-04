@@ -53,6 +53,16 @@ private:
     bool BeginCaptureFrame();
     void EndCaptureFrame();
 
+    // Sun used only while the camera sits exactly on the fixed "top" shot. Looking straight down, the glint
+    // shows only with the sun in front of the plane (high), which the other shots and the theme don't want.
+    struct TopViewSun
+    {
+        int enabled = 0;
+        float yawDeg = 0.0f;
+        float elevationDeg = 90.0f;
+        float intensity = 1.0f; // color is the main sun's
+    };
+
     struct ShaderPreset
     {
         float sunYawDeg = 34.5f;
@@ -69,6 +79,7 @@ private:
         int rippleAlignB = 0;
         ColorShader::WaterParams water;
         WaveMacro waveMacro; // Simple wave controls; water.waves is what actually renders
+        TopViewSun topSun;
     };
 
     ShaderPreset MakePresetFromCurrent() const;
@@ -85,6 +96,7 @@ private:
     };
 
     CameraView MakeViewFromCurrent() const;
+    bool IsTopShotView() const; // camera exactly on the fixed "top" shot (position, rotation, mesh)
     void ApplyView(const CameraView& view);
     void ApplyCameraShot(int shotIndex);
     void LoadCameraSlots();
@@ -149,6 +161,7 @@ private:
     float lightIntensity_ = 1.0f;
     DirectX::XMFLOAT3 ambientColor_ = {0.10f, 0.14f, 0.18f};
     float ambientIntensity_ = 0.35f;
+    TopViewSun topSun_;
     float elapsedTime_ = 0.0f;
     bool skyboxVisible_ = true;
     bool oceanMode_ = false;

@@ -1,6 +1,6 @@
 # Rewrites only the "bench" lines of assets/shader_presets.txt (v4). Each bench preset starts from the same
 # theme's ocean line as saved in the app (sky, lights, colors, normal maps) and overrides what the 2x2 bench
-# plane needs: small waves that keep the plane square, finer normal tiling, and a top-view friendly sun.
+# plane needs: small waves that keep the plane square, finer normal tiling, and a Top View Sun (top-view-sun).
 # Ocean lines are copied through unchanged. Waves follow GenerateWaves (src/WaveMacro.h), so presets load as "Simple".
 # Usage: powershell -ExecutionPolicy Bypass -File make_bench_presets.ps1
 param([string]$File = (Join-Path $PSScriptRoot "../../../assets/shader_presets.txt"))
@@ -9,19 +9,19 @@ param([string]$File = (Join-Path $PSScriptRoot "../../../assets/shader_presets.t
 # values (missing ones come from the ocean line). Colors are sRGB.
 $bench = @(
     @{ # Basic: calm, flowing
-        sunYaw = 213.3; sunElev = 86.2
+        # Top shot: sun right above the plane so its glint faces the camera (the other shots keep the ocean sun)
+        topSun = 1; topSunYawDeg = 213.3; topSunElevationDeg = 90; topSunIntensity = 1.6
         normalScale = 1.4; normalStrength = 0.55
         wave = @{ spread = 25; size = 1.0; height = 0.012; chop = 0.20; speed = 0.6 }
     },
-    @{ # Sunset: rough
-        # Low sun: no glint from above, so the sun-facing slopes carry the top view. A dusky mauve
-        # (instead of deep blue) catches the orange light; less ambient keeps the contrast.
-        lightI = 2.2; ambI = 0.45; facing = 0.36, 0.24, 0.40
-        normalScale = 1.6; normalStrength = 1.2; fresnelF0 = 0.04
+    @{ # Sunset: rough. Water color, light and normal maps as saved for the ocean (the top shot reads through
+        # its own sun now, so the mauve / strong-sun / fine-normal workaround of step7 is gone).
+        topSun = 1; topSunYawDeg = 34.5; topSunElevationDeg = 90; topSunIntensity = 1.0
         wave = @{ size = 0.8; height = 0.025; chop = 0.45 }
     },
     @{ # Tropical: a bit bigger than Basic
-        sunElev = 62; facing = 0.10, 0.62, 0.50; exposureEV = -0.8
+        facing = 0.10, 0.62, 0.50; exposureEV = -0.8
+        topSun = 1; topSunYawDeg = 35.2; topSunElevationDeg = 90; topSunIntensity = 1.74
         normalScale = 1.5; normalStrength = 1.0
         wave = @{ size = 1.2; height = 0.016; chop = 0.30 }
     }
