@@ -4,9 +4,9 @@
 
 캡처 조건은 이전 feature와 같다(1280×720, `t = 12s`, 무인 모드, Debug 빌드 = 소스 셰이더·assets).
 재현:
-- 샘플: `powershell -File make_samples.ps1` → `samples/w0~w3.txt`(변형 프리셋), `captures/w0~w3/hero_slotN.jpg`, 비교 시트 `compare/slotN.jpg`
-- 회귀: `WaterShader.exe --capture-feature ocean-hero --capture <label> --capture-presets basic,sunset,tropical` → `captures/before`와 해시 비교
-- 최종: `WaterShader.exe --capture-feature ocean-hero --capture final --capture-presets hero --capture-shots slot4 --render-size 2560x1440 --capture-format png`
+- 샘플: `powershell -File make_samples.ps1` → `samples/w0~w3.txt`(ocean Basic 줄만 바꾼 프리셋), `captures/w0~w3/basic_<shot>.jpg`, 비교 시트 `compare/<shot>.jpg`
+- 회귀 + 새 샷: `WaterShader.exe --capture-feature ocean-hero --capture after` → 기존 18장을 `captures/before`와 해시 비교, `*_ocean_hero.jpg` 3장
+- 고해상도: `... --capture-shots ocean_hero --render-size 2560x1440 --capture-format png`
 
 ---
 
@@ -70,18 +70,21 @@ Ocean Detail 값이 하나라도 켜져 있거나(디버그 7 포함) Far wave c
 
 C4는 수평선과 언덕이 프레임에 들어온다. 연무가 물에만 걸려 물과 언덕 사이에 경계가 생긴다(하늘 셰이더에는 연무가 없다).
 
-## 사용자 선택 (2026-10-04)
+## 방향 수정 — hero는 프리셋이 아니라 카메라 샷 (2026-10-04)
 
-- **구도:** C1 `ocean_aerial` → 카메라 슬롯 4 (`1 -5.38 12 -20.09 30 15 0 50 1 0 0 0`)
-- **웨이브:** w1 → 4번째 프리셋 **Hero**(ocean)
-  - 값: Basic + `rippleRoughness 0.3`, `gustStrength 0.4`, `gustScale 15`, `hazeStrength 0.35`, `hazeDistance 150`
-  - bench Hero는 bench Basic과 같다.
-- **저장 확인:** 기본 파일로 찍은 `hero_slot4`가 샘플 `w1/hero_slot1`, 고정 샷 `hero_ocean_aerial`과 해시까지 같다.
-- **최종 렌더:** `captures/final/hero_slot4.png` (2560×1440)
+1차로는 사용자 선택(구도 C1, 웨이브 w1)을 4번째 셰이더 프리셋 "Hero"와 카메라 슬롯 4로 저장했다.
+사용자 의도는 달랐다. **hero는 고정 카메라 샷 하나**이고, 그 샷에서 Basic / Sunset / Tropical이 같은 위치를 공유하되 각자의 태양·색으로 보여야 한다.
+수정 내용:
+- **4번째 프리셋 테마 제거:** `kPresetThemeCount` 3, `assets/shader_presets.txt` 원복.
+- **카메라 슬롯 4 원복:** 사용자가 저장했던 값 `1 -1.58561 1.24144 -3.01031 19.8 6.00016 0 55 1 0 0 0`.
+- **고정 샷 `ocean_hero` 추가:** (−5.38, 6, −20.09), pitch 14, yaw 18, 화각 44.
+  - 사용자 참고 화면(하늘 약 1 : 물 약 3)에서 역산했다. 기준은 물/언덕 경계(그리드 끝) 21%, 언덕선 7%, 반사 띠 끝 36%, 글린트 중심 가로 72%.
+  - 이 경계는 진짜 수평선이 아니라 그리드 끝(수평선 아래 atan(h / 400))이다. 그래서 높이도 경계 위치에 영향을 준다. 반사 띠 끝까지 함께 맞추면 높이 6, 화각 44가 나온다(높이 12 / 화각 51 조합은 반사 띠 끝이 맞지 않았다).
+  - 1차 후보: 높이 2.5~6 / 화각 50 → 경계 23%. 2차: 높이 8~12 → 경계 26%, 반사 띠가 너무 넓다. 3차가 최종값이다.
+- **Ocean Detail:** 기능과 UI만 남기고 세 프리셋에는 적용하지 않는다(사용자 결정). 화면은 이전과 같다.
 
 ## 한계 / 남은 것
 
-- 픽셀 구간의 시작·끝은 화면 픽셀 기준(파장당 16 → 8 px)이다. 그래서 `--render-size 2560x1440`에서는 같은 구도라도 마루 구간이 더 멀리까지 남는다. 720p 샘플보다 중경 점선이 또렷하다.
-  - 고해상도 최종 컷을 720p와 같은 인상으로 만들려면 Far wave crests를 낮추거나, 픽셀 구간 기준을 렌더 배율로 나누는 보정이 필요하다(미구현).
-- 연무는 물에만 적용된다. 수평선이 보이는 구도에서는 하늘 쪽 경계가 드러난다.
-- 디버그 7 캡처: `captures/debug7/hero_slot4.jpg` (R = 리플 거칠기 ×20, G = 돌풍, B = 연무)
+- 픽셀 구간의 시작·끝은 화면 픽셀 기준(파장당 16 → 8 px)이다. 그래서 `--render-size 2560x1440`처럼 해상도가 높으면 같은 구도라도 마루 구간이 더 멀리까지 남아 중경 점선이 또렷해진다. 렌더 배율로 기준을 보정하는 것은 미구현이다.
+- 연무는 물에만 적용된다. `ocean_hero`처럼 언덕이 보이는 구도에서 연무를 켜면 물과 언덕 사이에 경계가 생긴다(`compare/ocean_hero.jpg`의 w1~w3).
+- `ocean_hero`의 위쪽 경계는 그리드 끝(±400)이다. 참고 화면과 같은 모습이지만, 반사 띠와 언덕 사이 선이 그대로 보인다.

@@ -1,6 +1,8 @@
-# Renders the ocean-hero comparison: wave variants (rows of make_compare) x candidate framings (camera slots).
-#   Each variant is a copy of assets/shader_presets.txt whose ocean "hero" line is Basic + the variant's changes.
-#   Captures go to captures/<variant>/hero_slotN.jpg, comparison sheets (one per framing) to compare/.
+# Renders the ocean-hero comparison: wave variants (columns of make_compare) x shots.
+#   Each variant is a copy of assets/shader_presets.txt whose ocean Basic line has the variant's changes;
+#   the other presets and the bench lines are left as they are.
+#   Captures go to captures/<variant>/basic_<shot>.jpg, comparison sheets (one per shot) to compare/.
+#   -Cameras <file> + -Shots slot1,... renders camera slots of that file instead (framing candidates).
 # Usage: powershell -File make_samples.ps1                 (all variants)
 #        powershell -File make_samples.ps1 -Only w2,w3      (some of them)
 #        powershell -File make_samples.ps1 -Exe ..\..\..\build\vs2022\Debug\WaterShader.exe
@@ -8,8 +10,8 @@
 param(
     [string[]]$Only = @(),
     [string]$Exe = "",     # default: build\vs2022\Debug\WaterShader.exe (Debug reads the source shaders)
-    [string]$Cameras = "", # default: cameras_candidates.txt next to this script
-    [string]$Shots = "slot1,slot2,slot3,slot4",
+    [string]$Cameras = "", # camera slot file for slot1..slot4 shots (e.g. cameras_candidates.txt)
+    [string]$Shots = "ocean_aerial,ocean_hero",
     [string[]]$Extra = @() # more WaterShader arguments, e.g. -Extra --render-size,2560x1440,--capture-format,png
 )
 
@@ -17,7 +19,6 @@ $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 # Windows PowerShell 5.1 has no $PSScriptRoot yet while the param defaults are evaluated.
 if (-not $Exe) { $Exe = Join-Path $root "build\vs2022\Debug\WaterShader.exe" }
-if (-not $Cameras) { $Cameras = Join-Path $PSScriptRoot "cameras_candidates.txt" }
 $inv = [Globalization.CultureInfo]::InvariantCulture
 
 # ---- Variants: changes on top of the ocean Basic preset -------------------------------------------------
@@ -105,15 +106,15 @@ foreach ($name in $variants.Keys) {
     }
     if ($v.keys) { foreach ($k in $v.keys.Keys) { $kv[$k] = Fmt $v.keys[$k] } }
 
-    $hero = ($t[0..($kvStart - 1)] -join ' ') + ' ' + (($kv.Keys | ForEach-Object { "$_ $($kv[$_])" }) -join ' ')
+    $variantLine = ($t[0..($kvStart - 1)] -join ' ') + ' ' + (($kv.Keys | ForEach-Object { "$_ $($kv[$_])" }) -join ' ')
     $file = Join-Path $presetDir "$name.txt"
-    $content = @($lines[0]) + $bench[0..2] + $bench[0] + $ocean[0..2] + $hero
+    $content = @($lines[0]) + $bench + $variantLine + $ocean[1..($ocean.Count - 1)]
     [IO.File]::WriteAllLines($file, [string[]]$content)
 
     $exePath = (Resolve-Path $Exe).Path
-    $arguments = @("--preset-file", "`"$file`"", "--camera-file", "`"$((Resolve-Path $Cameras).Path)`"",
-                   "--capture", $name, "--capture-feature", "ocean-hero",
-                   "--capture-presets", "hero", "--capture-shots", $Shots) + $Extra
+    $arguments = @("--preset-file", "`"$file`"", "--capture", $name, "--capture-feature", "ocean-hero",
+                   "--capture-presets", "basic", "--capture-shots", $Shots) + $Extra
+    if ($Cameras) { $arguments += @("--camera-file", "`"$((Resolve-Path $Cameras).Path)`"") }
     $proc = Start-Process $exePath -ArgumentList $arguments -WorkingDirectory (Split-Path $exePath) -PassThru
     if (-not $proc.WaitForExit(240000)) { $proc.Kill(); throw "capture $name timed out" }
     Write-Output "captured $name"

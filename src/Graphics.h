@@ -171,10 +171,9 @@ private:
     WaveMacro waveMacro_; // Simple wave sliders; moving one regenerates water_.waves
     bool farWaveNormals_ = true; // --far-waves off / Water window checkbox
     std::string normalMapStatus_;
-    // Presets per mesh: [0] = bench plane, [1] = ocean grid; each holds Basic / Sunset / Tropical / Hero.
+    // Presets per mesh: [0] = bench plane, [1] = ocean grid; each holds Basic / Sunset / Tropical.
     // The 2x2 bench plane and the open ocean need different waves, so every theme has one of each.
-    // Hero (ocean-hero) starts as a copy of Basic when the preset file has no line for it.
-    static constexpr int kPresetThemeCount = 4;
+    static constexpr int kPresetThemeCount = 3;
     using PresetSet = std::array<ShaderPreset, kPresetThemeCount>;
     std::array<PresetSet, 2> presets_{};
     int activeTheme_ = 0;          // last preset applied or saved; switching mesh re-applies it

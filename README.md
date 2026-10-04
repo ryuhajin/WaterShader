@@ -50,19 +50,18 @@ cmake --build --preset vs2022-debug       # Release는 vs2022-release
 - 빌드 후 셰이더와 `assets/`가 실행 파일 옆으로 복사됩니다.
 - **핫 리로드**: `shaders/`의 `.hlsl`/`.hlsli`를 저장하면 200ms 안에 다시 컴파일합니다. Debug 빌드는 소스 `shaders/`와 `assets/`를 직접 쓰고, Release 빌드는 실행 파일 옆 복사본을 읽습니다.
 - Debug 빌드에서 `Save Current`를 누르면 저장소의 `assets/shader_presets.txt`가 바뀝니다. 프리셋은 작은 평면과 오션 그리드에 따로 저장되고, `Save Current`는 지금 보고 있는 평면 쪽에 저장합니다.
-- 프리셋은 Basic / Sunset / Tropical / Hero 4개입니다. Hero는 오션 항공 컷(카메라 슬롯 4 = `ocean_aerial`)용으로, Basic에 Ocean Detail(원경 글리터·돌풍 패치·수평선 연무)을 더한 값입니다.
 
 **명령줄 옵션** (캡처·측정용)
 
 | 옵션 | 동작 |
 |---|---|
-| `--capture <label>` | 프리셋 4개 × 고정 샷 6개를 저장하고 종료 (무인 모드 포함) |
+| `--capture <label>` | 프리셋 3개 × 고정 샷 7개를 저장하고 종료 (무인 모드 포함) |
 | `--capture-feature <name>` | 저장 위치 `docs/features/<name>/captures/<label>/` |
-| `--capture-presets <a,b>` / `--capture-shots <a,b>` | 캡처할 프리셋(`basic`, `sunset`, `tropical`, `hero`) / 샷만 고르기. 샷에 `slot1`~`slot4`를 쓰면 저장한 카메라 슬롯 |
+| `--capture-presets <a,b>` / `--capture-shots <a,b>` | 캡처할 프리셋(`basic`, `sunset`, `tropical`) / 샷만 고르기. 샷에 `slot1`~`slot4`를 쓰면 저장한 카메라 슬롯 |
 | `--capture-format <jpg\|png>`, `--render-size <WxH>` | 무손실 PNG / 창 크기와 별개인 렌더 해상도 (예: `2560x1440` 고해상도 컷) |
 | `--preset-file <path>` / `--camera-file <path>` | 프리셋 / 카메라 슬롯을 이 파일에서 읽고 저장 (작업용 파일과 별개로 고정 값 캡처) |
 | `--debug <0-7>` | 캡처할 디버그 뷰 (6 = 파도 구간: 메시 / 픽셀 / 거칠기, 7 = Ocean Detail: 리플 거칠기 / 돌풍 / 연무) |
-| `--shot <name>` | 시작 카메라 샷 (`oblique`, `top`, `sunward`, `ocean_surface`, `ocean_aerial`, `ocean_tele`) |
+| `--shot <name>` | 시작 카메라 샷 (`oblique`, `top`, `sunward`, `ocean_surface`, `ocean_aerial`, `ocean_tele`, `ocean_hero`) |
 | `--far-waves <on\|off>` | 먼 바다 파도 기울기·거칠기 켜기/끄기 (비교용) |
 | `--align-ripples <on\|off>` | 노멀맵 바람 정렬(Align to wind)을 프리셋 대신 지정 |
 | `--ui <view\|light\|water\|all>` | 설정 창을 연 상태로 시작 |
@@ -85,7 +84,7 @@ cmake --build --preset vs2022-debug       # Release는 vs2022-release
 
 | 창 | 섹션 |
 |---|---|
-| **View Settings [1]** | Presets(Apply / Save Current), Camera, Camera Presets(고정 샷 6개 + 슬롯 4개), Scene(Ocean Grid, Skybox), Capture, Debug View |
+| **View Settings [1]** | Presets(Apply / Save Current), Camera, Camera Presets(고정 샷 7개 + 슬롯 4개), Scene(Ocean Grid, Skybox), Capture, Debug View |
 | **Light Settings [2]** | Sky / Environment(하늘 선택, Calibrate From Sky), Sun(방향·색·세기), Sun Glint(날카로움·세기·먼 바다 확산 Far spread), Ambient, Tonemapping(커브·노출) |
 | **Water Settings [3]** | Water Color, Reflection, Normal Map(레이어 A/B: 텍스처·바람 정렬·크기·흐름), Ocean Detail(먼 파도 마루·원경 리플 글리터·돌풍 패치·수평선 연무), Waves(Simple: 바람 방향·퍼짐·크기·높이·거칠기·속도로 파도 4개 생성 / Advanced: 파도 4개 개별 조정 / Far waves 토글) |
 

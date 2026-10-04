@@ -107,6 +107,9 @@ constexpr CaptureShot kCaptureShots[] = {
     { "ocean_aerial",  { -5.38f, 12.00f, -20.09f }, { 30.0f, 15.0f, 0.0f }, 50.0f, true  },
     // Away from the sun through a long lens: compressed rows of waves, shore reflections, no glint.
     { "ocean_tele",    {  0.00f,  1.80f,   0.00f }, {  3.0f, 214.5f, 0.0f }, 28.0f, true  },
+    // Portfolio main image (ocean-hero): same spot as ocean_aerial but lower and flatter, so the far shore
+    // and sky take the top ~1/5 and the water ~4/5, with the glint path right of centre.
+    { "ocean_hero",    { -5.38f,  6.00f, -20.09f }, { 14.0f, 18.0f, 0.0f }, 44.0f, true  },
 };
 
 // Startup / Reset Camera framing: the step2_sun_glint "sunward" shot (bench plane, glint visible).
@@ -116,8 +119,8 @@ constexpr int kTopShotIndex = 1;
 static_assert(kCaptureShots[kTopShotIndex].position.y == 2.40f && kCaptureShots[kTopShotIndex].rotation.x == 89.9f,
     "kTopShotIndex must point at the \"top\" shot");
 
-constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical", "hero" };
-constexpr const char* kPresetLabels[] = { "Basic", "Sunset", "Tropical", "Hero" };
+constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical" };
+constexpr const char* kPresetLabels[] = { "Basic", "Sunset", "Tropical" };
 constexpr int kCaptureShotCount = static_cast<int>(std::size(kCaptureShots));
 
 // v4: one line per mesh x theme, each starting with its mesh ("bench" / "ocean"). v3 (one line per
@@ -257,7 +260,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --preset-file <path>   load/save presets from this file instead of assets/shader_presets.txt
     //                          (captures with fixed values while the working presets keep changing)
     //   --camera-file <path>   load/save camera slots from this file instead of assets/camera_presets.txt
-    //   --capture-presets <a,b>   capture only these presets (basic, sunset, tropical, hero)
+    //   --capture-presets <a,b>   capture only these presets (basic, sunset, tropical)
     //   --capture-shots <a,b>     capture only these shots; slot1..slot4 are the saved camera slots
     //   --capture-format <jpg|png>  png = lossless (final images, exact comparisons)
     //   --render-size <WxH>    back buffer size independent of the window (high-resolution captures)
@@ -776,8 +779,6 @@ void Graphics::LoadPresets()
     defaults[2].water.specularStrength = 0.30f;
     defaults[2].water.specularSharpness = 96.0f;
 
-    defaults[3] = defaults[0]; // Hero starts as Basic
-
     presets_[1] = defaults; // the ocean grid starts from the same code defaults
 
     const std::filesystem::path presetPath = PresetFilePath();
@@ -852,8 +853,6 @@ void Graphics::LoadPresets()
         }
     };
 
-    // Themes in order within each mesh; a line for an unknown mesh or a fifth theme is skipped.
-    int nextTheme[2] = {0, 0};
     if (version == 3)
     {
         // One preset per theme, used for both meshes until one of them is saved on its own.
@@ -862,33 +861,23 @@ void Graphics::LoadPresets()
             std::istringstream in(line);
             readPreset(in, presets_[0][theme]);
             presets_[1][theme] = presets_[0][theme];
-            nextTheme[0] = nextTheme[1] = theme + 1;
         }
-    }
-    else
-    {
-        while (std::getline(file, line))
-        {
-            std::istringstream in(line);
-            std::string meshName;
-            in >> meshName;
-            const int mesh = meshName == kPresetMeshNames[0] ? 0 : meshName == kPresetMeshNames[1] ? 1 : -1;
-            if (mesh < 0 || nextTheme[mesh] >= kPresetThemeCount)
-            {
-                continue;
-            }
-            readPreset(in, presets_[mesh][nextTheme[mesh]++]);
-        }
+        return;
     }
 
-    // Files saved before ocean-hero have no Hero line: Hero starts as that mesh's Basic.
-    constexpr int kHeroTheme = kPresetThemeCount - 1;
-    for (int mesh = 0; mesh < 2; ++mesh)
+    // Themes in order within each mesh; a line for an unknown mesh or a fourth theme is skipped.
+    int nextTheme[2] = {0, 0};
+    while (std::getline(file, line))
     {
-        if (nextTheme[mesh] > 0 && nextTheme[mesh] <= kHeroTheme)
+        std::istringstream in(line);
+        std::string meshName;
+        in >> meshName;
+        const int mesh = meshName == kPresetMeshNames[0] ? 0 : meshName == kPresetMeshNames[1] ? 1 : -1;
+        if (mesh < 0 || nextTheme[mesh] >= kPresetThemeCount)
         {
-            presets_[mesh][kHeroTheme] = presets_[mesh][0];
+            continue;
         }
+        readPreset(in, presets_[mesh][nextTheme[mesh]++]);
     }
 }
 
