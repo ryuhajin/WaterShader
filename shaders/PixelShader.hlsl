@@ -119,9 +119,11 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 
     // Layer A = broad ripples, layer B = finer chop at a different tiling, so the repeat is harder to spot.
     // Each layer has its own normal map; with two different maps the B layer no longer repeats A's shapes.
-    // "Align to wind" turns only the pattern; the scroll stays in plane uv, so Flow direction keeps its meaning.
-    float2 uv1 = RotateRippleUv(input.uv * normalScale, g_NormalRotation.xy) + g_NormalScroll.xy * time;
-    float2 uv2 = RotateRippleUv(input.uv * normalScale * detailScale, g_NormalRotation.zw) + g_NormalScroll.zw * time;
+    // "Align to wind" turns only the pattern. The scroll is added in plane uv before the turn, so the pattern
+    // drifts along -scroll on the water as Flow direction shows (added after the turn, it drifted along
+    // -R(a)·scroll, i.e. off by the alignment angle a).
+    float2 uv1 = RotateRippleUv(input.uv * normalScale + g_NormalScroll.xy * time, g_NormalRotation.xy);
+    float2 uv2 = RotateRippleUv(input.uv * normalScale * detailScale + g_NormalScroll.zw * time, g_NormalRotation.zw);
     // rgb [0~1] -> normal vector [-1~1] 범위로 만들기 위해 * 2.0 - 1.0
     float3 n1 = g_NormalMap.Sample(g_NormalSampler, uv1).xyz * 2.0 - 1.0;
     float3 n2 = g_NormalMapB.Sample(g_NormalSampler, uv2).xyz * 2.0 - 1.0;
