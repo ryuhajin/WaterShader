@@ -145,6 +145,7 @@
 - [x] `feature/ripple-flow-fix` — 바람 정렬한 노멀맵이 Flow 다이얼 방향으로 흐르도록 스크롤을 회전 전에 적용 ([NOTES](features/ripple-flow-fix/NOTES.md))
 - [x] `feature/mesh-presets` — 프리셋을 벤치 평면 / 오션 그리드별로 따로 저장, 평면 전환 시 자동 적용, 파일 v4 ([NOTES](features/mesh-presets/NOTES.md))
 - [x] `feature/top-view-sun` — top 고정 샷 전용 태양(방향 + 세기)을 프리셋마다 저장 ([NOTES](features/top-view-sun/NOTES.md))
+- [x] `feature/ocean-shots` — ocean 고정 샷을 수면 역광 / 항공 부감 / 망원 압축으로 재구성, 이름 `ocean_surface` / `ocean_aerial` / `ocean_tele` ([NOTES](features/ocean-shots/NOTES.md))
 - [x] `feature/preset-themes` — Basic/Sunset/Tropical 3테마 재튜닝: 테마별 파도 Simple 값·노멀맵 조합·조명·색 ([NOTES](features/preset-themes/NOTES.md))
 
 ---

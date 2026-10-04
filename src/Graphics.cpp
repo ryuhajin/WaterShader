@@ -70,16 +70,22 @@ struct CaptureShot
 
 // Fixed camera shots for before/after comparison. Bench plane spans x,z in [-1, 1].
 // "sunward" looks along the skybox sun (yaw ~33 deg) from a low angle to catch the glint path.
-// ocean_* shots use the large grid and only exist from step 6 on.
+// ocean_* shots use the large grid. They differ in height, lens and direction to the sun (all theme suns
+// sit near yaw 35), so the three read as different pictures (ocean-shots).
 constexpr CaptureShot kCaptureShots[] = {
-    { "oblique",       {  0.00f, 1.00f, -2.20f }, { 24.0f,  0.0f, 0.0f }, 60.0f, false },
-    { "top",           {  0.00f, 2.40f,  0.00f }, { 89.9f,  0.0f, 0.0f }, 60.0f, false },
-    { "sunward",       { -1.04f, 0.45f, -1.59f }, { 12.0f, 33.0f, 0.0f }, 60.0f, false },
-    { "ocean_sunward", { -0.90f, 0.55f, -1.40f }, {  6.0f, 34.5f, 0.0f }, 55.0f, true  },
-    { "ocean_wide",    {  0.00f, 1.60f, -3.00f }, { 14.0f, 10.0f, 0.0f }, 60.0f, true  },
-    // Back to the yaw-34.5 sun (Basic / Sunset): sky and shore reflections without the glint.
-    // (Tropical's sun sits at yaw 236.4, so there this one looks toward it.)
-    { "ocean_away",    {  0.00f, 1.60f,  0.00f }, {  8.0f, 214.5f, 0.0f }, 60.0f, true  },
+    { "oblique",       {  0.00f,  1.00f,  -2.20f }, { 24.0f,  0.0f, 0.0f }, 60.0f, false },
+    { "top",           {  0.00f,  2.40f,   0.00f }, { 89.9f,  0.0f, 0.0f }, 60.0f, false },
+    { "sunward",       { -1.04f,  0.45f,  -1.59f }, { 12.0f, 33.0f, 0.0f }, 60.0f, false },
+    // Wave level into the sun, wide lens: big crests up front, glint path to the horizon.
+    // 0.3 stays above the tallest crests (amplitude sum ~0.19, Sunset).
+    { "ocean_surface", {  0.00f,  0.30f,   0.00f }, {  3.0f, 34.5f, 0.0f }, 70.0f, true  },
+    // From above, aimed at the origin (dense grid): the wave pattern, the far-field fade and a wide glitter.
+    // Yaw 15 keeps the sun (yaw ~35) right of centre: the wave rows cross the frame at an angle instead of
+    // lying flat, and the glint stays in frame. The frame top stays 5 deg below the horizon, so the grid
+    // edge (1.7 deg below) is never in view.
+    { "ocean_aerial",  { -5.38f, 12.00f, -20.09f }, { 30.0f, 15.0f, 0.0f }, 50.0f, true  },
+    // Away from the sun through a long lens: compressed rows of waves, shore reflections, no glint.
+    { "ocean_tele",    {  0.00f,  1.80f,   0.00f }, {  3.0f, 214.5f, 0.0f }, 28.0f, true  },
 };
 
 // Startup / Reset Camera framing: the step2_sun_glint "sunward" shot (bench plane, glint visible).
@@ -208,7 +214,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --debug <mode>         debug view used for the capture set
     //   --normal-map <path>    extra normal map (relative to assets/), used for both layers
     //   --normal-a / --normal-b <index>  normal map per layer (kNormalMaps), overrides the presets
-    //   --shot <name>          start from a fixed camera shot (e.g. ocean_wide)
+    //   --shot <name>          start from a fixed camera shot (e.g. ocean_aerial)
     //   --ui <view|light|water|all>  open settings windows at start (screenshots; keys 1/2/3 otherwise)
     //   --no-vsync             start uncapped (for FPS / GPU ms measurement)
     //   --capture-feature <f>  captures go to docs/features/<f>/captures (default water-polish)
