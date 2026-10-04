@@ -147,7 +147,7 @@
 - [x] `feature/top-view-sun` — top 고정 샷 전용 태양(방향 + 세기)을 프리셋마다 저장 ([NOTES](features/top-view-sun/NOTES.md))
 - [x] `feature/ocean-shots` — ocean 고정 샷을 수면 역광 / 항공 부감 / 망원 압축으로 재구성, 이름 `ocean_surface` / `ocean_aerial` / `ocean_tele` ([NOTES](features/ocean-shots/NOTES.md))
 - [x] `feature/preset-themes` — Basic/Sunset/Tropical 3테마 재튜닝: 테마별 파도 Simple 값·노멀맵 조합·조명·색 ([NOTES](features/preset-themes/NOTES.md))
-- [ ] `feature/ocean-hero` — 포트폴리오 메인용 고정 샷 `ocean_hero`(하늘 1 : 물 3 저공 사선, 세 테마 공유), Ocean Detail(원경 리플 글리터·돌풍 패치·수평선 연무·먼 파도 마루, 기본 꺼짐) 별도 셰이더 변형, 캡처 필터·카메라 슬롯·고해상도 PNG ([NOTES](features/ocean-hero/NOTES.md))
+- [x] `feature/ocean-hero` — 포트폴리오 메인용 고정 샷 `ocean_hero`(하늘 1 : 물 3 저공 사선, 세 테마 공유), Ocean Detail(원경 리플 글리터·돌풍 패치·수평선 연무·먼 파도 마루, 기본 꺼짐) 별도 셰이더 변형, 캡처 필터·카메라 슬롯·고해상도 PNG ([NOTES](features/ocean-hero/NOTES.md))
 
 ---
 

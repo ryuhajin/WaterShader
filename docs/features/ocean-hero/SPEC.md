@@ -1,6 +1,6 @@
 # ocean-hero
 
-> Branch: `feature/ocean-hero` · Status: in-progress · Updated: 2026-10-04
+> Branch: `feature/ocean-hero` · Status: done · Updated: 2026-10-04
 
 ## 1. Goal / Visual Target
 
@@ -82,7 +82,7 @@ color = lerp(color, Sky, hazeStrength × (1 - exp(-dist / hazeDistance)))
 - [x] Ocean Detail 변형 비교 샘플(`make_samples.ps1`)
 - [x] 2560×1440 렌더가 720p 창과 같은 대비(밝기 표준편차 37.6 대 37.2)
 - [x] PNG가 sRGB 태그로 저장됨(픽셀 데이터는 그대로)
-- [ ] `ocean_hero` 구도와 최종 이미지 사용자 승인
+- [x] `ocean_hero` 구도와 최종 이미지 사용자 승인 (2026-10-04, `ocean_hero`와 슬롯 1 최종 컷을 따로 유지)
 - [x] NOTES
 
 ## 5. Notes
