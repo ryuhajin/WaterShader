@@ -49,7 +49,7 @@ cmake --build --preset vs2022-debug       # Release는 vs2022-release
 
 - 빌드 후 셰이더와 `assets/`가 실행 파일 옆으로 복사됩니다.
 - **핫 리로드**: `shaders/`의 `.hlsl`/`.hlsli`를 저장하면 200ms 안에 다시 컴파일합니다. Debug 빌드는 소스 `shaders/`와 `assets/`를 직접 쓰고, Release 빌드는 실행 파일 옆 복사본을 읽습니다.
-- Debug 빌드에서 `Save Current`를 누르면 저장소의 `assets/shader_presets.txt`가 바뀝니다.
+- Debug 빌드에서 `Save Current`를 누르면 저장소의 `assets/shader_presets.txt`가 바뀝니다. 프리셋은 작은 평면과 오션 그리드에 따로 저장되고, `Save Current`는 지금 보고 있는 평면 쪽에 저장합니다.
 
 **명령줄 옵션** (캡처·측정용)
 
@@ -59,7 +59,7 @@ cmake --build --preset vs2022-debug       # Release는 vs2022-release
 | `--capture-feature <name>` | 저장 위치 `docs/features/<name>/captures/<label>/` |
 | `--preset-file <path>` | 프리셋을 이 파일에서 읽고 저장 (작업용 프리셋과 별개로 고정 값 캡처) |
 | `--debug <0-6>` | 캡처할 디버그 뷰 (6 = 파도 구간: 메시 / 픽셀 / 거칠기) |
-| `--shot <name>` | 시작 카메라 샷 (`oblique`, `top`, `sunward`, `ocean_sunward`, `ocean_wide`, `ocean_away`) |
+| `--shot <name>` | 시작 카메라 샷 (`oblique`, `top`, `sunward`, `ocean_surface`, `ocean_aerial`, `ocean_tele`) |
 | `--far-waves <on\|off>` | 먼 바다 파도 기울기·거칠기 켜기/끄기 (비교용) |
 | `--align-ripples <on\|off>` | 노멀맵 바람 정렬(Align to wind)을 프리셋 대신 지정 |
 | `--ui <view\|light\|water\|all>` | 설정 창을 연 상태로 시작 |

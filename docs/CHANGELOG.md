@@ -27,6 +27,7 @@
 | 가까운 파도와 먼 물결의 방향이 X자로 엇갈림 | 거리에 따라 파도를 줄이는 처리가 높이와 함께 물결의 기울기까지 지워, 먼 곳에는 바람과 무관한 노멀맵 무늬만 남았습니다. 먼 곳의 파도 기울기를 픽셀 단위로 다시 계산하고, 노멀맵 무늬를 바람 방향으로 돌리는 옵션을 넣었습니다 | [wave-far-normals](features/wave-far-normals/NOTES.md) |
 | (위 수정의 1차 결과) 먼 바다에 마름모 격자 무늬가 생김 | 같은 대비의 파도 줄무늬 4개가 원근으로 압축되며 엇갈렸습니다. 픽셀이 충분히 표현할 수 있는 구간까지만 물결로 그리고, 그보다 작은 물결은 표면 거칠기로 바꿔 햇빛 반짝임을 넓히는 방식으로 고쳤습니다 | [wave-far-normals](features/wave-far-normals/NOTES.md) |
 | 해를 등진 먼 바다에서 나무·하늘 반사가 회색으로 뭉개짐 | 거칠기만큼 하늘 반사를 흐리게 한 처리가 반사 형상을 지웠습니다. 반사율(Fresnel) 가설은 측정해 보니 효과가 없었습니다. 반사 흐림을 제거했습니다. 해를 등진 캡처 샷이 없어 처음엔 놓쳤기에 이 샷도 추가했습니다 | [wave-far-normals](features/wave-far-normals/NOTES.md) |
+| 바람 정렬을 켠 잔물결이 흐름 방향 표시와 다른 쪽으로 흐름 | 텍스처를 회전한 뒤에 흐름 이동을 더해, 흐름까지 정렬 각도만큼 돌아가 있었습니다(Sunset에서 49°). 이동을 회전 전에 더하도록 고치고, 두 시점의 무늬 이동을 측정해 표시와 1° 이내로 맞음을 확인했습니다 | [ripple-flow-fix](features/ripple-flow-fix/NOTES.md) |
 
 ### 퀄리티 업
 
@@ -44,6 +45,10 @@
 | 노멀맵 바람 정렬(Align to wind)과 텍스처별 무늬 방향 측정 도구 | [wave-far-normals](features/wave-far-normals/NOTES.md) |
 | 먼 바다 햇빛 반짝임 폭 조절(Far spread): 해가 수평선에 걸린 장면 연출용 | [wave-far-normals](features/wave-far-normals/NOTES.md) |
 | 캡처 도구: 고정 프리셋 파일로 찍기, 기능 켜고 끄기 옵션, 해를 등진 고정 샷 | [wave-far-normals](features/wave-far-normals/NOTES.md) |
+| 세 프리셋을 테마로 재구성: 잔잔한 호수(Basic) / 바람 센 노을 바다(Sunset) / 에메랄드빛 바다(Tropical). 테마마다 파도 모양과 노멀맵 조합이 다름 | [preset-themes](features/preset-themes/NOTES.md) |
+| 프리셋을 작은 평면 / 오션 그리드별로 따로 저장하고, 평면을 바꾸면 그 평면의 버전을 자동 적용 | [mesh-presets](features/mesh-presets/NOTES.md) |
+| 위에서 내려다보는 top 샷 전용 태양(방향 + 세기): 정반사가 카메라로 오도록 해를 평면 정면에 둠 | [top-view-sun](features/top-view-sun/NOTES.md) |
+| 오션 고정 샷을 수면 역광 / 항공 부감 / 망원 압축으로 재구성 | [ocean-shots](features/ocean-shots/NOTES.md) |
 
 ## 2026-05 — 기존 버전
 
