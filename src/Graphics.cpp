@@ -87,7 +87,10 @@ constexpr int kDefaultShotIndex = 2;
 
 constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical" };
 
-constexpr int kPresetFileVersion = 3;
+// v4: one line per mesh x theme, each starting with its mesh ("bench" / "ocean"). v3 (one line per
+// theme, no mesh) is still read and used for both meshes.
+constexpr int kPresetFileVersion = 4;
+constexpr const char* kPresetMeshNames[] = { "bench", "ocean" };
 
 // Optional "key value" pairs appended after the fixed preset fields. Missing keys keep the
 // code defaults and unknown keys are skipped, so new parameters don't need a format bump.
@@ -376,15 +379,17 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     return true;
 }
 
-void Graphics::ApplyPreset(int index)
+void Graphics::ApplyPreset(int theme)
 {
-    if (index < 0 || index >= static_cast<int>(presets_.size()))
+    if (theme < 0 || theme >= kPresetThemeCount)
     {
         return;
     }
 
+    activeTheme_ = theme;
+    presetOceanMesh_ = oceanMode_;
     const int debugMode = water_.debugMode;
-    ApplyPresetValues(presets_[index]);
+    ApplyPresetValues(presets_[oceanMode_ ? 1 : 0][theme]);
     water_.debugMode = debugMode;
 }
 
@@ -427,22 +432,25 @@ Graphics::ShaderPreset Graphics::MakePresetFromCurrent() const
     return preset;
 }
 
-void Graphics::SaveCurrentPreset(int index)
+void Graphics::SaveCurrentPreset(int theme)
 {
-    if (index < 0 || index >= static_cast<int>(presets_.size()))
+    if (theme < 0 || theme >= kPresetThemeCount)
     {
         return;
     }
 
-    presets_[index] = MakePresetFromCurrent();
-    presets_[index].water.debugMode = 0;
+    ShaderPreset& slot = presets_[oceanMode_ ? 1 : 0][theme];
+    slot = MakePresetFromCurrent();
+    slot.water.debugMode = 0;
+    activeTheme_ = theme;
+    presetOceanMesh_ = oceanMode_;
     SavePresets();
 }
 
 void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone, bool allowOverwrite)
 {
     captureQueue_.clear();
-    for (int preset = 0; preset < static_cast<int>(presets_.size()); ++preset)
+    for (int preset = 0; preset < kPresetThemeCount; ++preset)
     {
         for (int shot = 0; shot < static_cast<int>(std::size(kCaptureShots)); ++shot)
         {
@@ -477,12 +485,14 @@ bool Graphics::BeginCaptureFrame()
     const CaptureJob job = captureQueue_.front();
     captureQueue_.erase(captureQueue_.begin());
 
-    ApplyPresetValues(presets_[job.preset]);
+    // Each shot uses the preset version for its own mesh (bench plane / ocean grid).
+    const CaptureShot& shot = kCaptureShots[job.shot];
+    ApplyPresetValues(presets_[shot.ocean ? 1 : 0][job.preset]);
     water_.debugMode = captureDebugMode_;
 
     // Also resets the bench plane rotation, so mouse-drag state never leaks into captures.
     ApplyCameraShot(job.shot);
-    const CaptureShot& shot = kCaptureShots[job.shot];
+    presetOceanMesh_ = shot.ocean;
 
     // Fixed time so before/after frames show the same wave phase.
     elapsedTime_ = kCaptureTime;
@@ -527,6 +537,7 @@ void Graphics::EndCaptureFrame()
 
     ApplyPresetValues(captureRestore_.preset);
     ApplyView(captureRestore_.view);
+    presetOceanMesh_ = oceanMode_; // the restored values (unsaved tweaks included) belong to the restored mesh
     elapsedTime_ = captureRestore_.elapsedTime;
     captureStatus_ = "Saved -> " + WideToUtf8(captureDir_.wstring());
     captureFinishedQuit_ = quitAfterCapture_;
@@ -612,33 +623,36 @@ std::filesystem::path Graphics::PresetFilePath() const
 
 void Graphics::LoadPresets()
 {
-    presets_[0] = ShaderPreset{};
+    PresetSet& defaults = presets_[0];
+    defaults[0] = ShaderPreset{};
 
-    presets_[1] = ShaderPreset{};
-    presets_[1].sunElevationDeg = 5.0f;
-    presets_[1].lightColor = {1.0f, 0.58f, 0.35f};
-    presets_[1].lightIntensity = 1.2f;
-    presets_[1].ambientColor = {0.18f, 0.10f, 0.16f};
-    presets_[1].ambientIntensity = 0.45f;
-    presets_[1].water.facingColor = {0.58f, 0.48f, 0.78f, 1.0f};
-    presets_[1].water.grazingColor = {0.08f, 0.03f, 0.10f, 1.0f};
-    presets_[1].water.reflectionStrength = 0.75f;
-    presets_[1].water.fresnelPower = 4.0f;
-    presets_[1].water.specularStrength = 0.35f;
-    presets_[1].water.specularSharpness = 72.0f;
+    defaults[1] = ShaderPreset{};
+    defaults[1].sunElevationDeg = 5.0f;
+    defaults[1].lightColor = {1.0f, 0.58f, 0.35f};
+    defaults[1].lightIntensity = 1.2f;
+    defaults[1].ambientColor = {0.18f, 0.10f, 0.16f};
+    defaults[1].ambientIntensity = 0.45f;
+    defaults[1].water.facingColor = {0.58f, 0.48f, 0.78f, 1.0f};
+    defaults[1].water.grazingColor = {0.08f, 0.03f, 0.10f, 1.0f};
+    defaults[1].water.reflectionStrength = 0.75f;
+    defaults[1].water.fresnelPower = 4.0f;
+    defaults[1].water.specularStrength = 0.35f;
+    defaults[1].water.specularSharpness = 72.0f;
 
-    presets_[2] = ShaderPreset{};
-    presets_[2].sunElevationDeg = 32.0f;
-    presets_[2].lightColor = {0.92f, 1.0f, 0.94f};
-    presets_[2].lightIntensity = 1.35f;
-    presets_[2].ambientColor = {0.08f, 0.22f, 0.24f};
-    presets_[2].ambientIntensity = 0.55f;
-    presets_[2].water.facingColor = {0.30f, 0.92f, 1.0f, 1.0f};
-    presets_[2].water.grazingColor = {0.00f, 0.20f, 0.34f, 1.0f};
-    presets_[2].water.reflectionStrength = 0.65f;
-    presets_[2].water.fresnelPower = 3.5f;
-    presets_[2].water.specularStrength = 0.30f;
-    presets_[2].water.specularSharpness = 96.0f;
+    defaults[2] = ShaderPreset{};
+    defaults[2].sunElevationDeg = 32.0f;
+    defaults[2].lightColor = {0.92f, 1.0f, 0.94f};
+    defaults[2].lightIntensity = 1.35f;
+    defaults[2].ambientColor = {0.08f, 0.22f, 0.24f};
+    defaults[2].ambientIntensity = 0.55f;
+    defaults[2].water.facingColor = {0.30f, 0.92f, 1.0f, 1.0f};
+    defaults[2].water.grazingColor = {0.00f, 0.20f, 0.34f, 1.0f};
+    defaults[2].water.reflectionStrength = 0.65f;
+    defaults[2].water.fresnelPower = 3.5f;
+    defaults[2].water.specularStrength = 0.30f;
+    defaults[2].water.specularSharpness = 96.0f;
+
+    presets_[1] = defaults; // the ocean grid starts from the same code defaults
 
     const std::filesystem::path presetPath = PresetFilePath();
     std::ifstream file(presetPath);
@@ -649,24 +663,20 @@ void Graphics::LoadPresets()
 
     // v2: second field is sun elevation (> 0 above the horizon); v1 stored an inverted pitch.
     // v3: 4 Gerstner waves (dir.x dir.y amplitude wavelength speed steepness). Older files are ignored.
+    // v4: the v3 line per mesh x theme, led by the mesh name.
     std::string line;
     std::getline(file, line);
     std::istringstream headerStream(line);
     std::string header;
     int version = 0;
     headerStream >> header >> version;
-    if (header != "WaterShaderPresets" || version != kPresetFileVersion)
+    if (header != "WaterShaderPresets" || (version != 3 && version != kPresetFileVersion))
     {
         return;
     }
 
-    for (ShaderPreset& preset : presets_)
+    const auto readPreset = [](std::istringstream& in, ShaderPreset& preset)
     {
-        if (!std::getline(file, line))
-        {
-            break;
-        }
-        std::istringstream in(line);
         in
             >> preset.sunYawDeg
             >> preset.sunElevationDeg
@@ -714,6 +724,33 @@ void Graphics::LoadPresets()
         {
             preset.waveMacro = EstimateWaveMacro(preset.water.waves);
         }
+    };
+
+    if (version == 3)
+    {
+        // One preset per theme, used for both meshes until one of them is saved on its own.
+        for (int theme = 0; theme < kPresetThemeCount && std::getline(file, line); ++theme)
+        {
+            std::istringstream in(line);
+            readPreset(in, presets_[0][theme]);
+            presets_[1][theme] = presets_[0][theme];
+        }
+        return;
+    }
+
+    // Themes in order within each mesh; a line for an unknown mesh or a fourth theme is skipped.
+    int nextTheme[2] = {0, 0};
+    while (std::getline(file, line))
+    {
+        std::istringstream in(line);
+        std::string meshName;
+        in >> meshName;
+        const int mesh = meshName == kPresetMeshNames[0] ? 0 : meshName == kPresetMeshNames[1] ? 1 : -1;
+        if (mesh < 0 || nextTheme[mesh] >= kPresetThemeCount)
+        {
+            continue;
+        }
+        readPreset(in, presets_[mesh][nextTheme[mesh]++]);
     }
 }
 
@@ -729,41 +766,45 @@ void Graphics::SavePresets() const
     }
 
     file << "WaterShaderPresets " << kPresetFileVersion << '\n';
-    for (const ShaderPreset& preset : presets_)
+    for (int mesh = 0; mesh < static_cast<int>(presets_.size()); ++mesh)
     {
-        file
-            << preset.sunYawDeg << ' '
-            << preset.sunElevationDeg << ' '
-            << preset.lightColor.x << ' ' << preset.lightColor.y << ' ' << preset.lightColor.z << ' '
-            << preset.lightIntensity << ' '
-            << preset.ambientColor.x << ' ' << preset.ambientColor.y << ' ' << preset.ambientColor.z << ' '
-            << preset.ambientIntensity << ' '
-            << preset.water.facingColor.x << ' ' << preset.water.facingColor.y << ' ' << preset.water.facingColor.z << ' '
-            << preset.water.grazingColor.x << ' ' << preset.water.grazingColor.y << ' ' << preset.water.grazingColor.z << ' '
-            << preset.water.reflectionStrength << ' '
-            << preset.water.fresnelPower << ' '
-            << preset.water.normalScale << ' '
-            << preset.water.specularStrength << ' '
-            << preset.water.specularSharpness << ' '
-            << preset.water.normalScroll1.x << ' ' << preset.water.normalScroll1.y << ' '
-            << preset.water.normalScroll2.x << ' ' << preset.water.normalScroll2.y;
-
-        for (const auto& wave : preset.water.waves)
+        for (const ShaderPreset& preset : presets_[mesh])
         {
             file
-                << ' ' << wave.direction.x << ' ' << wave.direction.y
-                << ' ' << wave.amplitude
-                << ' ' << wave.wavelength
-                << ' ' << wave.speed
-                << ' ' << wave.steepness;
+                << kPresetMeshNames[mesh] << ' '
+                << preset.sunYawDeg << ' '
+                << preset.sunElevationDeg << ' '
+                << preset.lightColor.x << ' ' << preset.lightColor.y << ' ' << preset.lightColor.z << ' '
+                << preset.lightIntensity << ' '
+                << preset.ambientColor.x << ' ' << preset.ambientColor.y << ' ' << preset.ambientColor.z << ' '
+                << preset.ambientIntensity << ' '
+                << preset.water.facingColor.x << ' ' << preset.water.facingColor.y << ' ' << preset.water.facingColor.z << ' '
+                << preset.water.grazingColor.x << ' ' << preset.water.grazingColor.y << ' ' << preset.water.grazingColor.z << ' '
+                << preset.water.reflectionStrength << ' '
+                << preset.water.fresnelPower << ' '
+                << preset.water.normalScale << ' '
+                << preset.water.specularStrength << ' '
+                << preset.water.specularSharpness << ' '
+                << preset.water.normalScroll1.x << ' ' << preset.water.normalScroll1.y << ' '
+                << preset.water.normalScroll2.x << ' ' << preset.water.normalScroll2.y;
+
+            for (const auto& wave : preset.water.waves)
+            {
+                file
+                    << ' ' << wave.direction.x << ' ' << wave.direction.y
+                    << ' ' << wave.amplitude
+                    << ' ' << wave.wavelength
+                    << ' ' << wave.speed
+                    << ' ' << wave.steepness;
+            }
+
+            ForEachExtraField(preset, [&](const char* name, const auto& field)
+            {
+                file << ' ' << name << ' ' << field;
+            });
+
+            file << '\n';
         }
-
-        ForEachExtraField(preset, [&](const char* name, const auto& field)
-        {
-            file << ' ' << name << ' ' << field;
-        });
-
-        file << '\n';
     }
 }
 
@@ -837,6 +878,12 @@ void Graphics::Shutdown()
 bool Graphics::Frame(float deltaTime, const Input& input)
 {
     elapsedTime_ += deltaTime;
+    // Ocean Grid checkbox, a camera slot or a fixed shot changed the mesh: switch to that mesh's version
+    // of the current preset (unsaved tweaks are dropped, like pressing the preset button).
+    if (oceanMode_ != presetOceanMesh_)
+    {
+        ApplyPreset(activeTheme_);
+    }
     UpdateWindowToggles(input);
     UpdateMouseDrag(); // before UpdateCamera, which pushes cameraRotation_ to the camera
     UpdateCamera(deltaTime, input);
@@ -1265,8 +1312,9 @@ void Graphics::DrawViewWindow()
 
     ImGui::SeparatorText("Presets");
     ImGui::TextDisabled("Sky, lights and water together");
+    ImGui::TextDisabled("Kept per mesh - now: %s", oceanMode_ ? "ocean grid" : "bench plane");
     const char* presetNames[] = { "Basic", "Sunset", "Tropical" };
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < kPresetThemeCount; ++i)
     {
         ImGui::PushID(i);
         if (ImGui::Button(presetNames[i], ImVec2(80.0f, 0.0f)))
@@ -1277,6 +1325,11 @@ void Graphics::DrawViewWindow()
         if (ImGui::Button("Save Current"))
         {
             SaveCurrentPreset(i);
+        }
+        if (i == activeTheme_)
+        {
+            ImGui::SameLine();
+            ImGui::TextDisabled("< current");
         }
         ImGui::PopID();
     }
@@ -1356,7 +1409,7 @@ void Graphics::DrawViewWindow()
     }
     if (ImGui::BeginPopupModal("Confirm capture", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        ImGui::Text("Capture %d images to", static_cast<int>(presets_.size() * std::size(kCaptureShots)));
+        ImGui::Text("Capture %d images to", static_cast<int>(kPresetThemeCount * std::size(kCaptureShots)));
         ImGui::Text("docs/features/%s/captures/%s ?", WideToUtf8(captureFeature_).c_str(), captureLabel_);
         ImGui::TextDisabled("An existing folder is kept; a numbered folder is created instead.");
         if (ImGui::Button("Capture"))

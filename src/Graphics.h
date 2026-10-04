@@ -42,8 +42,8 @@ private:
     void UpdateCamera(float deltaTime, const Input& input);
     void UpdateMouseDrag();
     void UpdateWindowToggles(const Input& input);
-    void ApplyPreset(int index);
-    void SaveCurrentPreset(int index);
+    void ApplyPreset(int theme); // the version for the current mesh (bench plane / ocean grid)
+    void SaveCurrentPreset(int theme);
     std::filesystem::path PresetFilePath() const; // --preset-file, else assets/shader_presets.txt
     void LoadPresets();
     void SavePresets() const;
@@ -156,7 +156,13 @@ private:
     WaveMacro waveMacro_; // Simple wave sliders; moving one regenerates water_.waves
     bool farWaveNormals_ = true; // --far-waves off / Water window checkbox
     std::string normalMapStatus_;
-    std::array<ShaderPreset, 3> presets_{};
+    // Presets per mesh: [0] = bench plane, [1] = ocean grid; each holds Basic / Sunset / Tropical.
+    // The 2x2 bench plane and the open ocean need different waves, so every theme has one of each.
+    static constexpr int kPresetThemeCount = 3;
+    using PresetSet = std::array<ShaderPreset, kPresetThemeCount>;
+    std::array<PresetSet, 2> presets_{};
+    int activeTheme_ = 0;          // last preset applied or saved; switching mesh re-applies it
+    bool presetOceanMesh_ = false; // which mesh the current values belong to (oceanMode_ at apply time)
 
     // Stats overlay (top-left). CPU ms = Render() start to just before Present (excludes vsync wait).
     GpuTimer gpuTimer_;
