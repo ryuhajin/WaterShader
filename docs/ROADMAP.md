@@ -125,7 +125,7 @@
 - [ ] `feature/ripple-sdf` — 시간 기반 SDF ripple. 미착수.
 - [ ] `feature/water-specular` — Blinn-Phong specular. main에 floating 작업 있음 (`git stash list`로 wip stash 확인).
 - [ ] `feature/waterfall` — Day 6 폭포 ribbon 메시 + 셰이더. 미착수.
-- [ ] `feature/color-presets` — 분위기 preset 2개. 미착수.
+- [x] ~~`feature/color-presets` — 분위기 preset 2개.~~ → `feature/preset-themes`로 대체 (아래 완료 목록)
 - [ ] `feature/water-detail-normal` — Macro + Detail 2-layer normal map (사실적 ocean 표준 패턴). 미착수.
 - [ ] `feature/ue5-port` — UE5 머티리얼 포팅 (보너스).
 
@@ -142,6 +142,7 @@
 - [x] `feature/ui-panels` — 설정 UI를 View/Light/Water 3창 + 1/2/3 단축키로, 초보자용 Water UI ([NOTES](features/ui-panels/NOTES.md))
 - [x] `feature/wave-macro` — 파도 Simple 모드(상위 값 6개로 파도 4개 생성) + Advanced, Custom 판정 ([NOTES](features/wave-macro/NOTES.md))
 - [x] `feature/wave-far-normals` — 먼 바다 파도 기울기·거칠기 3구간, 노멀맵 바람 정렬, 오션 그리드 UV 버그 수정, 반사 흐림 제거, Far spread ([NOTES](features/wave-far-normals/NOTES.md))
+- [x] `feature/preset-themes` — Basic/Sunset/Tropical 3테마 재튜닝: 테마별 파도 Simple 값·노멀맵 조합·조명·색 ([NOTES](features/preset-themes/NOTES.md))
 
 ---
 
