@@ -50,3 +50,27 @@
 - **top:** Basic은 이전과 비슷하게 가운데 반짝임이 산다. Tropical은 반짝임이 평면 전체로 퍼진다. Sunset은 주황 반짝임이 물결을 따라 평면 전체에 깔린다.
 - **sunward:** Basic·Tropical은 태양이 ocean 위치로 돌아와 반짝임 길이 다시 생겼다. Sunset은 그대로다.
 - 비교 시트: `compare/top.jpg`, `compare/sunward.jpg` (local-only)
+
+## step2 — 사용자 확인 후 수정
+
+### Sunset bench를 저장값으로 되돌림 (`step2_sunset_saved`)
+
+- 사용자 요청으로 Sunset bench의 물 색과 노멀을 앱에서 저장한 ocean 값으로 되돌렸다.
+- 같은 이유(top 반짝임이 없을 때 top 뷰를 살리려던 것)로 넣었던 강한 태양(2.2), 약한 환경광(0.45), F0 0.04도 함께 뺐다. 이제 Sunset bench는 파도와 top 태양만 ocean과 다르다.
+- 결과: top은 짙은 남색 위에 주황 반짝임이 물결을 따라 드러난다. sunward는 저장값의 파란 물 색이다. 바뀐 캡처는 Sunset bench 3장(oblique / sunward / top)뿐이다.
+
+### "top 태양으로 바뀌는지 모르겠다" — 표시 보강
+
+- **원인:** top 태양이 켜져도 Light 창의 Sun 슬라이더는 그대로다. 슬라이더는 원래 태양 값이고, top 태양 값은 아래 섹션에 따로 있다. 적용 중이라는 표시가 회색 작은 글씨 한 줄이라 눈에 띄지 않았다.
+- **수정:** 지금 어느 태양을 쓰는지를 강조색(wave "Custom"과 같은 노랑, `kHighlightColor`)으로 표시한다.
+  - Stats 창: `Sun:  Top View Sun (top shot)`(노랑) / `Sun:  preset sun`
+  - Light 창 Sun 섹션: top 샷에서는 "이 슬라이더는 top 샷에서 쓰이지 않음"
+  - Top View Sun 섹션: `IN USE`(노랑) / `Waiting`(켜져 있지만 top 샷이 아님) / `Off`
+
+### 동작 검증 — 카메라를 움직이면 원래 태양으로
+
+- 임시 빌드에서 캡처의 top 샷 카메라만 x로 1 mm 옮겼다(이후 되돌림).
+  - top 태양을 켠 파일(현재 프리셋)과 끈 파일(`test/topsun_off.txt`)로 각각 찍었다.
+  - 세 테마 모두 top 이미지가 파일 해시까지 같았다. 조금이라도 움직이면 원래 태양으로 돌아간다는 뜻이다.
+- 정확히 top 샷일 때 top 태양이 쓰이는 것은 앞의 "top 샷에서만 적용" 테스트(top 3장만 다름)로 확인했다.
+- 앱 창 확인: `--no-input --ui light --shot top`으로 띄워 Stats 창에 노란 `Sun: Top View Sun (top shot)`이 뜨는 것을 확인했다.

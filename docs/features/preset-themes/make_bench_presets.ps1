@@ -14,12 +14,9 @@ $bench = @(
         normalScale = 1.4; normalStrength = 0.55
         wave = @{ spread = 25; size = 1.0; height = 0.012; chop = 0.20; speed = 0.6 }
     },
-    @{ # Sunset: rough
-        # Low sun: no glint from above, so the sun-facing slopes carry the top view. A dusky mauve
-        # (instead of deep blue) catches the orange light; less ambient keeps the contrast.
-        lightI = 2.2; ambI = 0.45; facing = 0.36, 0.24, 0.40
+    @{ # Sunset: rough. Water color, light and normal maps as saved for the ocean (the top shot reads through
+        # its own sun now, so the mauve / strong-sun / fine-normal workaround of step7 is gone).
         topSun = 1; topSunYawDeg = 34.5; topSunElevationDeg = 90; topSunIntensity = 1.0
-        normalScale = 1.6; normalStrength = 1.2; fresnelF0 = 0.04
         wave = @{ size = 0.8; height = 0.025; chop = 0.45 }
     },
     @{ # Tropical: a bit bigger than Basic

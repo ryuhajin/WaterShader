@@ -191,6 +191,8 @@ constexpr Environment kEnvironments[] = {
 
 // Real sun: angular radius ~0.2665 deg.
 constexpr float kSunAngularRadiusDeg = 0.2665f;
+// Status text that needs to stand out (wave "Custom", Top View Sun in use).
+const ImVec4 kHighlightColor(1.0f, 0.78f, 0.3f, 1.0f);
 constexpr int kEnvironmentCount = static_cast<int>(std::size(kEnvironments));
 
 constexpr float kCaptureTime = 12.0f;
@@ -1196,6 +1198,14 @@ void Graphics::DrawStatsOverlay()
         ImGui::SameLine();
         ImGui::TextDisabled(vsync ? "(FPS capped by display)" : "(uncapped)");
         ImGui::Text("Mesh: %s", oceanMode_ ? "ocean grid 1024^2" : "bench plane 32^2");
+        if (topSun_.enabled != 0 && IsTopShotView())
+        {
+            ImGui::TextColored(kHighlightColor, "Sun:  Top View Sun (top shot)");
+        }
+        else
+        {
+            ImGui::Text("Sun:  preset sun");
+        }
         ImGui::Separator();
         ImGui::TextDisabled("Keys: [1] View  [2] Light  [3] Water");
     }
@@ -1528,30 +1538,43 @@ void Graphics::DrawLightWindow()
     }
     ImGui::TextDisabled("Sun in this sky: yaw %.1f, elevation %.1f", currentEnv.sunYawDeg, currentEnv.sunElevationDeg);
 
+    // Which sun lights the frame is easy to miss (the Sun sliders don't move when the top sun takes over),
+    // so both sections say it in the highlight color.
+    const bool topShot = IsTopShotView();
+    const bool topSunActive = topSun_.enabled != 0 && topShot;
     ImGui::SeparatorText("Sun");
-    if (topSun_.enabled != 0 && IsTopShotView())
+    if (topSunActive)
     {
-        ImGui::TextDisabled("Top shot: direction and intensity come from\nTop View Sun below");
+        ImGui::TextColored(kHighlightColor, "Not in use on the top shot: Top View Sun below\nlights it. These sliders are for every other view.");
     }
     ImGui::SliderFloat("Yaw (deg)", &sunYawDeg_, 0.0f, 360.0f, "%.1f");
     ImGui::SliderFloat("Elevation (deg)", &sunElevationDeg_, 0.0f, 90.0f, "%.1f");
     ImGui::ColorEdit3("Color", &lightColor_.x);
     ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 5.0f);
 
-    const bool topShot = IsTopShotView();
     ImGui::SeparatorText("Top View Sun (top shot only)");
     bool topSunEnabled = topSun_.enabled != 0;
     if (ImGui::Checkbox("Own sun for the top shot", &topSunEnabled))
     {
         topSun_.enabled = topSunEnabled ? 1 : 0;
     }
+    if (topSunActive)
+    {
+        ImGui::TextColored(kHighlightColor, "IN USE: the camera is on the top shot");
+    }
+    else if (topSunEnabled)
+    {
+        ImGui::TextDisabled("Waiting: used once the camera is on\nView > Camera Presets > top (any move leaves it)");
+    }
+    else
+    {
+        ImGui::TextDisabled("Off: the top shot uses the Sun above");
+    }
     ImGui::BeginDisabled(!topSunEnabled);
     ImGui::SliderFloat("Yaw (deg)##top", &topSun_.yawDeg, 0.0f, 360.0f, "%.1f");
     ImGui::SliderFloat("Elevation (deg)##top", &topSun_.elevationDeg, 0.0f, 90.0f, "%.1f");
     ImGui::SliderFloat("Intensity##top", &topSun_.intensity, 0.0f, 5.0f);
     ImGui::EndDisabled();
-    ImGui::TextDisabled(topSunEnabled && topShot ? "In use now: the camera is on the top shot"
-                                                 : "Used only on the top shot (View > Camera Presets > top);\nany camera move goes back to the Sun above");
     ImGui::TextDisabled("Elevation 90 = sun right above the plane,\nso its glint faces the top camera. Color = Sun color.");
 
     ImGui::SeparatorText("Sun Glint (sun mirrored on the water)");
@@ -1658,7 +1681,7 @@ void Graphics::DrawWaterWindow()
     }
     else
     {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.78f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, kHighlightColor);
         ImGui::TextWrapped("Custom - edited in Advanced. Moving any slider here rebuilds all 4 waves.");
         ImGui::PopStyleColor();
     }
