@@ -59,6 +59,27 @@ std::wstring Utf8ToWide(const std::string& text)
     return result;
 }
 
+// "a,b,c" -> {"a", "b", "c"} (command line lists).
+std::vector<std::string> SplitList(const std::string& text)
+{
+    std::vector<std::string> items;
+    std::istringstream in(text);
+    std::string item;
+    while (std::getline(in, item, ','))
+    {
+        if (!item.empty())
+        {
+            items.push_back(item);
+        }
+    }
+    return items;
+}
+
+bool ListContains(const std::vector<std::string>& list, const std::string& value)
+{
+    return std::find(list.begin(), list.end(), value) != list.end();
+}
+
 struct CaptureShot
 {
     const char* name;
@@ -86,6 +107,9 @@ constexpr CaptureShot kCaptureShots[] = {
     { "ocean_aerial",  { -5.38f, 12.00f, -20.09f }, { 30.0f, 15.0f, 0.0f }, 50.0f, true  },
     // Away from the sun through a long lens: compressed rows of waves, shore reflections, no glint.
     { "ocean_tele",    {  0.00f,  1.80f,   0.00f }, {  3.0f, 214.5f, 0.0f }, 28.0f, true  },
+    // Portfolio main image (ocean-hero): same spot as ocean_aerial but lower and flatter, so the far shore
+    // and sky take the top ~1/5 and the water ~4/5, with the glint path right of centre.
+    { "ocean_hero",    { -5.38f,  6.00f, -20.09f }, { 14.0f, 18.0f, 0.0f }, 44.0f, true  },
 };
 
 // Startup / Reset Camera framing: the step2_sun_glint "sunward" shot (bench plane, glint visible).
@@ -96,6 +120,8 @@ static_assert(kCaptureShots[kTopShotIndex].position.y == 2.40f && kCaptureShots[
     "kTopShotIndex must point at the \"top\" shot");
 
 constexpr const char* kPresetFileNames[] = { "basic", "sunset", "tropical" };
+constexpr const char* kPresetLabels[] = { "Basic", "Sunset", "Tropical" };
+constexpr int kCaptureShotCount = static_cast<int>(std::size(kCaptureShots));
 
 // v4: one line per mesh x theme, each starting with its mesh ("bench" / "ocean"). v3 (one line per
 // theme, no mesh) is still read and used for both meshes.
@@ -129,6 +155,12 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("topSunYawDeg", preset.topSun.yawDeg);
     fn("topSunElevationDeg", preset.topSun.elevationDeg);
     fn("topSunIntensity", preset.topSun.intensity);
+    fn("rippleRoughness", preset.water.rippleRoughness);
+    fn("gustStrength", preset.water.gustStrength);
+    fn("gustScale", preset.water.gustScale);
+    fn("hazeStrength", preset.water.hazeStrength);
+    fn("hazeDistance", preset.water.hazeDistance);
+    fn("farWaveCrests", preset.water.farWaveCrests);
 }
 
 // Tangent-space water normal maps (RGBA8 UNORM + mips, converted with texconv --ignore-srgb so the
@@ -140,13 +172,16 @@ struct NormalMapEntry
     // Travel axis of the ripples as laid on the water (0 = +X, 90 = +Z, mod 180). "Align to wind"
     // rotates the map by (wind - this). Measured by tools/measure_normal_orientation.ps1 (pattern axis).
     float rippleAxisDeg;
+    // Mean squared slope (x^2 + y^2) / z^2 of the full-resolution map: what "Far ripple glitter" turns into
+    // glint width once the mips have averaged the ripples away (ocean-hero NOTES, measured from the jpg sources).
+    float slopeVariance;
 };
 constexpr NormalMapEntry kNormalMaps[] = {
-    { L"textures/water_normal.dds",  "0 Diagonal ripples (water_normal)", -76.0f },
-    { L"textures/water_normal1.dds", "1 Soft swell (water_normal1)",       84.0f },
-    { L"textures/water_normal2.dds", "2 Soft chop (water_normal2)",        70.0f },
-    { L"textures/water_normal3.dds", "3 Long streaks (water_normal3)",     89.0f },
-    { L"textures/water_normal4.dds", "4 Fine chop (water_normal4)",        67.0f },
+    { L"textures/water_normal.dds",  "0 Diagonal ripples (water_normal)", -76.0f, 0.0600f },
+    { L"textures/water_normal1.dds", "1 Soft swell (water_normal1)",       84.0f, 0.0125f },
+    { L"textures/water_normal2.dds", "2 Soft chop (water_normal2)",        70.0f, 0.0072f },
+    { L"textures/water_normal3.dds", "3 Long streaks (water_normal3)",     89.0f, 0.0229f },
+    { L"textures/water_normal4.dds", "4 Fine chop (water_normal4)",        67.0f, 0.0619f },
 };
 
 // Rotation (cos, sin) that turns a normal map whose ripples travel along axisDeg so they travel along
@@ -224,6 +259,11 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --align-ripples <on|off>  "Align to wind" for both normal map layers, overrides the presets
     //   --preset-file <path>   load/save presets from this file instead of assets/shader_presets.txt
     //                          (captures with fixed values while the working presets keep changing)
+    //   --camera-file <path>   load/save camera slots from this file instead of assets/camera_presets.txt
+    //   --capture-presets <a,b>   capture only these presets (basic, sunset, tropical)
+    //   --capture-shots <a,b>     capture only these shots; slot1..slot4 are the saved camera slots
+    //   --capture-format <jpg|png>  png = lossless (final images, exact comparisons)
+    //   --render-size <WxH>    back buffer size independent of the window (high-resolution captures)
     std::wstring captureLabelArg;
     std::wstring normalMapArg;
     std::wstring shotArg;
@@ -252,6 +292,23 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 }
                 else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
                 else if (arg == L"--preset-file" && hasValue) { presetFileOverride_ = argv[++i]; }
+                else if (arg == L"--camera-file" && hasValue) { cameraFileOverride_ = argv[++i]; }
+                else if (arg == L"--capture-presets" && hasValue) { capturePresetFilter_ = SplitList(WideToUtf8(argv[++i])); }
+                else if (arg == L"--capture-shots" && hasValue)   { captureShotFilter_ = SplitList(WideToUtf8(argv[++i])); }
+                else if (arg == L"--capture-format" && hasValue)  { capturePng_ = std::wstring(argv[++i]) == L"png"; }
+                else if (arg == L"--render-size" && hasValue)
+                {
+                    int width = 0;
+                    int height = 0;
+                    if (swscanf_s(argv[++i], L"%dx%d", &width, &height) == 2 && width > 0 && height > 0)
+                    {
+                        screenWidth = width;
+                        screenHeight = height;
+                        screenWidth_ = static_cast<unsigned int>(width);
+                        screenHeight_ = static_cast<unsigned int>(height);
+                        fixedRenderSize_ = true;
+                    }
+                }
                 else if (arg == L"--align-ripples" && hasValue) { rippleAlignOverride_ = std::wstring(argv[++i]) == L"off" ? 0 : 1; }
                 else if (arg == L"--far-waves" && hasValue)  { farWaveNormals_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--exposure" && hasValue)   { exposureOverrideEv_ = static_cast<float>(_wtof(argv[++i])); hasExposureOverride_ = true; }
@@ -297,11 +354,13 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         {
             files.emplace_back(entry.file, entry.name);
             normalMapAxisDeg_.push_back(entry.rippleAxisDeg);
+            normalMapSlopeVariance_.push_back(entry.slopeVariance);
         }
         if (!normalMapArg.empty())
         {
             files.emplace_back(normalMapArg, std::to_string(files.size()) + " --normal-map " + WideToUtf8(normalMapArg));
             normalMapAxisDeg_.push_back(0.0f); // not measured: Align to wind treats it as running along +X
+            normalMapSlopeVariance_.push_back(0.03f); // not measured: a typical value of the maps above
             normalOverrideA_ = normalOverrideB_ = static_cast<int>(files.size()) - 1;
         }
         std::string statusLog;
@@ -467,10 +526,31 @@ void Graphics::SaveCurrentPreset(int theme)
 
 void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone, bool allowOverwrite)
 {
+    // Shots: the fixed shots, or the ones named by --capture-shots (which may also name camera slots).
+    std::vector<int> shots;
+    for (int shot = 0; shot < kCaptureShotCount; ++shot)
+    {
+        if (captureShotFilter_.empty() || ListContains(captureShotFilter_, kCaptureShots[shot].name))
+        {
+            shots.push_back(shot);
+        }
+    }
+    for (int slot = 0; slot < kCameraSlotCount; ++slot)
+    {
+        if (cameraSlotUsed_[slot] && ListContains(captureShotFilter_, "slot" + std::to_string(slot + 1)))
+        {
+            shots.push_back(kCaptureShotCount + slot);
+        }
+    }
+
     captureQueue_.clear();
     for (int preset = 0; preset < kPresetThemeCount; ++preset)
     {
-        for (int shot = 0; shot < static_cast<int>(std::size(kCaptureShots)); ++shot)
+        if (!capturePresetFilter_.empty() && !ListContains(capturePresetFilter_, kPresetFileNames[preset]))
+        {
+            continue;
+        }
+        for (int shot : shots)
         {
             captureQueue_.push_back({preset, shot});
         }
@@ -503,19 +583,27 @@ bool Graphics::BeginCaptureFrame()
     const CaptureJob job = captureQueue_.front();
     captureQueue_.erase(captureQueue_.begin());
 
+    // A fixed shot, or a saved camera slot (index past the fixed shots).
+    const bool isSlot = job.shot >= kCaptureShotCount;
+    const int slot = job.shot - kCaptureShotCount;
+    const CameraView view = isSlot
+        ? cameraSlots_[slot]
+        : CameraView{kCaptureShots[job.shot].position, kCaptureShots[job.shot].rotation,
+                     kCaptureShots[job.shot].fovDeg, kCaptureShots[job.shot].ocean, {0.0f, 0.0f, 0.0f}};
+    const std::string shotName = isSlot ? "slot" + std::to_string(slot + 1) : std::string(kCaptureShots[job.shot].name);
+
     // Each shot uses the preset version for its own mesh (bench plane / ocean grid).
-    const CaptureShot& shot = kCaptureShots[job.shot];
-    ApplyPresetValues(presets_[shot.ocean ? 1 : 0][job.preset]);
+    ApplyPresetValues(presets_[view.ocean ? 1 : 0][job.preset]);
     water_.debugMode = captureDebugMode_;
 
-    // Also resets the bench plane rotation, so mouse-drag state never leaks into captures.
-    ApplyCameraShot(job.shot);
-    presetOceanMesh_ = shot.ocean;
+    // Fixed shots also reset the bench plane rotation, so mouse-drag state never leaks into captures.
+    ApplyView(view);
+    presetOceanMesh_ = view.ocean;
 
     // Fixed time so before/after frames show the same wave phase.
     elapsedTime_ = kCaptureTime;
 
-    const std::string fileName = std::string(kPresetFileNames[job.preset]) + "_" + shot.name + ".jpg";
+    const std::string fileName = std::string(kPresetFileNames[job.preset]) + "_" + shotName + (capturePng_ ? ".png" : ".jpg");
     pendingCapturePath_ = captureDir_ / fileName;
     return true;
 }
@@ -528,9 +616,20 @@ void Graphics::EndCaptureFrame()
     std::error_code removeError;
     std::filesystem::remove(pendingCapturePath_, removeError);
 
-    // JPEG keeps each step's capture set ~2MB in git instead of ~11MB as PNG.
+    // JPEG keeps each step's capture set ~2MB in git instead of ~11MB as PNG (--capture-format png for finals).
     const auto backBuffer = d3d_->GetBackBuffer();
-    const HRESULT hr = DirectX::SaveWICTextureToFile(
+    const HRESULT hr = capturePng_
+        ? DirectX::SaveWICTextureToFile(
+            d3d_->GetDeviceContext(),
+            backBuffer.Get(),
+            GUID_ContainerFormatPng,
+            pendingCapturePath_.wstring().c_str(),
+            nullptr,
+            nullptr,
+            // The back buffer is UNORM but holds sRGB-encoded values (the tonemap pass encodes them).
+            // Without this ScreenGrab tags the PNG gAMA 1.0 (linear) and viewers show it washed out.
+            true)
+        : DirectX::SaveWICTextureToFile(
         d3d_->GetDeviceContext(),
         backBuffer.Get(),
         GUID_ContainerFormatJpeg,
@@ -593,11 +692,16 @@ void Graphics::ApplyCameraShot(int shotIndex)
     ApplyView({shot.position, shot.rotation, shot.fovDeg, shot.ocean, {0.0f, 0.0f, 0.0f}});
 }
 
+std::filesystem::path Graphics::CameraFilePath() const
+{
+    return cameraFileOverride_.empty() ? std::filesystem::path(GetAssetPath(L"camera_presets.txt")) : cameraFileOverride_;
+}
+
 // assets/camera_presets.txt: one line per slot
 //   used  pos.x pos.y pos.z  pitch yaw roll  fov  ocean  model.x model.y model.z
 void Graphics::LoadCameraSlots()
 {
-    std::ifstream file(GetAssetPath(L"camera_presets.txt"));
+    std::ifstream file(CameraFilePath());
     std::string header;
     int version = 0;
     if (!file || !(file >> header >> version) || header != "WaterShaderCameras" || version != 1)
@@ -626,7 +730,7 @@ void Graphics::LoadCameraSlots()
 
 void Graphics::SaveCameraSlots() const
 {
-    std::ofstream file(GetAssetPath(L"camera_presets.txt"));
+    std::ofstream file(CameraFilePath());
     if (!file)
     {
         return;
@@ -996,6 +1100,12 @@ void Graphics::UpdateCamera(float deltaTime, const Input& input)
 
 void Graphics::Resize(unsigned int width, unsigned int height)
 {
+    // --render-size keeps its back buffer; the window only shows it scaled.
+    if (fixedRenderSize_)
+    {
+        return;
+    }
+
     screenWidth_ = width;
     screenHeight_ = std::max<unsigned int>(height, 1u);
 
@@ -1099,6 +1209,10 @@ bool Graphics::Render(float deltaTime)
         const DirectX::XMFLOAT2 b = rotation(rippleAlignB_, normalMapB_);
         water_.normalRotation = { a.x, a.y, b.x, b.y };
     }
+    water_.rippleSlopeVarianceA = normalMapSlopeVariance_[normalMapA_];
+    water_.rippleSlopeVarianceB = normalMapSlopeVariance_[normalMapB_];
+    // A --render-size frame keeps the look of the 720p window it was set up in (ocean-hero NOTES).
+    water_.lodScale = fixedRenderSize_ ? static_cast<float>(screenHeight_) / static_cast<float>(SCREEN_HEIGHT) : 1.0f;
     Model* waterMesh = oceanMode_ ? oceanGrid_.get() : model_.get();
     waterMesh->Render(d3d_->GetDeviceContext());
     colorShader_->Render(
@@ -1352,11 +1466,10 @@ void Graphics::DrawViewWindow()
     ImGui::SeparatorText("Presets");
     ImGui::TextDisabled("Sky, lights and water together");
     ImGui::TextDisabled("Kept per mesh - now: %s", oceanMode_ ? "ocean grid" : "bench plane");
-    const char* presetNames[] = { "Basic", "Sunset", "Tropical" };
     for (int i = 0; i < kPresetThemeCount; ++i)
     {
         ImGui::PushID(i);
-        if (ImGui::Button(presetNames[i], ImVec2(80.0f, 0.0f)))
+        if (ImGui::Button(kPresetLabels[i], ImVec2(80.0f, 0.0f)))
         {
             ApplyPreset(i);
         }
@@ -1470,7 +1583,7 @@ void Graphics::DrawViewWindow()
     }
 
     ImGui::SeparatorText("Debug View");
-    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)" };
+    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
     const std::string& shaderError = colorShader_->GetLastError();
     if (!shaderError.empty())
@@ -1673,6 +1786,16 @@ void Graphics::DrawWaterWindow()
         ImGui::PopID();
         ImGui::TreePop();
     }
+
+    // Near -> far transition of the open ocean (ocean-hero). 0 = off.
+    ImGui::SeparatorText("Ocean Detail");
+    ImGui::TextDisabled("Near -> far blending (0 = off). Debug view 7 shows them.");
+    LabeledSlider("Far wave crests (1 = as before; lower = no lattice past the mesh fade)", &water_.farWaveCrests, 0.0f, 1.0f, "%.2f");
+    LabeledSlider("Far ripple glitter (ripples too small to see widen the glint)", &water_.rippleRoughness, 0.0f, 2.0f, "%.2f");
+    LabeledSlider("Gust patches (rougher / calmer areas)", &water_.gustStrength, 0.0f, 1.0f, "%.2f");
+    LabeledSlider("Gust patch size (world units)", &water_.gustScale, 5.0f, 200.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+    LabeledSlider("Horizon haze", &water_.hazeStrength, 0.0f, 1.0f, "%.2f");
+    LabeledSlider("Haze distance (world units)", &water_.hazeDistance, 20.0f, 600.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
 
     // Gerstner waves move the mesh vertices. The presets order them big -> small.
     ImGui::SeparatorText("Waves (geometry)");

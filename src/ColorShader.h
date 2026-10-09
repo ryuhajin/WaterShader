@@ -40,6 +40,19 @@ public:
         float fresnelF0          = 0.5f;    // reflectance at normal incidence (water ~0.02)
         float normalStrength     = 1.0f;    // tangent-space XY multiplier
         float detailScale        = 1.0f;    // layer B tiling relative to layer A
+        // Ocean detail (ocean-hero). All 0 = off, the image is the same as before.
+        float rippleRoughness    = 0.0f;    // ripple slopes lost to the normal-map mips -> glint width (Toksvig)
+        float gustStrength       = 0.0f;    // wind gust patches: +- this much ripple strength
+        float gustScale          = 30.0f;   // size of a gust patch (world units)
+        float hazeStrength       = 0.0f;    // blend toward the horizon sky with distance
+        float hazeDistance       = 150.0f;  // distance where the haze reaches 1 - 1/e of hazeStrength
+        float farWaveCrests      = 1.0f;    // past the mesh fade: 1 = crests per pixel (as before), 0 = all glint roughness
+        // Set every frame from the selected normal maps (NormalMapEntry::slopeVariance), not saved in presets.
+        float rippleSlopeVarianceA = 0.0f;
+        float rippleSlopeVarianceB = 0.0f;
+        // --render-size only: render height / 720, so pixel-based LOD (far wave bands, normal map mips) picks
+        // what a 720p frame would. 1 = off. Set every frame, not saved.
+        float lodScale = 1.0f;
         // Wavelengths spread ~1.5x apart and directions fanned around the wind so no single crest dominates.
         Wave waves[kWaveCount] = {
             { { 0.940f,  0.342f}, 0.030f, 1.60f, 0.55f, 0.55f },
@@ -47,7 +60,7 @@ public:
             { { 0.574f,  0.819f}, 0.010f, 0.62f, 0.35f, 0.65f },
             { { 0.766f, -0.643f}, 0.006f, 0.41f, 0.28f, 0.70f },
         };
-        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face, 5=lighting terms, 6=wave LOD
+        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face, 5=lighting terms, 6=wave LOD, 7=ocean detail
         float farWaveNormals = 1.0f; // 1 = pixel shader adds the wave slopes the mesh LOD faded out
         // Normal map rotation on the water (world XZ), as cos/sin: xy = layer A, zw = layer B. (1, 0) = as authored.
         DirectX::XMFLOAT4 normalRotation = {1.0f, 0.0f, 1.0f, 0.0f};
@@ -101,6 +114,7 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader_;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShaderDetail_; // OCEAN_DETAIL: used while any ocean detail is on
     Microsoft::WRL::ComPtr<ID3D11InputLayout> layout_;
     Microsoft::WRL::ComPtr<ID3D11Buffer> perFrameCB_;
 
