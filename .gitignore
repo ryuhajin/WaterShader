@@ -34,6 +34,11 @@ docs/UI_GUIDE.md
 docs/features/*/captures/
 docs/features/*/compare*/
 
-# 외부 레퍼런스 이미지 (게임 스크린샷·출처 미기재 사진) — 재배포 방지, 로컬에만 둠. 설명은 references/README.md에 추적
-docs/features/*/references/*
-!docs/features/*/references/README.md
+# 외부 레퍼런스 (이미지와 설명) — 재배포 방지, 로컬에만 둠
+docs/features/*/references/
+
+# 개인 기획 문서 (방향·로드맵·결정 기록·단계 계획) — 로컬에만 둠
+docs/OVERVIEW.md
+docs/ROADMAP.md
+docs/decisions.md
+docs/features/waterfront/PLAN.md

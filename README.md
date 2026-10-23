@@ -109,10 +109,7 @@ flowchart LR
 
 ## 문서
 
-- [프로젝트 개요](docs/OVERVIEW.md) — 목적과 평가 포인트
-- [로드맵](docs/ROADMAP.md) — 일정, 완료 목록, 앞으로 할 일
 - [작업 규칙](docs/CONVENTIONS.md) — 문서 규칙과 기능 단위 브랜치 워크플로
-- [기술 결정 기록](docs/decisions.md)
 - [업데이트 내역](docs/CHANGELOG.md) — 버그 수정·퀄리티 업 기록
 - [기능별 SPEC / NOTES](docs/features/)
 

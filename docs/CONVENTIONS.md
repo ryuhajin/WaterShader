@@ -8,9 +8,9 @@
 ```text
 docs/
   CONVENTIONS.md           # 이 문서 — 모든 규칙의 원본
-  OVERVIEW.md              # 프로젝트 목적, 방향, 평가 포인트
-  ROADMAP.md               # 진행 중 / 보류 / 완료 이력 → feature 매핑
-  decisions.md             # 기술 의사결정 로그 (선택 이유 기록)
+  OVERVIEW.md              # 프로젝트 목적, 방향, 평가 포인트 (로컬 전용, 추적 안 함)
+  ROADMAP.md               # 진행 중 / 보류 / 완료 이력 → feature 매핑 (로컬 전용)
+  decisions.md             # 기술 의사결정 로그 (선택 이유 기록) (로컬 전용)
   CHANGELOG.md             # 사용자용 버그 수정·퀄리티 업 요약
   readme-images/           # README가 쓰는 이미지 (추적)
   features/
