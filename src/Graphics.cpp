@@ -1172,6 +1172,23 @@ void Graphics::UpdateWindowToggles(const Input& input)
         }
         toggleKeyWasDown_[i] = down;
     }
+
+    // X: in the test scenes, swap the active debug view with the parked one (answer key <-> reconstruction).
+    const bool swapDown = input.IsKeyDown('X');
+    if (swapDown && !swapKeyWasDown_ && !typing && scene_ != NoScene)
+    {
+        if (sceneDebug_ != 0 && parkedWaterDebug_ != 0)
+        {
+            water_.debugMode = parkedWaterDebug_;
+            SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
+        }
+        else if (water_.debugMode != 0 && parkedSceneDebug_ != 0)
+        {
+            sceneDebug_ = parkedSceneDebug_;
+            SwapDebugViews(sceneDebug_, parkedSceneDebug_, water_.debugMode, parkedWaterDebug_);
+        }
+    }
+    swapKeyWasDown_ = swapDown;
 }
 
 void Graphics::UpdateMouseDrag()
@@ -1366,6 +1383,33 @@ std::vector<Graphics::SceneObject> Graphics::BuildWaterfront()
     return objects;
 }
 
+// Scene Debug and the water Debug Mode both paint the whole frame (and Scene Debug hides the water), so in the
+// test scenes only one runs at a time. Picking a view in one parks the other; setting the first back to Render
+// brings the parked view back. "changed" is the combo the user just moved.
+void Graphics::SwapDebugViews(int& changed, int& changedParked, int& other, int& otherParked)
+{
+    if (changed != 0)
+    {
+        if (other != 0)
+        {
+            otherParked = other;
+            other = 0;
+        }
+        changedParked = 0; // this one is in use now; nothing of it is waiting
+    }
+    else if (otherParked != 0)
+    {
+        other = otherParked;
+        otherParked = 0;
+    }
+}
+
+// Test scene views that write meters as colors for tools/compare_depth.ps1 (DepthBands.hlsli, EncodeMeters).
+bool Graphics::IsNumericView() const
+{
+    return scene_ != NoScene && (sceneDebug_ == 2 || water_.debugMode == 12 || water_.debugMode == 13);
+}
+
 void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection,
                                const DirectX::XMFLOAT4& lightDir, const DirectX::XMFLOAT4& lightColor,
                                const DirectX::XMFLOAT4& ambientColor)
@@ -1374,7 +1418,11 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
     ID3D11DeviceContext* context = d3d_->GetDeviceContext();
     // Closed shapes, drawn double-sided so the generated winding never has to match the cull mode.
     d3d_->SetRasterizerDoubleSided();
-    sceneShader_->Begin(context, view, projection, lightDir, lightColor, ambientColor, sceneDebug_);
+    // With the water's numeric views, whatever the water does not cover is drawn as "not a measurement" (scene
+    // debug 3), so neither a lit pixel nor the answer key can pass for a reconstructed value.
+    const bool waterNumeric = scene_ != NoScene && (water_.debugMode == 12 || water_.debugMode == 13);
+    const int sceneDebugMode = waterNumeric ? 3 : sceneDebug_;
+    sceneShader_->Begin(context, view, projection, lightDir, lightColor, ambientColor, sceneDebugMode);
     const std::vector<SceneObject>& objects = scene_ == WaterLab ? labObjects_ : frontObjects_;
     Model* boundMesh = nullptr;
     for (const SceneObject& object : objects)
@@ -1452,7 +1500,9 @@ bool Graphics::Render(float deltaTime)
     // Clear color is the old sRGB background, converted because the HDR target holds linear values.
     d3d_->BeginScene(SrgbToLinear(0.02f), SrgbToLinear(0.08f), SrgbToLinear(0.11f), 1.0f);
 
-    if (skyboxVisible_)
+    // Numeric views (answer key, Scene Debug 2; reconstruction, water debug 12 / 13) leave the sky out: a sky
+    // pixel whose blue happens to be 128 would read as a measurement (it did, in the first path comparison).
+    if (skyboxVisible_ && !IsNumericView())
     {
         d3d_->SetDepthLessEqual();
         skybox_->Render(d3d_->GetDeviceContext());
@@ -1521,6 +1571,9 @@ bool Graphics::Render(float deltaTime)
             d3d_->BindHdrTargetReadOnlyDepth();
             d3d_->SetDepthTestNoWrite();
             waterDraw.transmissionMode = transmissionMode_;
+            // depth-reconstruct: pixel + depth -> world position goes back through view x projection.
+            waterDraw.maxOpticalDistance = maxUnderwaterDistance_;
+            DirectX::XMStoreFloat4x4(&waterDraw.invViewProjection, DirectX::XMMatrixInverse(nullptr, view * projection));
         }
         waterMesh->Render(d3d_->GetDeviceContext());
         colorShader_->Render(
@@ -1881,8 +1934,11 @@ void Graphics::DrawViewWindow()
         ImGui::Checkbox("Lab Waves", &labWaves_);
         // Water depth = 0 - world position y (the water is at y = 0): the answer key the depth buffer is
         // checked against later, not the depth buffer itself.
-        const char* sceneDebugLabels[] = { "Render", "Water depth (WP, m) - water hidden" };
-        ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels));
+        const char* sceneDebugLabels[] = { "Render", "Water depth (WP, m) - water hidden", "Water depth numeric (WP) - compare tool" };
+        if (ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels)))
+        {
+            SwapDebugViews(sceneDebug_, parkedSceneDebug_, water_.debugMode, parkedWaterDebug_);
+        }
         if (sceneDebug_ == 1)
         {
             // Same bands and display colors as DepthBandColor in scene.hlsl.
@@ -1905,6 +1961,8 @@ void Graphics::DrawViewWindow()
         }
         const char* transmissionLabels[] = { "Opaque (old water)", "Pass-through (no effect)" };
         ImGui::Combo("Transmission", &transmissionMode_, transmissionLabels, IM_ARRAYSIZE(transmissionLabels));
+        ImGui::SliderFloat("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
+        ImGui::TextDisabled("View path where no surface is behind the water (sky).");
         ImGui::TextDisabled("1 unit = 1 m, water at y = 0, ocean presets.");
         ImGui::TextDisabled("Waves stay flat unless Lab Waves is on.");
     }
@@ -1954,8 +2012,17 @@ void Graphics::DrawViewWindow()
 
     ImGui::SeparatorText("Debug View");
     const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)",
-        "Scene depth, water only (test scenes)", "Water coverage (test scenes)" };
-    ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
+        "Scene depth, water only (test scenes)", "Water coverage (test scenes)",
+        "Water depth (from depth buffer)", "Underwater view path", "Water depth numeric (compare tool)", "View path numeric (compare tool)" };
+    if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
+    {
+        SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
+    }
+    if (scene_ != NoScene)
+    {
+        ImGui::TextDisabled("Scene Debug and Debug Mode take turns: picking one");
+        ImGui::TextDisabled("parks the other, Render brings it back. X = swap.");
+    }
     const std::string& shaderError = colorShader_->GetLastError();
     if (!shaderError.empty())
     {

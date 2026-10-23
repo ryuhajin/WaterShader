@@ -66,6 +66,8 @@ public:
         // Test scenes only (scene-color-depth), set every frame, not saved: 0 = the opaque water as before,
         // 1 = pass-through (the scene without the water, unchanged).
         int transmissionMode = 0;
+        float maxOpticalDistance = 50.0f; // m: the view path where no surface is behind the water (sky)
+        DirectX::XMFLOAT4X4 invViewProjection = {}; // inverse of view x projection: depth buffer -> world position
         // Normal map rotation on the water (world XZ), as cos/sin: xy = layer A, zw = layer B. (1, 0) = as authored.
         DirectX::XMFLOAT4 normalRotation = {1.0f, 0.0f, 1.0f, 0.0f};
     };

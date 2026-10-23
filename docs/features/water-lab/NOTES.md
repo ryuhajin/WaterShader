@@ -98,7 +98,7 @@
 | 배치 수치 | 위 표 = 코드 상수. 수심 디버그에서 받침대 4개가 각각 하늘색·초록·노랑·주황, −5cm / +5cm 받침대가 하늘색 / 회색으로 갈림 |
 
 캡처 위치 (저장소 밖, 로컬): `C:\Users\da171\ws-capture\water-lab\captures\`
-`step1_water_on`, `step1_water_off`, `step1_depth`, `regress`
+`step1_water_on`, `step1_water_off`, `step1_depth` · `regress`: 회귀·동일성 캡처라 결과만 위 표에 남기고 2026-10-24 삭제 (CONVENTIONS "회귀·동일성 캡처는 남기지 않는다")
 
 캡처 명령 (Release):
 
@@ -106,6 +106,13 @@
 .\build\vs2022\Release\WaterShader.exe --capture step1_water_off --capture-feature water-lab --capture-shots lab_top,lab_stairs,lab_low,lab_pillar,front_rails --water off
 .\build\vs2022\Release\WaterShader.exe --capture step1_depth --capture-feature water-lab --capture-shots lab_top,lab_stairs,lab_low,lab_pillar,front_rails --capture-presets basic --scene-debug 1
 ```
+
+**과정에서 고친 것** (첫 캡처를 보고 고침, 2026-10-23 · 기록 추가 2026-10-24)
+
+| 증상 | 원인 | 해결 |
+|---|---|---|
+| 수심 디버그에서 자갈 구역 윗면에 하늘색·초록 점이 섞여 지글거림 | 윗면 높이 −0.5m가 색 경계(0.5m)와 정확히 같아서, 계산 오차에 따라 픽셀마다 경계 양쪽으로 갈림 | 자갈 구역을 −0.4m로 옮김 (경계에서 0.1m 떨어지게). 이후 검증 표면은 색 경계와 겹치지 않게 둔다 |
+| 멀리서(`lab_top`, 20m 위) 자갈 무늬가 지글거리고 물결무늬(모아레)가 생김 | 돌 하나(12cm)가 픽셀보다 작아져 픽셀마다 아무 돌이나 찍힘 (앨리어싱) | 픽셀 하나에 돌이 몇 개 들어가는지 `fwidth`로 재서, 0.25~0.6개부터 무늬를 평균 밝기로 섞음 (`PebblePattern`) |
 
 **검증하지 못한 것**
 

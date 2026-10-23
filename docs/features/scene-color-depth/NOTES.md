@@ -55,12 +55,15 @@
 | 물 덮임 | 디버그 9 화면 | 물 밖 기둥 윗부분, 계단 윗단, 승강장 윗면, 전주에는 물이 그려지지 않음 |
 
 캡처 위치 (로컬): `C:\Users\da171\ws-capture\scene-color-depth\captures\`
-`regress`, `pass_on`, `pass_off`, `pass_on_resized`, `dbg_coverage`, `dbg_depth_raw`, `dbg_opaque`, `dbg_pass`, `selftest`
+`dbg_coverage`, `dbg_depth_raw`, `dbg_opaque`, `dbg_pass`, `selftest` · `regress`, `pass_on`, `pass_off`, `pass_on_resized`: 회귀·동일성 캡처라 결과만 위 표에 남기고 2026-10-24 삭제 (CONVENTIONS "회귀·동일성 캡처는 남기지 않는다")
 
 **과정에서 고친 것**
 
-- 처음엔 디버그 레이어 로그가 자체 점검에서도 0건이었다. 원인: 캡처가 1장뿐이면 첫 프레임 끝에서 메시지를 모으기 **전에** 파일을 썼다. 파일을 쓰기 직전에도 모으도록 고쳤다. 디버그 레이어가 켜졌는지도 인터페이스 유무 대신 디바이스 생성 플래그로 판단한다.
-- 사용자 질문(2026-10-24)으로 두 "깊이" 화면 이름을 나눴다. 1단계 `Scene Debug`는 **Water depth (WP, m)** — 월드 위치 높이로 계산한 수심(미터, 정답지), 선택하면 View 창에 색별 미터 범례가 나온다. 2단계 물 디버그는 **Scene depth, water only (test scenes)** — 물이 그려진 픽셀에서 읽은 카메라 기준 깊이 버퍼 값 (사용자가 이름 확정).
+| 증상 | 원인 | 해결 |
+|---|---|---|
+| 일부러 충돌을 일으켜도(`--d3d-selftest`) 디버그 레이어 로그가 0건 | 캡처가 1장뿐이면 첫 프레임 끝에서 메시지를 모으기 **전에** 로그 파일을 씀 | 파일을 쓰기 직전에도 모으게 함(`WriteD3dMessages` → `DrainD3dMessages`). 로그에 전체 메시지 수도 적어, 0건이 "없음"인지 "못 읽음"인지 구별 |
+| 로그의 "디버그 레이어 켜짐" 표시를 믿을 근거가 약함 | 켜짐 여부를 `ID3D11InfoQueue` 인터페이스 유무로 판단 | 디바이스 생성 플래그(`D3D11_CREATE_DEVICE_DEBUG`)로 판단 |
+| 사용자가 두 "깊이" 디버그 화면을 같은 값으로 보고 헷갈림 (2026-10-24 질문) | 둘 다 이름이 "Depth…"인데, 하나는 수심(월드 위치, 미터), 하나는 깊이 버퍼(카메라 기준, 0~1) | 1단계 `Scene Debug`를 **Water depth (WP, m)**로 바꾸고 색별 미터 범례 추가. 2단계 물 디버그는 **Scene depth, water only (test scenes)** (이름은 사용자가 확정) |
 
 **검증하지 못한 것**
 
