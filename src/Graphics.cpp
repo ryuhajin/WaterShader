@@ -1879,8 +1879,30 @@ void Graphics::DrawViewWindow()
         ImGui::Checkbox("Show Water", &showWater_);
         ImGui::SameLine();
         ImGui::Checkbox("Lab Waves", &labWaves_);
-        const char* sceneDebugLabels[] = { "Render", "Depth below water (water hidden)" };
+        // Water depth = 0 - world position y (the water is at y = 0): the answer key the depth buffer is
+        // checked against later, not the depth buffer itself.
+        const char* sceneDebugLabels[] = { "Render", "Water depth (WP, m) - water hidden" };
         ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels));
+        if (sceneDebug_ == 1)
+        {
+            // Same bands and display colors as DepthBandColor in scene.hlsl.
+            struct Band { ImVec4 color; const char* label; };
+            const Band bands[] = {
+                { ImVec4(0.35f, 0.35f, 0.35f, 1.0f), "above water (y > 0)" },
+                { ImVec4(0.30f, 0.95f, 1.00f, 1.0f), "0 - 0.5 m  (0.2 m pad)" },
+                { ImVec4(0.35f, 0.90f, 0.35f, 1.0f), "0.5 - 2 m  (1 m pad)" },
+                { ImVec4(1.00f, 0.90f, 0.25f, 1.0f), "2 - 4.5 m  (3 m pad)" },
+                { ImVec4(1.00f, 0.55f, 0.20f, 1.0f), "4.5 - 7 m  (6 m pad)" },
+                { ImVec4(0.75f, 0.40f, 0.95f, 1.0f), "7 m and deeper  (lab floor 8 m)" },
+            };
+            for (const Band& band : bands)
+            {
+                ImGui::TextColored(band.color, "#");
+                ImGui::SameLine();
+                ImGui::TextUnformatted(band.label);
+            }
+            ImGui::TextDisabled("Dark lines every 1 m, red line = water surface (y = 0)");
+        }
         const char* transmissionLabels[] = { "Opaque (old water)", "Pass-through (no effect)" };
         ImGui::Combo("Transmission", &transmissionMode_, transmissionLabels, IM_ARRAYSIZE(transmissionLabels));
         ImGui::TextDisabled("1 unit = 1 m, water at y = 0, ocean presets.");
@@ -1932,7 +1954,7 @@ void Graphics::DrawViewWindow()
 
     ImGui::SeparatorText("Debug View");
     const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)",
-        "Scene depth, raw (test scenes)", "Water coverage (test scenes)" };
+        "Depth buffer", "Water coverage (test scenes)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
     const std::string& shaderError = colorShader_->GetLastError();
     if (!shaderError.empty())

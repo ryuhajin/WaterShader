@@ -53,7 +53,7 @@ if (transmissionMode == 1) return float4(background, 1.0); // 효과 없음 = �
 | 모드 | 내용 | 보여 주려는 것 |
 |---|---|---|
 | Scene color copy | 복사본 그대로 | 물이 무엇을 읽는가 |
-| Scene depth (raw) | 깊이 값을 대비를 키워 회색으로 | 깊이는 읽힌다. 그런데 0~1 값이 거리와 비례하지 않는다 → 3단계 |
+| Depth buffer | 깊이 버퍼 값(0~1)을 그대로 회색으로 | 깊이는 읽힌다. 그런데 0~1 값이 거리와 비례하지 않는다 → 3단계 |
 | Water coverage | 장면 색 위에 물이 그려진 픽셀만 파랗게 | 물 밖 기둥·계단 윗부분은 물이 안 그려짐 (깊이 테스트) |
 
 **참고 자료**
@@ -89,7 +89,7 @@ if (transmissionMode == 1) return float4(background, 1.0); // 효과 없음 = �
 **사용자 검증**
 
 - [ ] Transmission을 Pass-through ↔ Opaque로 바꾸며 "물이 아래를 읽는다"는 차이를 확인
-- [ ] Scene depth (raw) 화면을 보고 "깊이 값이 거리와 비례하지 않는다"를 확인
+- [ ] Depth buffer 화면을 보고 "깊이 값이 거리와 비례하지 않는다"를 확인
 - [ ] 왜 복사본이 필요한지, 왜 깊이를 읽기 전용으로 묶어야 하는지 설명할 수 있다
 
 ## 5. Notes
