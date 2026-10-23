@@ -7,6 +7,7 @@
 #include "GpuTimer.h"
 #include "Light.h"
 #include "Model.h"
+#include "SceneShader.h"
 #include "Skybox.h"
 #include "SkyboxShader.h"
 #include "TonemapShader.h"
@@ -94,7 +95,26 @@ private:
         float fovDeg = 60.0f;
         bool ocean = false;
         DirectX::XMFLOAT3 modelRotation = {0.0f, 0.0f, 0.0f}; // bench plane only
+        int scene = 0; // TestScene: opaque test scene around the water (needs ocean = true)
     };
+
+    // Opaque scenes under / around a finite water patch (water-lab). They use the ocean grid presets
+    // (same 1 unit = 1 m scale) with the Gerstner waves off unless "Lab Waves" is on.
+    enum TestScene { NoScene = 0, WaterLab = 1, Waterfront = 2 };
+
+    struct SceneObject
+    {
+        bool cylinder = false; // unit cylinder, else unit box
+        DirectX::XMFLOAT3 center = {0.0f, 0.0f, 0.0f};
+        DirectX::XMFLOAT3 size = {1.0f, 1.0f, 1.0f};
+        SceneShader::Material material;
+    };
+
+    static std::vector<SceneObject> BuildWaterLab();    // known depths: pads, stairs, pillar, near-surface pads
+    static std::vector<SceneObject> BuildWaterfront();  // graybox of the target scene
+    void RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection,
+                         const DirectX::XMFLOAT4& lightDir, const DirectX::XMFLOAT4& lightColor,
+                         const DirectX::XMFLOAT4& ambientColor);
 
     CameraView MakeViewFromCurrent() const;
     bool IsTopShotView() const; // camera exactly on the fixed "top" shot (position, rotation, mesh)
@@ -123,6 +143,18 @@ private:
     std::unique_ptr<Model> model_;
     std::unique_ptr<Model> oceanGrid_;
     std::unique_ptr<ColorShader> colorShader_;
+    // water-lab: unit shapes, the finite water patch per scene, the opaque shader and the scene layouts.
+    std::unique_ptr<Model> unitBox_;
+    std::unique_ptr<Model> unitCylinder_;
+    std::unique_ptr<Model> labWater_;
+    std::unique_ptr<Model> frontWater_;
+    std::unique_ptr<SceneShader> sceneShader_;
+    std::vector<SceneObject> labObjects_;
+    std::vector<SceneObject> frontObjects_;
+    int scene_ = NoScene;
+    bool showWater_ = true;
+    bool labWaves_ = false;
+    int sceneDebug_ = 0; // 0 render, 1 depth below the water (the water is not drawn)
     std::vector<std::unique_ptr<CubemapTexture>> environments_; // one per kEnvironments entry
     int environmentIndex_ = 0;
     // Water normal maps (kNormalMaps, plus the --normal-map file if given). Each layer picks its own.

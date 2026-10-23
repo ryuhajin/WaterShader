@@ -99,6 +99,7 @@ struct CaptureShot
     DirectX::XMFLOAT3 rotation; // x = pitch, y = yaw (deg)
     float fovDeg;
     bool ocean; // true = large ocean grid, false = 2x2 bench plane
+    int scene;  // Graphics::TestScene (left out = 0, no test scene)
 };
 
 // Fixed camera shots for before/after comparison. Bench plane spans x,z in [-1, 1].
@@ -122,7 +123,29 @@ constexpr CaptureShot kCaptureShots[] = {
     // Portfolio main image (ocean-hero): same spot as ocean_aerial but lower and flatter, so the far shore
     // and sky take the top ~1/5 and the water ~4/5, with the glint path right of centre.
     { "ocean_hero",    { -5.38f,  6.00f, -20.09f }, { 14.0f, 18.0f, 0.0f }, 44.0f, true  },
+    // water-lab test scenes (BuildWaterLab / BuildWaterfront): straight down, the stairs at an angle,
+    // just above the water toward the depth pads, close to the pillar through the surface.
+    { "lab_top",       {  0.00f, 20.00f,   0.00f }, { 89.9f,   0.0f, 0.0f }, 60.0f, true, 1 },
+    { "lab_stairs",    { -3.00f,  4.00f, -10.00f }, { 35.0f, 335.0f, 0.0f }, 60.0f, true, 1 },
+    { "lab_low",       {  0.00f,  0.40f, -10.00f }, {  3.0f,   0.0f, 0.0f }, 60.0f, true, 1 },
+    { "lab_pillar",    {  5.50f,  1.20f,  -6.50f }, { 23.5f, 320.0f, 0.0f }, 55.0f, true, 1 },
+    // Target scene graybox: standing on the flooded track, looking down the line.
+    { "front_rails",   {  0.00f,  1.70f,  -9.00f }, { 10.0f,   0.0f, 0.0f }, 60.0f, true, 2 },
 };
+constexpr int kFirstLabShotIndex = 7; // UI: the lab shots start a new button row
+
+// Index of the fixed shot with this name (0 if there is none).
+int FindCaptureShot(const char* name)
+{
+    for (int i = 0; i < static_cast<int>(std::size(kCaptureShots)); ++i)
+    {
+        if (std::string(kCaptureShots[i].name) == name)
+        {
+            return i;
+        }
+    }
+    return 0;
+}
 
 // Startup / Reset Camera framing: the step2_sun_glint "sunward" shot (bench plane, glint visible).
 constexpr int kDefaultShotIndex = 2;
@@ -269,6 +292,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --tonemap <none|reinhard|aces|aces-hue>  tone curve for this run
     //   --exposure <ev>        overrides every preset's exposure (operator comparisons)
     //   --far-waves <on|off>   pixel-shader wave slopes past the mesh wave fade (default on)
+    //   --water <on|off>       draw the water in the test scenes (lab_* / front_* shots, default on)
+    //   --scene-debug <mode>   test scene debug view: 1 = depth below the water (the water is hidden)
     //   --align-ripples <on|off>  "Align to wind" for both normal map layers, overrides the presets
     //   --preset-file <path>   load/save presets from this file instead of assets/shader_presets.txt
     //                          (captures with fixed values while the working presets keep changing)
@@ -325,6 +350,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 }
                 else if (arg == L"--align-ripples" && hasValue) { rippleAlignOverride_ = std::wstring(argv[++i]) == L"off" ? 0 : 1; }
                 else if (arg == L"--far-waves" && hasValue)  { farWaveNormals_ = std::wstring(argv[++i]) != L"off"; }
+                else if (arg == L"--water" && hasValue)      { showWater_ = std::wstring(argv[++i]) != L"off"; }
+                else if (arg == L"--scene-debug" && hasValue) { sceneDebug_ = _wtoi(argv[++i]); }
                 else if (arg == L"--exposure" && hasValue)   { exposureOverrideEv_ = static_cast<float>(_wtof(argv[++i])); hasExposureOverride_ = true; }
                 else if (arg == L"--tonemap" && hasValue)
                 {
@@ -406,6 +433,27 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     // near the horizon. Together with the wave fade in the VS this keeps >= 5 vertices per wavelength.
     oceanGrid_ = std::make_unique<Model>();
     if (!oceanGrid_->InitializeGrid(d3d_->GetDevice(), 1024, 400.0f, 6.0f))
+    {
+        return false;
+    }
+
+    // water-lab: finite water patches (growth ~0 = even spacing) and the unit shapes of the test scenes.
+    unitBox_ = std::make_unique<Model>();
+    unitCylinder_ = std::make_unique<Model>();
+    labWater_ = std::make_unique<Model>();
+    frontWater_ = std::make_unique<Model>();
+    if (!unitBox_->InitializeBox(d3d_->GetDevice())
+        || !unitCylinder_->InitializeCylinder(d3d_->GetDevice(), 32)
+        || !labWater_->InitializeGrid(d3d_->GetDevice(), 192, 12.0f, 0.001f)
+        || !frontWater_->InitializeGrid(d3d_->GetDevice(), 256, 40.0f, 0.001f))
+    {
+        return false;
+    }
+    labObjects_ = BuildWaterLab();
+    frontObjects_ = BuildWaterfront();
+
+    sceneShader_ = std::make_unique<SceneShader>();
+    if (!sceneShader_->Initialize(d3d_->GetDevice()))
     {
         return false;
     }
@@ -607,7 +655,7 @@ bool Graphics::BeginCaptureFrame()
     const CameraView view = isSlot
         ? cameraSlots_[slot]
         : CameraView{kCaptureShots[job.shot].position, kCaptureShots[job.shot].rotation,
-                     kCaptureShots[job.shot].fovDeg, kCaptureShots[job.shot].ocean, {0.0f, 0.0f, 0.0f}};
+                     kCaptureShots[job.shot].fovDeg, kCaptureShots[job.shot].ocean, {0.0f, 0.0f, 0.0f}, kCaptureShots[job.shot].scene};
     const std::string shotName = isSlot ? "slot" + std::to_string(slot + 1) : std::string(kCaptureShots[job.shot].name);
 
     // Each shot uses the preset version for its own mesh (bench plane / ocean grid).
@@ -680,7 +728,7 @@ void Graphics::EndCaptureFrame()
 
 Graphics::CameraView Graphics::MakeViewFromCurrent() const
 {
-    return {cameraPosition_, cameraRotation_, cameraFovDeg_, oceanMode_, modelRotation_};
+    return {cameraPosition_, cameraRotation_, cameraFovDeg_, oceanMode_, modelRotation_, scene_};
 }
 
 // Exact match on purpose: the Top View Sun belongs to the fixed shot, so any camera move leaves it.
@@ -688,7 +736,7 @@ Graphics::CameraView Graphics::MakeViewFromCurrent() const
 bool Graphics::IsTopShotView() const
 {
     const CaptureShot& top = kCaptureShots[kTopShotIndex];
-    return oceanMode_ == top.ocean
+    return oceanMode_ == top.ocean && scene_ == top.scene
         && cameraPosition_.x == top.position.x && cameraPosition_.y == top.position.y && cameraPosition_.z == top.position.z
         && cameraRotation_.x == top.rotation.x && cameraRotation_.y == top.rotation.y && cameraRotation_.z == top.rotation.z;
 }
@@ -700,6 +748,7 @@ void Graphics::ApplyView(const CameraView& view)
     cameraFovDeg_ = view.fovDeg;
     oceanMode_ = view.ocean;
     modelRotation_ = view.modelRotation;
+    scene_ = view.ocean ? view.scene : NoScene; // the test scenes sit on the ocean presets
     camera_->SetPosition(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z);
     camera_->SetRotation(cameraRotation_.x, cameraRotation_.y, cameraRotation_.z);
 }
@@ -707,7 +756,7 @@ void Graphics::ApplyView(const CameraView& view)
 void Graphics::ApplyCameraShot(int shotIndex)
 {
     const CaptureShot& shot = kCaptureShots[shotIndex];
-    ApplyView({shot.position, shot.rotation, shot.fovDeg, shot.ocean, {0.0f, 0.0f, 0.0f}});
+    ApplyView({shot.position, shot.rotation, shot.fovDeg, shot.ocean, {0.0f, 0.0f, 0.0f}, shot.scene});
 }
 
 std::filesystem::path Graphics::CameraFilePath() const
@@ -716,13 +765,14 @@ std::filesystem::path Graphics::CameraFilePath() const
 }
 
 // assets/camera_presets.txt: one line per slot
-//   used  pos.x pos.y pos.z  pitch yaw roll  fov  ocean  model.x model.y model.z
+//   used  pos.x pos.y pos.z  pitch yaw roll  fov  ocean  model.x model.y model.z  scene
+// v2 added the test scene at the end; v1 lines (no scene) still load.
 void Graphics::LoadCameraSlots()
 {
     std::ifstream file(CameraFilePath());
     std::string header;
     int version = 0;
-    if (!file || !(file >> header >> version) || header != "WaterShaderCameras" || version != 1)
+    if (!file || !(file >> header >> version) || header != "WaterShaderCameras" || (version != 1 && version != 2))
     {
         return;
     }
@@ -737,6 +787,11 @@ void Graphics::LoadCameraSlots()
              >> v.rotation.x >> v.rotation.y >> v.rotation.z
              >> v.fovDeg >> ocean
              >> v.modelRotation.x >> v.modelRotation.y >> v.modelRotation.z;
+        v.scene = NoScene;
+        if (version >= 2)
+        {
+            file >> v.scene;
+        }
         if (!file)
         {
             break;
@@ -754,7 +809,7 @@ void Graphics::SaveCameraSlots() const
         return;
     }
 
-    file << "WaterShaderCameras 1\n";
+    file << "WaterShaderCameras 2\n";
     for (int i = 0; i < kCameraSlotCount; ++i)
     {
         const CameraView& v = cameraSlots_[i];
@@ -762,7 +817,8 @@ void Graphics::SaveCameraSlots() const
              << v.position.x << ' ' << v.position.y << ' ' << v.position.z << ' '
              << v.rotation.x << ' ' << v.rotation.y << ' ' << v.rotation.z << ' '
              << v.fovDeg << ' ' << (v.ocean ? 1 : 0) << ' '
-             << v.modelRotation.x << ' ' << v.modelRotation.y << ' ' << v.modelRotation.z << '\n';
+             << v.modelRotation.x << ' ' << v.modelRotation.y << ' ' << v.modelRotation.z << ' '
+             << v.scene << '\n';
     }
 }
 
@@ -998,6 +1054,21 @@ void Graphics::Shutdown()
         colorShader_.reset();
     }
 
+    if (sceneShader_)
+    {
+        sceneShader_->Shutdown();
+        sceneShader_.reset();
+    }
+
+    for (auto* mesh : { &unitBox_, &unitCylinder_, &labWater_, &frontWater_ })
+    {
+        if (*mesh)
+        {
+            (*mesh)->Shutdown();
+            mesh->reset();
+        }
+    }
+
     if (model_)
     {
         model_->Shutdown();
@@ -1133,6 +1204,147 @@ void Graphics::Resize(unsigned int width, unsigned int height)
     }
 }
 
+// Water Lab: every object stands on the floor 8 m down and ends at a known height, water at y = 0.
+std::vector<Graphics::SceneObject> Graphics::BuildWaterLab()
+{
+    using P = SceneShader::Pattern;
+    constexpr float kFloorY = -8.0f;
+    std::vector<SceneObject> objects;
+    const auto box = [&](float x, float z, float sizeX, float sizeZ, float bottomY, float topY,
+                         DirectX::XMFLOAT3 color, int pattern)
+    {
+        SceneObject o;
+        o.center = {x, 0.5f * (bottomY + topY), z};
+        o.size = {sizeX, topY - bottomY, sizeZ};
+        o.material = {color, pattern};
+        objects.push_back(o);
+    };
+    // One albedo for every test surface: later steps compare what depth alone does to the same color.
+    const DirectX::XMFLOAT3 testColor = {0.78f, 0.75f, 0.68f};
+
+    // Floor under the whole 24 x 24 m water patch.
+    box(0.0f, 0.0f, 24.0f, 24.0f, kFloorY - 1.0f, kFloorY, {0.62f, 0.62f, 0.60f}, P::Checker);
+
+    // Depth pads, 3 x 3 m, tops 0.2 / 1 / 3 / 6 m under the water.
+    const float padTops[] = { -0.2f, -1.0f, -3.0f, -6.0f };
+    for (int i = 0; i < 4; ++i)
+    {
+        box(-6.0f + 4.0f * i, 5.0f, 3.0f, 3.0f, kFloorY, padTops[i], testColor, P::Ruler);
+    }
+
+    // Stairs down along +x: 16 steps, 0.25 m rise, 0.5 m run, 4 m wide, from +1.125 to -2.625.
+    // The 0.125 offset keeps every step top off y = 0 (it would z-fight with the flat water).
+    for (int i = 0; i < 16; ++i)
+    {
+        box(-9.75f + 0.5f * i, -3.5f, 0.5f, 4.0f, kFloorY, 1.125f - 0.25f * i, testColor, P::Checker);
+    }
+
+    // Pillar through the surface: 0.8 m wide, from the floor to 3 m above the water.
+    {
+        SceneObject pillar;
+        pillar.cylinder = true;
+        pillar.center = {3.0f, 0.5f * (kFloorY + 3.0f), -3.5f};
+        pillar.size = {0.8f, 3.0f - kFloorY, 0.8f};
+        pillar.material = {{0.85f, 0.85f, 0.85f}, P::Ruler};
+        objects.push_back(pillar);
+    }
+
+    // Near-surface pads: 5 cm under and 5 cm over the water.
+    box(6.5f, -4.5f, 1.2f, 1.2f, kFloorY, -0.05f, testColor, P::Ruler);
+    box(8.5f, -4.5f, 1.2f, 1.2f, kFloorY, 0.05f, testColor, P::Ruler);
+
+    // Pebble bed 0.4 m down: fine detail for refraction and caustics later.
+    box(0.0f, 10.0f, 10.0f, 3.0f, kFloorY, -0.4f, {0.75f, 0.70f, 0.62f}, P::Pebbles);
+    return objects;
+}
+
+// Graybox of the target scene: a flooded track (ballast bank, sleepers, rails a few cm under the water),
+// a platform with stairs into the water, and catenary poles. Track along +z, seabed 2.5 m down.
+std::vector<Graphics::SceneObject> Graphics::BuildWaterfront()
+{
+    using P = SceneShader::Pattern;
+    constexpr float kSeabedY = -2.5f;
+    std::vector<SceneObject> objects;
+    const auto box = [&](float x, float z, float sizeX, float sizeZ, float bottomY, float topY,
+                         DirectX::XMFLOAT3 color, int pattern)
+    {
+        SceneObject o;
+        o.center = {x, 0.5f * (bottomY + topY), z};
+        o.size = {sizeX, topY - bottomY, sizeZ};
+        o.material = {color, pattern};
+        objects.push_back(o);
+    };
+    const auto pole = [&](float x, float z, float armCenterX, float armLength)
+    {
+        SceneObject o;
+        o.cylinder = true;
+        o.center = {x, 0.5f * (kSeabedY + 6.0f), z};
+        o.size = {0.3f, 6.0f - kSeabedY, 0.3f};
+        o.material = {{0.62f, 0.62f, 0.60f}, P::Solid};
+        objects.push_back(o);
+        box(armCenterX, z, armLength, 0.12f, 5.54f, 5.66f, {0.45f, 0.45f, 0.44f}, P::Solid);
+    };
+
+    // Seabed under the whole 80 x 80 m water patch.
+    box(0.0f, 0.0f, 80.0f, 80.0f, kSeabedY - 1.0f, kSeabedY, {0.52f, 0.52f, 0.45f}, P::Pebbles);
+
+    // Track: ballast bank 0.35 m under, sleepers 0.23 m under, rail heads 8 cm under the water.
+    box(0.0f, 0.0f, 4.4f, 80.0f, kSeabedY, -0.35f, {0.64f, 0.62f, 0.58f}, P::Pebbles);
+    for (float z = -38.0f; z <= 38.0f; z += 0.65f)
+    {
+        box(0.0f, z, 2.6f, 0.25f, -0.35f, -0.23f, {0.36f, 0.31f, 0.27f}, P::Solid);
+    }
+    for (const float x : { -0.75f, 0.75f })
+    {
+        box(x, 0.0f, 0.07f, 80.0f, -0.23f, -0.08f, {0.48f, 0.45f, 0.42f}, P::Solid);
+    }
+
+    // Platform 0.8 m above the water, right of the track, and stairs from its near end down along -z:
+    // 11 steps, 0.2 m rise, 0.35 m run, tops +0.7 .. -1.3 (none at y = 0).
+    box(6.5f, 15.0f, 6.0f, 30.0f, kSeabedY, 0.8f, {0.72f, 0.70f, 0.66f}, P::Checker);
+    for (int i = 0; i < 11; ++i)
+    {
+        box(6.5f, -0.35f * i - 0.175f, 4.0f, 0.35f, kSeabedY, 0.7f - 0.2f * i, {0.72f, 0.70f, 0.66f}, P::Checker);
+    }
+
+    // Catenary poles standing in the water on both sides, arms reaching over the track.
+    for (const float z : { 4.0f, 14.0f, 24.0f })
+    {
+        pole(-3.2f, z, -1.1f, 4.4f);
+    }
+    for (const float z : { 9.0f, 19.0f })
+    {
+        pole(2.8f, z, 1.0f, 3.6f);
+    }
+    return objects;
+}
+
+void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection,
+                               const DirectX::XMFLOAT4& lightDir, const DirectX::XMFLOAT4& lightColor,
+                               const DirectX::XMFLOAT4& ambientColor)
+{
+    using namespace DirectX;
+    ID3D11DeviceContext* context = d3d_->GetDeviceContext();
+    // Closed shapes, drawn double-sided so the generated winding never has to match the cull mode.
+    d3d_->SetRasterizerDoubleSided();
+    sceneShader_->Begin(context, view, projection, lightDir, lightColor, ambientColor, sceneDebug_);
+    const std::vector<SceneObject>& objects = scene_ == WaterLab ? labObjects_ : frontObjects_;
+    Model* boundMesh = nullptr;
+    for (const SceneObject& object : objects)
+    {
+        Model* mesh = object.cylinder ? unitCylinder_.get() : unitBox_.get();
+        if (mesh != boundMesh)
+        {
+            mesh->Render(context);
+            boundMesh = mesh;
+        }
+        const XMMATRIX world = XMMatrixScaling(object.size.x, object.size.y, object.size.z)
+                             * XMMatrixTranslation(object.center.x, object.center.y, object.center.z);
+        sceneShader_->Render(context, mesh->GetIndexCount(), world, object.material);
+    }
+    d3d_->SetRasterizerDefault();
+}
+
 bool Graphics::Render(float deltaTime)
 {
     using namespace DirectX;
@@ -1140,6 +1352,7 @@ bool Graphics::Render(float deltaTime)
     const auto now = std::chrono::steady_clock::now();
     UpdateFrameStats(deltaTime);
     colorShader_->CheckHotReload(d3d_->GetDevice(), now);
+    sceneShader_->CheckHotReload(d3d_->GetDevice(), now);
     skyboxShader_->CheckHotReload(d3d_->GetDevice(), now);
     tonemapShader_->CheckHotReload(d3d_->GetDevice(), now);
 
@@ -1214,49 +1427,70 @@ bool Graphics::Render(float deltaTime)
         d3d_->SetDepthDefault();
     }
 
-    d3d_->SetRasterizerWaterSurface();
-    water_.farWaveNormals = farWaveNormals_ ? 1.0f : 0.0f; // a renderer switch, not part of the presets
+    if (scene_ != NoScene)
     {
-        // "Align to wind" follows Wave 1 as rendered (also right when the waves were edited in Advanced).
-        const DirectX::XMFLOAT2& wind = water_.waves[0].direction;
-        const float windDeg = DirectX::XMConvertToDegrees(std::atan2(wind.y, wind.x));
-        const auto rotation = [&](bool align, int map) {
-            return align ? RippleRotation(windDeg, normalMapAxisDeg_[map]) : DirectX::XMFLOAT2(1.0f, 0.0f);
-        };
-        const DirectX::XMFLOAT2 a = rotation(rippleAlignA_, normalMapA_);
-        const DirectX::XMFLOAT2 b = rotation(rippleAlignB_, normalMapB_);
-        water_.normalRotation = { a.x, a.y, b.x, b.y };
+        RenderTestScene(view, projection, lightDir, lightColorPacked, ambientColorPacked);
     }
-    water_.rippleSlopeVarianceA = normalMapSlopeVariance_[normalMapA_];
-    water_.rippleSlopeVarianceB = normalMapSlopeVariance_[normalMapB_];
-    // A --render-size frame keeps the look of the 720p window it was set up in (ocean-hero NOTES).
-    water_.lodScale = fixedRenderSize_ ? static_cast<float>(screenHeight_) / static_cast<float>(SCREEN_HEIGHT) : 1.0f;
-    Model* waterMesh = oceanMode_ ? oceanGrid_.get() : model_.get();
-    waterMesh->Render(d3d_->GetDeviceContext());
-    colorShader_->Render(
-        d3d_->GetDeviceContext(),
-        waterMesh->GetIndexCount(),
-        world,
-        view,
-        projection,
-        lightDir,
-        lightColorPacked,
-        ambientColorPacked,
-        elapsedTime_,
-        cameraPosWS,
-        water_,
-        environments_[environmentIndex_]->GetSRV(),
-        normalMaps_[normalMapA_]->GetSRV(),
-        normalMaps_[normalMapB_]->GetSRV(),
-        d3d_->GetSampler(),
-        d3d_->GetWrapSampler());
-    d3d_->SetRasterizerDefault();
+
+    // The depth debug view is for looking under the water, so it leaves the (still opaque) water out.
+    const bool drawWater = scene_ == NoScene || (showWater_ && sceneDebug_ == 0);
+    if (drawWater)
+    {
+        d3d_->SetRasterizerWaterSurface();
+        water_.farWaveNormals = farWaveNormals_ ? 1.0f : 0.0f; // a renderer switch, not part of the presets
+        {
+            // "Align to wind" follows Wave 1 as rendered (also right when the waves were edited in Advanced).
+            const DirectX::XMFLOAT2& wind = water_.waves[0].direction;
+            const float windDeg = DirectX::XMConvertToDegrees(std::atan2(wind.y, wind.x));
+            const auto rotation = [&](bool align, int map) {
+                return align ? RippleRotation(windDeg, normalMapAxisDeg_[map]) : DirectX::XMFLOAT2(1.0f, 0.0f);
+            };
+            const DirectX::XMFLOAT2 a = rotation(rippleAlignA_, normalMapA_);
+            const DirectX::XMFLOAT2 b = rotation(rippleAlignB_, normalMapB_);
+            water_.normalRotation = { a.x, a.y, b.x, b.y };
+        }
+        water_.rippleSlopeVarianceA = normalMapSlopeVariance_[normalMapA_];
+        water_.rippleSlopeVarianceB = normalMapSlopeVariance_[normalMapB_];
+        // A --render-size frame keeps the look of the 720p window it was set up in (ocean-hero NOTES).
+        water_.lodScale = fixedRenderSize_ ? static_cast<float>(screenHeight_) / static_cast<float>(SCREEN_HEIGHT) : 1.0f;
+        Model* waterMesh = scene_ == WaterLab ? labWater_.get()
+                         : scene_ == Waterfront ? frontWater_.get()
+                         : oceanMode_ ? oceanGrid_.get() : model_.get();
+        // Test scenes keep the water flat at y = 0 (known depths) unless Lab Waves is on. Not saved in presets.
+        ColorShader::WaterParams waterDraw = water_;
+        if (scene_ != NoScene && !labWaves_)
+        {
+            for (auto& wave : waterDraw.waves)
+            {
+                wave.amplitude = 0.0f;
+            }
+        }
+        waterMesh->Render(d3d_->GetDeviceContext());
+        colorShader_->Render(
+            d3d_->GetDeviceContext(),
+            waterMesh->GetIndexCount(),
+            world,
+            view,
+            projection,
+            lightDir,
+            lightColorPacked,
+            ambientColorPacked,
+            elapsedTime_,
+            cameraPosWS,
+            waterDraw,
+            environments_[environmentIndex_]->GetSRV(),
+            normalMaps_[normalMapA_]->GetSRV(),
+            normalMaps_[normalMapB_]->GetSRV(),
+            d3d_->GetSampler(),
+            d3d_->GetWrapSampler());
+        d3d_->SetRasterizerDefault();
+    }
 
     // HDR scene -> sRGB back buffer. Debug views carry data, not light, so they skip exposure and the
     // tone curve (their values were pre-decoded in the pixel shader and come back out unchanged).
     d3d_->BindBackBuffer();
     d3d_->SetRasterizerDoubleSided(); // the fullscreen triangle is clockwise; don't let it get culled
-    const bool debugView = water_.debugMode != 0;
+    const bool debugView = water_.debugMode != 0 || (scene_ != NoScene && sceneDebug_ != 0);
     tonemapShader_->Render(
         d3d_->GetDeviceContext(),
         d3d_->GetHdrSRV(),
@@ -1520,7 +1754,7 @@ void Graphics::DrawViewWindow()
     ImGui::TextDisabled("Fixed shots (same as --capture)");
     for (int i = 0; i < static_cast<int>(std::size(kCaptureShots)); ++i)
     {
-        if (i > 0 && i != 3)
+        if (i > 0 && i != 3 && i != kFirstLabShotIndex)
         {
             ImGui::SameLine();
         }
@@ -1533,7 +1767,11 @@ void Graphics::DrawViewWindow()
     for (int i = 0; i < kCameraSlotCount; ++i)
     {
         ImGui::PushID(i);
-        ImGui::Text("Slot %d%s", i + 1, cameraSlotUsed_[i] ? (cameraSlots_[i].ocean ? " [ocean]" : " [bench]") : " (empty)");
+        const CameraView& slotView = cameraSlots_[i];
+        const char* slotScene = !slotView.ocean ? " [bench]"
+                              : slotView.scene == WaterLab ? " [lab]"
+                              : slotView.scene == Waterfront ? " [front]" : " [ocean]";
+        ImGui::Text("Slot %d%s", i + 1, cameraSlotUsed_[i] ? slotScene : " (empty)");
         ImGui::SameLine(120.0f);
         if (ImGui::Button("Save"))
         {
@@ -1554,9 +1792,30 @@ void Graphics::DrawViewWindow()
         cameraPosition_.x, cameraPosition_.y, cameraPosition_.z, cameraRotation_.x, cameraRotation_.y);
 
     ImGui::SeparatorText("Scene");
-    ImGui::Checkbox("Ocean Grid (open water to the horizon)", &oceanMode_);
+    const char* sceneLabels[] = { "Bench plane", "Ocean grid (open water)", "Water Lab (test depths)", "Waterfront (graybox)" };
+    int sceneChoice = scene_ != NoScene ? 1 + scene_ : (oceanMode_ ? 1 : 0);
+    if (ImGui::Combo("Scene", &sceneChoice, sceneLabels, IM_ARRAYSIZE(sceneLabels)))
+    {
+        oceanMode_ = sceneChoice != 0;
+        scene_ = sceneChoice >= 2 ? sceneChoice - 1 : NoScene;
+        // Entering a test scene from anywhere else would leave the camera far off: start from its overview shot.
+        if (scene_ != NoScene)
+        {
+            ApplyCameraShot(FindCaptureShot(scene_ == WaterLab ? "lab_stairs" : "front_rails"));
+        }
+    }
     ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
-    if (oceanMode_)
+    if (scene_ != NoScene)
+    {
+        ImGui::Checkbox("Show Water", &showWater_);
+        ImGui::SameLine();
+        ImGui::Checkbox("Lab Waves", &labWaves_);
+        const char* sceneDebugLabels[] = { "Render", "Depth below water (water hidden)" };
+        ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels));
+        ImGui::TextDisabled("1 unit = 1 m, water at y = 0, ocean presets.");
+        ImGui::TextDisabled("Waves stay flat unless Lab Waves is on.");
+    }
+    else if (oceanMode_)
     {
         ImGui::TextDisabled("Ocean grid stays level (drag = look around)");
     }
@@ -1613,6 +1872,12 @@ void Graphics::DrawViewWindow()
     {
         const std::string& reloadStamp = colorShader_->GetLastReloadStamp();
         ImGui::TextDisabled("Shader hot reload: %s", reloadStamp.empty() ? "ready" : reloadStamp.c_str());
+    }
+    const std::string& sceneShaderError = sceneShader_->GetLastError();
+    if (!sceneShaderError.empty())
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Scene shader (scene.hlsl) compile error:");
+        ImGui::TextWrapped("%s", sceneShaderError.c_str());
     }
     if (!normalMapStatus_.empty())
     {
