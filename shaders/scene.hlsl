@@ -14,7 +14,7 @@ cbuffer SceneCB : register(b0)
     float4 g_LightColor;     // linear rgb, a = intensity
     float4 g_AmbientColor;   // linear rgb, a = intensity
     float4 g_BaseColor;      // linear albedo
-    float4 g_MaterialParams; // x = pattern (0 solid, 1 checker, 2 ruler, 3 pebbles), y = debug mode (0 render, 1 water depth bands, 2 water depth numeric)
+    float4 g_MaterialParams; // x = pattern (0 solid, 1 checker, 2 ruler, 3 pebbles), y = debug mode (0 render, 1 water depth bands, 2 water depth numeric, 3 "not measured" under the water numeric views)
 };
 
 struct VSInput
@@ -141,6 +141,12 @@ float4 PSMain(PSInput input) : SV_TARGET
     float3 lightDirWS = normalize(-g_LightDirection.xyz);
     float diffuse = saturate(dot(n, lightDirWS));
     float3 lighting = g_AmbientColor.rgb * g_AmbientColor.a + g_LightColor.rgb * g_LightColor.a * diffuse;
+
+    // 3 = behind the water's numeric views: nothing measured here (only the water writes values).
+    if (debugMode == 3)
+    {
+        return float4(SrgbToLinear(float3(0.0, 0.0, kMarkerAboveWater)), 1.0);
+    }
 
     // 2 = water depth as numbers (EncodeMeters): the answer key the depth-buffer reconstruction is compared to.
     if (debugMode == 2)

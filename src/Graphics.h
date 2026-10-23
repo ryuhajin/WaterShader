@@ -115,6 +115,7 @@ private:
 
     static std::vector<SceneObject> BuildWaterLab();    // known depths: pads, stairs, pillar, near-surface pads
     static std::vector<SceneObject> BuildWaterfront();  // graybox of the target scene
+    bool IsNumericView() const; // meters-as-color views: no sky, no lit pixels (depth-reconstruct)
     void RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection,
                          const DirectX::XMFLOAT4& lightDir, const DirectX::XMFLOAT4& lightColor,
                          const DirectX::XMFLOAT4& ambientColor);

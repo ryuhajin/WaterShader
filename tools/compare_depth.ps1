@@ -1,5 +1,6 @@
 # Compares the "meters as color" PNG captures of depth-reconstruct (DepthBands.hlsli, EncodeMeters):
-#   R = fraction of a meter, G = whole meters x 4, B = marker (128 measured, 64 above water, 255 no surface).
+#   R = fraction, G = whole part x 4 of (meters + 0.5), B = marker (128 measured, 64 above water, 255 no surface).
+#   The 0.5 m shift keeps whole-meter depths off the R wrap (kEncodeOffset); it is taken off again here.
 #
 #   -Mode depth : -A = answer key   (--scene-debug 2 --water off), -B = reconstruction (--debug 12)
 #                 every measured answer-key pixel must be measured in B too, within max(1 cm, 1 %).
@@ -12,7 +13,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$A,
     [Parameter(Mandatory = $true)][string]$B,
-    [ValidateSet('depth', 'path')][string]$Mode = 'depth'
+    [ValidateSet('depth', 'path')][string]$Mode = 'depth',
+    [double]$Offset = 0.5 # kEncodeOffset the captures were made with (0 = captures from before the shift)
 )
 
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
@@ -23,7 +25,11 @@ using System.Runtime.InteropServices;
 
 public static class MeterImage
 {
+    public static double Offset = 0.5; // kEncodeOffset
+
     // marker[i] = B byte, meters[i] = decoded R/G.
+    public static long LastMalformed; // pixels marked 1 by the last Load
+
     public static void Load(string path, out byte[] marker, out double[] meters, out int width, out int height)
     {
         using (var bmp = new Bitmap(path))
@@ -43,8 +49,11 @@ public static class MeterImage
                 {
                     int o = y * data.Stride + x * 4; // BGRA
                     int i = y * width + x;
-                    marker[i] = bytes[o];
-                    meters[i] = Math.Round(bytes[o + 1] / 4.0) + bytes[o + 2] / 255.0;
+                    // A real measurement always has G on a multiple of 4; anything else is not one (a lit pixel
+                    // or the sky whose blue happens to be 128). Marked 1 so it is never compared.
+                    marker[i] = (bytes[o] == 128 && bytes[o + 1] % 4 != 0) ? (byte)1 : bytes[o];
+                    if (marker[i] == 1) ++LastMalformed;
+                    meters[i] = Math.Round(bytes[o + 1] / 4.0) + bytes[o + 2] / 255.0 - Offset;
                 }
             }
         }
@@ -53,17 +62,27 @@ public static class MeterImage
     public static string Compare(string pathA, string pathB, string mode)
     {
         byte[] ma, mb; double[] va, vb; int w, h, w2, h2;
+        LastMalformed = 0;
         Load(pathA, out ma, out va, out w, out h);
+        long malformedA = LastMalformed;
+        LastMalformed = 0;
         Load(pathB, out mb, out vb, out w2, out h2);
+        long malformedB = LastMalformed;
         if (w != w2 || h != h2) return "size differs";
 
         long compared = 0, notMeasuredInB = 0, failed = 0, noSurfaceB = 0;
+        string where = ""; // first pixels measured in A but not in B
         double maxError = 0.0, sumError = 0.0, sumA = 0.0, sumB = 0.0, maxB = 0.0;
         for (int i = 0; i < ma.Length; ++i)
         {
             if (mb[i] == 255) ++noSurfaceB;
             if (ma[i] != 128) continue;
-            if (mb[i] != 128) { ++notMeasuredInB; continue; }
+            if (mb[i] != 128)
+            {
+                if (notMeasuredInB < 3) where += string.Format(" ({0},{1})", i % w, i / w);
+                ++notMeasuredInB;
+                continue;
+            }
             ++compared;
             sumA += va[i];
             sumB += vb[i];
@@ -98,13 +117,15 @@ public static class MeterImage
         }
         if (mode == "depth")
             return string.Format("compared {0}  max err {1:F4} m  mean err {2:F4} m  over tolerance {3}  not measured in B {4}  no-surface in B {5}",
-                compared, maxError, sumError / n, failed, notMeasuredInB, noSurfaceB);
+                compared, maxError, sumError / n, failed, notMeasuredInB, noSurfaceB) + string.Format("  malformed A {0} B {1}", malformedA, malformedB) + (where == "" ? "" : "  first unmatched at" + where);
+        string malformed = string.Format("  malformed A {0} B {1}", malformedA, malformedB) + (where == "" ? "" : "  first unmatched at" + where);
         return string.Format("compared {0}  mean depth {1:F3} m  mean path {2:F3} m  path/depth {3:F2}  max path {4:F2} m  path < depth {5}  no-surface {6}",
-            compared, sumA / n, sumB / n, sumB / Math.Max(sumA, 1e-9), maxB, failed, noSurfaceB) + Environment.NewLine + "    " + perDepth;
+            compared, sumA / n, sumB / n, sumB / Math.Max(sumA, 1e-9), maxB, failed, noSurfaceB) + malformed + Environment.NewLine + "    " + perDepth;
     }
 }
 '@
 
+[MeterImage]::Offset = $Offset
 $files = Get-ChildItem -Path $A -Filter *.png | Sort-Object Name
 if (-not $files) { Write-Output "No PNG files in $A"; exit 1 }
 foreach ($file in $files) {

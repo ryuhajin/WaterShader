@@ -30,15 +30,19 @@ float MeterContour(float meters)
 }
 
 // Meters as a display color for exact comparison (tools/compare_depth.ps1, PNG captures):
-//   R = fraction of a meter (1/255 m ~ 4 mm), G = whole meters x 4 / 255 (0..63 m), B = marker.
+//   R = fraction of (meters + 0.5) (1/255 m ~ 4 mm), G = whole part x 4 / 255, B = marker. Range 0..63.49 m.
+// The half-meter shift: the Water Lab depths are whole meters (1 / 3 / 6 / 8 m), which would sit right where
+// R wraps from 0.99 to 0.00, so the ~0.5 mm reconstruction noise flipped a flat floor between the two ends.
+// Shifted, those depths sit in the middle of the ramp and read as one even color.
 // Markers sit on exact 8-bit levels so they survive the round trip to the PNG unchanged.
+static const float kEncodeOffset = 0.5; // m, subtracted again by the compare tool
 static const float kMarkerMeasured   = 128.0 / 255.0; // a surface was measured
 static const float kMarkerAboveWater = 64.0 / 255.0;  // the surface is above the water (answer key only)
 static const float kMarkerNoSurface  = 1.0;           // sky behind the water: max optical distance used
 
 float3 EncodeMeters(float meters, float marker)
 {
-    meters = clamp(meters, 0.0, 63.99);
+    meters = clamp(meters + kEncodeOffset, 0.0, 63.99);
     float whole = floor(meters);
     return float3(meters - whole, whole * 4.0 / 255.0, marker);
 }

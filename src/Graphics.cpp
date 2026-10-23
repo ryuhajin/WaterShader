@@ -1366,6 +1366,12 @@ std::vector<Graphics::SceneObject> Graphics::BuildWaterfront()
     return objects;
 }
 
+// Test scene views that write meters as colors for tools/compare_depth.ps1 (DepthBands.hlsli, EncodeMeters).
+bool Graphics::IsNumericView() const
+{
+    return scene_ != NoScene && (sceneDebug_ == 2 || water_.debugMode == 12 || water_.debugMode == 13);
+}
+
 void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection,
                                const DirectX::XMFLOAT4& lightDir, const DirectX::XMFLOAT4& lightColor,
                                const DirectX::XMFLOAT4& ambientColor)
@@ -1374,7 +1380,11 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
     ID3D11DeviceContext* context = d3d_->GetDeviceContext();
     // Closed shapes, drawn double-sided so the generated winding never has to match the cull mode.
     d3d_->SetRasterizerDoubleSided();
-    sceneShader_->Begin(context, view, projection, lightDir, lightColor, ambientColor, sceneDebug_);
+    // With the water's numeric views, whatever the water does not cover is drawn as "not a measurement" (scene
+    // debug 3), so neither a lit pixel nor the answer key can pass for a reconstructed value.
+    const bool waterNumeric = scene_ != NoScene && (water_.debugMode == 12 || water_.debugMode == 13);
+    const int sceneDebugMode = waterNumeric ? 3 : sceneDebug_;
+    sceneShader_->Begin(context, view, projection, lightDir, lightColor, ambientColor, sceneDebugMode);
     const std::vector<SceneObject>& objects = scene_ == WaterLab ? labObjects_ : frontObjects_;
     Model* boundMesh = nullptr;
     for (const SceneObject& object : objects)
@@ -1452,9 +1462,9 @@ bool Graphics::Render(float deltaTime)
     // Clear color is the old sRGB background, converted because the HDR target holds linear values.
     d3d_->BeginScene(SrgbToLinear(0.02f), SrgbToLinear(0.08f), SrgbToLinear(0.11f), 1.0f);
 
-    // The numeric answer key (Scene Debug 2) leaves the sky out, so no sky pixel can pass for a measurement.
-    const bool numericAnswerKey = scene_ != NoScene && sceneDebug_ == 2;
-    if (skyboxVisible_ && !numericAnswerKey)
+    // Numeric views (answer key, Scene Debug 2; reconstruction, water debug 12 / 13) leave the sky out: a sky
+    // pixel whose blue happens to be 128 would read as a measurement (it did, in the first path comparison).
+    if (skyboxVisible_ && !IsNumericView())
     {
         d3d_->SetDepthLessEqual();
         skybox_->Render(d3d_->GetDeviceContext());
