@@ -121,6 +121,84 @@ bool Model::InitializeGrid(ID3D11Device* device, int quadsPerSide, float halfExt
     return CreateBuffers(device, vertices, indices);
 }
 
+bool Model::InitializeBox(ID3D11Device* device)
+{
+    // One quad per face (4 vertices, own normal). u/v span the face; the scene shader patterns by world
+    // position, so the UVs are only a fallback.
+    struct Face { float n[3]; float u[3]; float v[3]; };
+    constexpr Face faces[] = {
+        { { 1, 0, 0}, { 0, 0, 1}, { 0, 1, 0} },
+        { {-1, 0, 0}, { 0, 0,-1}, { 0, 1, 0} },
+        { { 0, 1, 0}, { 1, 0, 0}, { 0, 0, 1} },
+        { { 0,-1, 0}, { 1, 0, 0}, { 0, 0,-1} },
+        { { 0, 0, 1}, {-1, 0, 0}, { 0, 1, 0} },
+        { { 0, 0,-1}, { 1, 0, 0}, { 0, 1, 0} },
+    };
+
+    std::vector<VertexType> vertices;
+    std::vector<unsigned long> indices;
+    for (const Face& f : faces)
+    {
+        const unsigned long base = static_cast<unsigned long>(vertices.size());
+        constexpr float corners[4][2] = { {-1, -1}, {1, -1}, {1, 1}, {-1, 1} };
+        for (const auto& c : corners)
+        {
+            VertexType v{};
+            for (int k = 0; k < 3; ++k)
+            {
+                v.position[k] = 0.5f * (f.n[k] + c[0] * f.u[k] + c[1] * f.v[k]);
+                v.normal[k] = f.n[k];
+            }
+            v.uv[0] = 0.5f + 0.5f * c[0];
+            v.uv[1] = 0.5f - 0.5f * c[1];
+            vertices.push_back(v);
+        }
+        indices.insert(indices.end(), { base, base + 1, base + 2, base, base + 2, base + 3 });
+    }
+    return CreateBuffers(device, vertices, indices);
+}
+
+bool Model::InitializeCylinder(ID3D11Device* device, int segments)
+{
+    constexpr float kTwoPi = 6.28318530718f;
+    std::vector<VertexType> vertices;
+    std::vector<unsigned long> indices;
+
+    // Side: a ring at the bottom and the top, smooth normals.
+    for (int i = 0; i <= segments; ++i)
+    {
+        const float a = kTwoPi * i / segments;
+        const float x = std::cos(a);
+        const float z = std::sin(a);
+        const float u = static_cast<float>(i) / segments;
+        vertices.push_back({ {0.5f * x, -0.5f, 0.5f * z}, {x, 0.0f, z}, {u, 1.0f} });
+        vertices.push_back({ {0.5f * x,  0.5f, 0.5f * z}, {x, 0.0f, z}, {u, 0.0f} });
+    }
+    for (int i = 0; i < segments; ++i)
+    {
+        const unsigned long b0 = static_cast<unsigned long>(2 * i);
+        indices.insert(indices.end(), { b0, b0 + 1, b0 + 3, b0, b0 + 3, b0 + 2 });
+    }
+
+    // Caps: a center vertex and a ring each, flat normals.
+    for (const float y : { -0.5f, 0.5f })
+    {
+        const unsigned long center = static_cast<unsigned long>(vertices.size());
+        vertices.push_back({ {0.0f, y, 0.0f}, {0.0f, y * 2.0f, 0.0f}, {0.5f, 0.5f} });
+        for (int i = 0; i <= segments; ++i)
+        {
+            const float a = kTwoPi * i / segments;
+            vertices.push_back({ {0.5f * std::cos(a), y, 0.5f * std::sin(a)}, {0.0f, y * 2.0f, 0.0f},
+                                 {0.5f + 0.5f * std::cos(a), 0.5f + 0.5f * std::sin(a)} });
+        }
+        for (int i = 0; i < segments; ++i)
+        {
+            indices.insert(indices.end(), { center, center + 1 + i, center + 2 + i });
+        }
+    }
+    return CreateBuffers(device, vertices, indices);
+}
+
 void Model::Shutdown()
 {
     ShutdownBuffers();

@@ -13,6 +13,9 @@ public:
     // Flat XZ grid for open water. Vertex spacing grows exponentially from the center
     // (dense near the camera, sparse toward the horizon); UVs match the 2x2 OBJ plane density.
     bool InitializeGrid(ID3D11Device* device, int quadsPerSide, float halfExtent, float spacingGrowth);
+    // Unit shapes for the opaque test scenes (water-lab), sized and placed by each object's world matrix.
+    bool InitializeBox(ID3D11Device* device);                     // [-0.5, 0.5]^3, flat normals per face
+    bool InitializeCylinder(ID3D11Device* device, int segments);  // radius 0.5, y in [-0.5, 0.5], capped
     void Shutdown();
     void Render(ID3D11DeviceContext* deviceContext);
     int GetIndexCount() const { return indexCount_; }

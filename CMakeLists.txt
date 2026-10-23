@@ -28,6 +28,8 @@ add_executable(WaterShader WIN32
     src/Model.h
     src/Skybox.cpp
     src/Skybox.h
+    src/SceneShader.cpp
+    src/SceneShader.h
     src/SkyboxShader.cpp
     src/SkyboxShader.h
     src/System.cpp
@@ -98,6 +100,9 @@ add_custom_command(TARGET WaterShader POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${SHADER_SOURCE_DIR}/skybox.hlsl"
         "${SHADER_OUTPUT_DIR}/skybox.hlsl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_SOURCE_DIR}/scene.hlsl"
+        "${SHADER_OUTPUT_DIR}/scene.hlsl"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${SHADER_SOURCE_DIR}/tonemap.hlsl"
         "${SHADER_OUTPUT_DIR}/tonemap.hlsl"
