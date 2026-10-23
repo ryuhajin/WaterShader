@@ -9,6 +9,11 @@
 #   -Mode transmit : -A = view path (--debug 13), -B = transmittance (--debug 14), -Extinction r,g,b (the capture's),
 #                 optional -C = water depth (--debug 12) for the mean transmittance per Water Lab depth.
 #                 every measured pixel must show exp(-extinction x path) per channel (rgb-attenuation).
+#   -Mode sum   : -A = attenuation (--transmission 2), -B = water color part (--debug 15), -C = scattering
+#                 (--transmission 3), -D = water depth (--debug 12) as the water mask; all with --tonemap none.
+#                 A + B = C in linear light on every water pixel (water-scatter).
+#   -Mode contrast : -A = water depth (--debug 12), -B = pass-through, -C = scattering, both --tonemap none.
+#                 checker contrast kept per Water Lab depth (water-scatter).
 #
 # Usage (PowerShell 5.1):
 #   .\tools\compare_depth.ps1 -A <folder> -B <folder> [-Mode depth|path|transmit] [-Extinction r,g,b] [-C <folder>]
@@ -16,9 +21,10 @@
 param(
     [Parameter(Mandatory = $true)][string]$A,
     [Parameter(Mandatory = $true)][string]$B,
-    [ValidateSet('depth', 'path', 'transmit')][string]$Mode = 'depth',
+    [ValidateSet('depth', 'path', 'transmit', 'sum', 'contrast')][string]$Mode = 'depth',
     [string]$Extinction = '0,0,0',
     [string]$C = '',
+    [string]$D = '',
     [double]$Offset = 0.5 # kEncodeOffset the captures were made with (0 = captures from before the shift)
 )
 
@@ -209,6 +215,87 @@ public static class MeterImage
         }
         return result;
     }
+
+    static double SrgbToLinear(double c)
+    {
+        return c <= 0.04045 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+    }
+
+    // Linear value of a byte and how far half an 8-bit step moves it (the rounding of that byte).
+    static void Linear(byte b, out double value, out double halfStep)
+    {
+        double s = b / 255.0;
+        value = SrgbToLinear(s);
+        halfStep = Math.Abs(SrgbToLinear(Math.Min(s + 0.5 / 255.0, 1.0)) - SrgbToLinear(Math.Max(s - 0.5 / 255.0, 0.0))) * 0.5;
+    }
+
+    // Sum mode (water-scatter), all captured with --tonemap none: on every water pixel (mask D: measured or
+    // no surface) attenuation (A) + water color part (B) = scattering (C) in linear light, per channel.
+    // Saturated C channels are skipped. Also: at no-surface pixels, how much of C the bed part (A) still is.
+    public static string CompareSum(string pathA, string pathB, string pathC, string pathD)
+    {
+        int w, h;
+        byte[] a = LoadRgb(pathA, out w, out h), b = LoadRgb(pathB, out w, out h), c = LoadRgb(pathC, out w, out h);
+        byte[] md; double[] vd; int wd, hd;
+        Load(pathD, out md, out vd, out wd, out hd);
+        long compared = 0, failed = 0, saturated = 0, noSurface = 0;
+        double maxRatio = 0.0, bedAtNoSurface = 0.0;
+        for (int i = 0; i < md.Length; ++i)
+        {
+            if (md[i] != 128 && md[i] != 255) continue;
+            if (md[i] == 255) ++noSurface;
+            ++compared;
+            bool bad = false;
+            for (int k = 0; k < 3; ++k)
+            {
+                int o = i * 3 + k;
+                if (c[o] == 255) { ++saturated; continue; }
+                double va, ea, vb, eb, vc, ec;
+                Linear(a[o], out va, out ea); Linear(b[o], out vb, out eb); Linear(c[o], out vc, out ec);
+                double tolerance = 1.5 * (ea + eb + ec) + 0.002 * vc + 1e-5; // 8-bit rounding of each + float16
+                double ratio = Math.Abs(va + vb - vc) / tolerance;
+                maxRatio = Math.Max(maxRatio, ratio);
+                if (ratio > 1.0) bad = true;
+                if (md[i] == 255 && vc > 1e-4) bedAtNoSurface = Math.Max(bedAtNoSurface, va / vc);
+            }
+            if (bad) ++failed;
+        }
+        return string.Format("water pixels {0}  A+B=C over tolerance {1}  worst |A+B-C| / tolerance {2:F2}  saturated channels skipped {3}  no-surface {4}: bed part at most {5:P1} of C",
+            compared, failed, maxRatio, saturated, noSurface, bedAtNoSurface);
+    }
+
+    // Contrast mode (water-scatter): per Water Lab depth (pixels selected by the water depth set A), the
+    // spread (standard deviation) of luminance in C over that in B (pass-through), both --tonemap none.
+    // The water color adds the same amount to light and dark cells, so what is left of the checker contrast
+    // follows the transmittance: near 1 in the shallows, near 0 deep down.
+    public static string CompareContrast(string pathA, string pathB, string pathC)
+    {
+        byte[] ma; double[] va; int w, h;
+        Load(pathA, out ma, out va, out w, out h);
+        byte[] b = LoadRgb(pathB, out w, out h), c = LoadRgb(pathC, out w, out h);
+        string result = "contrast kept:";
+        foreach (double target in new double[] { 0.2, 1.0, 3.0, 6.0, 8.0 })
+        {
+            long n = 0; double sb = 0, sbb = 0, sc = 0, scc = 0;
+            for (int i = 0; i < ma.Length; ++i)
+            {
+                if (ma[i] != 128 || Math.Abs(va[i] - target) >= 0.01) continue;
+                double lb = 0, lc = 0, v, e;
+                double[] weights = { 0.2126, 0.7152, 0.0722 };
+                for (int k = 0; k < 3; ++k)
+                {
+                    Linear(b[i * 3 + k], out v, out e); lb += weights[k] * v;
+                    Linear(c[i * 3 + k], out v, out e); lc += weights[k] * v;
+                }
+                ++n; sb += lb; sbb += lb * lb; sc += lc; scc += lc * lc;
+            }
+            if (n < 50) { result += string.Format("  [{0} m: -]", target); continue; }
+            double stdB = Math.Sqrt(Math.Max(sbb / n - (sb / n) * (sb / n), 0.0));
+            double stdC = Math.Sqrt(Math.Max(scc / n - (sc / n) * (sc / n), 0.0));
+            result += string.Format("  [{0} m: {1:P0}]", target, stdB > 1e-6 ? stdC / stdB : 0.0);
+        }
+        return result;
+    }
 }
 '@
 
@@ -219,7 +306,13 @@ $k = @($Extinction -split ',' | ForEach-Object { [double]$_ })
 foreach ($file in $files) {
     $other = Join-Path $B $file.Name
     if (-not (Test-Path $other)) { Write-Output ("{0,-28} missing in B" -f $file.Name); continue }
-    if ($Mode -eq 'transmit') {
+    if ($Mode -eq 'sum') {
+        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareSum($file.FullName, $other, (Join-Path $C $file.Name), (Join-Path $D $file.Name)))
+    }
+    elseif ($Mode -eq 'contrast') {
+        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareContrast($file.FullName, $other, (Join-Path $C $file.Name)))
+    }
+    elseif ($Mode -eq 'transmit') {
         $depthFile = if ($C) { Join-Path $C $file.Name } else { $null }
         if ($depthFile -and -not (Test-Path $depthFile)) { $depthFile = $null }
         Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareTransmit($file.FullName, $other, $depthFile, $k[0], $k[1], $k[2]))

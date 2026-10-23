@@ -217,12 +217,33 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // 14 = transmittance as color (white = all light gets through, black = none); compare tool input.
     if (sceneDebugMode == 14) { return DebugOut(transmittance); }
 
+    // The water's own color (water-scatter): sunlight and skylight scattered back toward the eye by the water,
+    // filling in what the extinction took: + color x incoming light x strength x (1 - T). Same form as aerial
+    // perspective. Lit by the scene's lights, so a sunset preset darkens and warms the water too.
+    float sunHeight = saturate(-g_LightDirection.y); // g_LightDirection is the direction light travels
+    float3 incomingLight = g_AmbientColor.rgb * g_AmbientColor.a + g_LightColor.rgb * g_LightColor.a * sunHeight;
+    // Ramp (art mode): shallow -> mid -> deep picked by water depth (the same bed keeps its color from any
+    // angle) or by view path (deeper looking at a low angle, like the physical mode).
+    float rampDistance = g_RampParams.z > 0.5 ? viewPath : waterDepth;
+    float rampMidDepth = max(g_RampParams.x, 1e-3);
+    float rampDeepDepth = max(g_RampParams.y, rampMidDepth + 1e-3);
+    float3 rampColor = lerp(g_RampShallow.rgb, g_RampMid.rgb, smoothstep(0.0, rampMidDepth, rampDistance));
+    rampColor = lerp(rampColor, g_RampDeep.rgb, smoothstep(rampMidDepth, rampDeepDepth, rampDistance));
+    float3 waterColor = g_RampParams.w > 0.5 ? rampColor : g_ScatterColor.rgb;
+    float3 inscatter = waterColor * incomingLight * g_ScatterColor.a * (1.0 - transmittance);
+    // 15 = the water color part alone (HDR, tonemapped like a normal frame: attenuation + this = scattering).
+    if (sceneDebugMode == 15) { return float4(inscatter, 1.0); }
+    // 16 = the ramp color as picked (no light, no transmittance).
+    if (sceneDebugMode == 16) { return DebugOut(LinearToSrgb(rampColor)); }
+
     int transmissionMode = (int)(g_SceneParams.x + 0.5);
     // Pass-through: no water effect at all. Must match the frame with the water switched off.
     if (transmissionMode == 1) { return float4(sceneColor, 1.0); }
     // Attenuation: the scene without the water, dimmed by what the water took on the way. Nothing is added
     // back yet (the water's own color is step 5), so very long paths and no surface go black.
     if (transmissionMode == 2) { return float4(sceneColor * transmittance, 1.0); }
+    // Scattering: what the extinction took is filled with the water's own color (bed part + water part).
+    if (transmissionMode == 3) { return float4(sceneColor * transmittance + inscatter, 1.0); }
 #endif
     // Two scrolling normal map samples blended in tangent space.
     float time = g_WaterParams.x;

@@ -1,6 +1,6 @@
 # Water Scatter — 5단계 산란색 근사 + 깊이 색 램프
 
-> Branch: `feature/water-scatter` · Status: draft · Updated: 2026-10-24
+> Branch: `feature/water-scatter` · Status: in-progress · Updated: 2026-10-24
 > waterfront 업그레이드 5단계. 앞 단계: [../rgb-attenuation/NOTES.md](../rgb-attenuation/NOTES.md)
 
 ## 1. Goal / Visual Target

@@ -60,6 +60,11 @@ struct PerFrameCB
     DirectX::XMFLOAT4 sceneParams;   // x = transmission mode, y = max optical distance (test scenes, SCENE_INPUTS only)
     DirectX::XMFLOAT4X4 invViewProjection; // test scenes: depth buffer -> world position
     DirectX::XMFLOAT4 extinction;          // rgb = extinction per meter (test scenes)
+    DirectX::XMFLOAT4 scatterColor;        // rgb = linear scatter color, a = strength (test scenes)
+    DirectX::XMFLOAT4 rampShallow;         // rgb = linear ramp colors
+    DirectX::XMFLOAT4 rampMid;
+    DirectX::XMFLOAT4 rampDeep;
+    DirectX::XMFLOAT4 rampParams;          // x = mid depth (m), y = deep depth (m), z = by view path (0/1), w = color mode (0 physical, 1 ramp)
 };
 static_assert(sizeof(WaveParams) == 32, "WaveParams must match the 2-register HLSL layout");
 static_assert(sizeof(PerFrameCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
@@ -421,6 +426,13 @@ void ColorShader::RenderShader(
         data->sceneParams = DirectX::XMFLOAT4(static_cast<float>(water.transmissionMode), water.maxOpticalDistance, 0.0f, 0.0f);
         data->invViewProjection = water.invViewProjection;
         data->extinction = DirectX::XMFLOAT4(water.extinction.x, water.extinction.y, water.extinction.z, 0.0f);
+        const auto linear = [](const DirectX::XMFLOAT3& c, float w) { return SrgbToLinear(DirectX::XMFLOAT4(c.x, c.y, c.z, w)); };
+        data->scatterColor = linear(water.scatterColor, water.scatterStrength);
+        data->rampShallow = linear(water.rampShallow, 0.0f);
+        data->rampMid = linear(water.rampMid, 0.0f);
+        data->rampDeep = linear(water.rampDeep, 0.0f);
+        data->rampParams = DirectX::XMFLOAT4(water.rampMidDepth, water.rampDeepDepth,
+            static_cast<float>(water.rampByPath), static_cast<float>(water.waterColorMode));
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
