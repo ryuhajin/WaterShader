@@ -51,9 +51,15 @@ find_package(directxtk CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
 
+# Capture sets go next to the repository (../ws-capture), for Debug and Release alike.
+cmake_path(ABSOLUTE_PATH CMAKE_CURRENT_SOURCE_DIR OUTPUT_VARIABLE _watershader_source_dir NORMALIZE)
+cmake_path(GET _watershader_source_dir PARENT_PATH _watershader_parent_dir)
+set(WATERSHADER_CAPTURE_DIR "${_watershader_parent_dir}/ws-capture" CACHE PATH "Root folder for --capture sets")
+
 target_compile_definitions(WaterShader PRIVATE
     UNICODE
     _UNICODE
+    WATERSHADER_CAPTURE_DIR="${WATERSHADER_CAPTURE_DIR}"
     $<$<CONFIG:Debug>:WATERSHADER_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders">
     $<$<CONFIG:Debug>:WATERSHADER_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets">
 )

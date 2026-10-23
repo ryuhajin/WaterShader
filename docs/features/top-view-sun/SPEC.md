@@ -1,6 +1,6 @@
 # top-view-sun
 
-> Branch: `feature/top-view-sun` · Status: in-progress · Updated: 2026-10-04
+> Branch: `feature/top-view-sun` · Status: done · Updated: 2026-10-04 (상태 정정 2026-10-23)
 
 ## 1. Goal / Visual Target
 

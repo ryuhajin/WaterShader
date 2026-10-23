@@ -21,7 +21,7 @@ cmake --build build/vs2022 --config Release --target WaterShader
 .\build\vs2022\Release\WaterShader.exe --capture baseline --capture-feature waterfront
 ```
 
-- 주의: **Release 빌드는 캡처를 실행 파일 옆**(`build/vs2022/Release/docs/features/...`)에 저장한다. 에셋 경로를 exe 옆 복사본 기준으로 잡기 때문. 이번 기준 캡처는 손으로 `docs/features/waterfront/captures/baseline/`으로 옮겼다. Debug 빌드는 저장소 `docs/`에 바로 저장한다.
+- 캡처는 저장소 옆 `ws-capture/waterfront/captures/<label>/`에 저장된다 (Debug·Release 공통, 2026-10-23 변경). 이 기준 캡처는 당시 Release가 exe 옆에 저장해서 손으로 옮긴 것이다.
 
 ## 계측 조건
 
@@ -59,7 +59,7 @@ ImGui
 
 - 프리셋 3개: Basic / Sunset / Tropical. 각각 작은 평면용과 오션 그리드용이 따로 있다 (`assets/shader_presets.txt`).
 - 고정 샷 7개: `oblique`, `top`, `sunward` (작은 평면), `ocean_surface`, `ocean_aerial`, `ocean_tele`, `ocean_hero` (오션 그리드).
-- 기준 캡처 21장 = 프리셋 3 × 샷 7: [captures/baseline/](captures/baseline/)
+- 기준 캡처 21장 = 프리셋 3 × 샷 7: [ws-capture/waterfront/captures/baseline/](../../../../ws-capture/waterfront/captures/baseline/) (로컬)
 
 ## 이번 업그레이드로 바뀔 부분
 

@@ -50,6 +50,7 @@ private:
 
     // Before/after capture: renders preset x fixed camera shots at a fixed time and saves JPEGs.
     void StartCaptureSet(const std::wstring& label, bool quitWhenDone, bool allowOverwrite = true);
+    std::filesystem::path CapturesRoot() const; // <capture root>/<feature>/captures
     bool BeginCaptureFrame();
     void EndCaptureFrame();
 
@@ -201,6 +202,7 @@ private:
     bool captureFinishedQuit_ = false;
     int captureDebugMode_ = 0;
     std::wstring captureFeature_ = L"water-polish";
+    std::filesystem::path captureRootOverride_; // --capture-root
     std::filesystem::path presetFileOverride_; // --preset-file
     std::filesystem::path cameraFileOverride_; // --camera-file
     std::vector<std::string> capturePresetFilter_; // --capture-presets (file names, e.g. "hero"); empty = all

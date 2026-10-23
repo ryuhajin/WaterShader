@@ -1,18 +1,28 @@
 # Builds side-by-side comparison sheets from capture sets.
 #   rows = presets, columns = capture steps (in the order given)
-# Usage: powershell -File make_compare.ps1 before step1_bugfix step2_sun_glint
-#        powershell -File make_compare.ps1 -Dir ../bench-tools before env final   (another feature folder)
+# Capture sets live outside the repository: ../ws-capture/<feature>/captures/<step>; sheets go to
+# ../ws-capture/<feature>/<Out>.
+# Usage: powershell -File make_compare.ps1 before step1_bugfix step2_sun_glint   (this script's feature)
+#        powershell -File make_compare.ps1 -Feature bench-tools before env final  (another feature)
+#        powershell -File make_compare.ps1 -Dir ../bench-tools before env final  (relative to ws-capture/<feature>)
 #        ... -Out compare_operators ...                                          (output folder name)
-[CmdletBinding(PositionalBinding = $false)] # -Dir must be named; bare words are step names
+[CmdletBinding(PositionalBinding = $false)] # -Dir/-Feature must be named; bare words are step names
 param(
-    [string]$Dir = $PSScriptRoot,
+    [string]$Feature = "",
+    [string]$Dir = "",
     [string]$Out = "compare",
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Steps
 )
 
 Add-Type -AssemblyName System.Drawing
 
-if (-not [IO.Path]::IsPathRooted($Dir)) { $Dir = Join-Path $PSScriptRoot $Dir }
+# Windows PowerShell 5.1 has no $PSScriptRoot yet while the param defaults are evaluated.
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+$captureRoot = Join-Path (Split-Path $repoRoot -Parent) "ws-capture"
+if (-not $Feature) { $Feature = Split-Path $PSScriptRoot -Leaf }
+$featureDir = Join-Path $captureRoot $Feature
+if (-not $Dir) { $Dir = $featureDir }
+if (-not [IO.Path]::IsPathRooted($Dir)) { $Dir = Join-Path $featureDir $Dir }
 $Dir = (Resolve-Path $Dir).Path
 $root = Join-Path $Dir "captures"
 $outDir = Join-Path $Dir $Out

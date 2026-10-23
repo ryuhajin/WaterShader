@@ -8,21 +8,35 @@
 ```text
 docs/
   CONVENTIONS.md           # 이 문서 — 모든 규칙의 원본
-  OVERVIEW.md              # 프로젝트 목적, 산출물, 평가 포인트
-  ROADMAP.md               # 큰 흐름과 일자별 → feature 매핑
+  OVERVIEW.md              # 프로젝트 목적, 방향, 평가 포인트
+  ROADMAP.md               # 진행 중 / 보류 / 완료 이력 → feature 매핑
   decisions.md             # 기술 의사결정 로그 (선택 이유 기록)
+  CHANGELOG.md             # 사용자용 버그 수정·퀄리티 업 요약
+  readme-images/           # README가 쓰는 이미지 (추적)
   features/
     _TEMPLATE/
       SPEC.md              # 새 기능 시작 시 복사해서 쓰는 템플릿
     <feature-name>/
       SPEC.md              # 필수 — 4개 핵심 섹션
       NOTES.md             # 선택 — 작업 중 발견/실험/막힌 점 메모
-      references/          # 선택 — 참고 이미지, 영상 캡처
-  archive/                 # 더 이상 active 하지 않은 문서 보존소
+      references/          # 선택 — 외부 참고 이미지 (로컬 전용, README.md만 추적)
+
+../ws-capture/             # 저장소 밖 — 캡처 전용 (git 추적 안 함)
+  <feature-name>/
+    captures/<label>/      # --capture / Capture 버튼으로 찍은 세트
+    compare*/              # make_compare.ps1 비교 시트
+  portfolio/               # 2026-10 포트폴리오 페이지용 PNG 세트
 ```
 
 - 활성 작업은 `features/<name>/` 안에서만 일어납니다.
-- 더 이상 참조하지 않을 문서는 삭제하지 말고 `archive/` 로 보냅니다.
+- 더 이상 참조하지 않을 문서는 삭제합니다 (추적 문서는 git 기록에 남음).
+
+## 캡처와 레퍼런스
+
+- 캡처는 저장소 옆 `ws-capture/` 에 저장됩니다 (CMake `WATERSHADER_CAPTURE_DIR`, 실행 인자 `--capture-root`로 변경 가능). Debug·Release 모두 같은 곳.
+- NOTES·SPEC에 적힌 `captures/<label>/`, `compare/` 경로는 **`ws-capture/<feature>/captures/<label>/`, `ws-capture/<feature>/compare/`** 를 뜻합니다 (2026-10-23 이전 기록 포함).
+- 문서에서 캡처에 링크할 때는 `../../../../ws-capture/<feature>/...` 상대 경로를 씁니다. 공개 저장소에서는 열리지 않는 로컬 링크입니다. 공개용 이미지는 `docs/readme-images/` 에 골라 넣습니다.
+- 외부 레퍼런스(게임 스크린샷, 출처 미기재 사진)는 `references/` 에 두되 `.gitignore`로 올리지 않습니다. 설명과 출처는 `references/README.md`에 씁니다.
 
 ## 기능 이름 규칙
 
@@ -45,6 +59,15 @@ docs/
 4. 부분 완성 상태로 다른 기능을 시작해야 하면:
    - 미완 기능의 `NOTES.md`에 carry-over 항목을 적습니다.
    - 브랜치는 살려둡니다 (삭제 금지).
+
+## 단계형 업그레이드 (waterfront)
+
+[features/waterfront/PLAN.md](features/waterfront/PLAN.md)처럼 여러 단계로 나뉜 작업은 위 브랜치 규칙에 더해:
+
+- **한 번에 한 단계만** 구현합니다. 사용자의 명시적 승인 전에는 다음 단계를 시작하지 않습니다.
+- 자동 검증 통과, 캡처 생성, 무응답은 승인이 아닙니다. 에이전트 검증 결과와 사용자 승인 상태를 따로 기록합니다.
+- 단계마다: 개념 설명 → 구현 → 에이전트 검증 → 사용자 검증 자료(조작법, 정상/실패 징후) → 승인 → 기록.
+- 단계마다 같은 카메라·시간·노출의 OFF/ON 캡처를 남깁니다.
 
 ## SPEC.md 작성 규칙
 
@@ -77,7 +100,7 @@ docs/
 - [ ] SPEC의 Acceptance Criteria 모두 체크됨
 - [ ] 빌드 깨짐 없음
 - [ ] `docs/ROADMAP.md`의 해당 항목 업데이트됨
-- [ ] (선택) `references/`에 결과 캡처 1개 이상
+- [ ] (선택) `ws-capture/<feature>/captures/`에 결과 캡처 1세트 이상
 
 ## 이 컨벤션 자체를 바꿀 때
 

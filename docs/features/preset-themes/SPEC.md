@@ -1,6 +1,6 @@
 # preset-themes
 
-> Branch: `feature/preset-themes` · Status: in-progress · Updated: 2026-10-04
+> Branch: `feature/preset-themes` · Status: done · Updated: 2026-10-04 (상태 정정 2026-10-23)
 
 ## 1. Goal / Visual Target
 
