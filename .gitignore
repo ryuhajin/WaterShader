@@ -35,3 +35,7 @@ docs/UI_GUIDE.md
 # 기능별 캡처와 비교 시트 (로컬 전용, 대용량). README 이미지는 docs/readme-images/에 있어 계속 추적
 docs/features/*/captures/
 docs/features/*/compare*/
+
+# 외부 레퍼런스 이미지 (게임 스크린샷·출처 미기재 사진) — 재배포 방지, 로컬에만 둠. 설명은 references/README.md에 추적
+docs/features/*/references/*
+!docs/features/*/references/README.md
