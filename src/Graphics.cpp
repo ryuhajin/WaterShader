@@ -1172,6 +1172,23 @@ void Graphics::UpdateWindowToggles(const Input& input)
         }
         toggleKeyWasDown_[i] = down;
     }
+
+    // X: in the test scenes, swap the active debug view with the parked one (answer key <-> reconstruction).
+    const bool swapDown = input.IsKeyDown('X');
+    if (swapDown && !swapKeyWasDown_ && !typing && scene_ != NoScene)
+    {
+        if (sceneDebug_ != 0 && parkedWaterDebug_ != 0)
+        {
+            water_.debugMode = parkedWaterDebug_;
+            SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
+        }
+        else if (water_.debugMode != 0 && parkedSceneDebug_ != 0)
+        {
+            sceneDebug_ = parkedSceneDebug_;
+            SwapDebugViews(sceneDebug_, parkedSceneDebug_, water_.debugMode, parkedWaterDebug_);
+        }
+    }
+    swapKeyWasDown_ = swapDown;
 }
 
 void Graphics::UpdateMouseDrag()
@@ -1364,6 +1381,27 @@ std::vector<Graphics::SceneObject> Graphics::BuildWaterfront()
         pole(2.8f, z, 1.0f, 3.6f);
     }
     return objects;
+}
+
+// Scene Debug and the water Debug Mode both paint the whole frame (and Scene Debug hides the water), so in the
+// test scenes only one runs at a time. Picking a view in one parks the other; setting the first back to Render
+// brings the parked view back. "changed" is the combo the user just moved.
+void Graphics::SwapDebugViews(int& changed, int& changedParked, int& other, int& otherParked)
+{
+    if (changed != 0)
+    {
+        if (other != 0)
+        {
+            otherParked = other;
+            other = 0;
+        }
+        changedParked = 0; // this one is in use now; nothing of it is waiting
+    }
+    else if (otherParked != 0)
+    {
+        other = otherParked;
+        otherParked = 0;
+    }
 }
 
 // Test scene views that write meters as colors for tools/compare_depth.ps1 (DepthBands.hlsli, EncodeMeters).
@@ -1897,7 +1935,10 @@ void Graphics::DrawViewWindow()
         // Water depth = 0 - world position y (the water is at y = 0): the answer key the depth buffer is
         // checked against later, not the depth buffer itself.
         const char* sceneDebugLabels[] = { "Render", "Water depth (WP, m) - water hidden", "Water depth numeric (WP) - compare tool" };
-        ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels));
+        if (ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels)))
+        {
+            SwapDebugViews(sceneDebug_, parkedSceneDebug_, water_.debugMode, parkedWaterDebug_);
+        }
         if (sceneDebug_ == 1)
         {
             // Same bands and display colors as DepthBandColor in scene.hlsl.
@@ -1973,7 +2014,15 @@ void Graphics::DrawViewWindow()
     const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)",
         "Scene depth, water only (test scenes)", "Water coverage (test scenes)",
         "Water depth (from depth buffer)", "Underwater view path", "Water depth numeric (compare tool)", "View path numeric (compare tool)" };
-    ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
+    if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
+    {
+        SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
+    }
+    if (scene_ != NoScene)
+    {
+        ImGui::TextDisabled("Scene Debug and Debug Mode take turns: picking one");
+        ImGui::TextDisabled("parks the other, Render brings it back. X = swap.");
+    }
     const std::string& shaderError = colorShader_->GetLastError();
     if (!shaderError.empty())
     {

@@ -116,6 +116,8 @@ private:
     static std::vector<SceneObject> BuildWaterLab();    // known depths: pads, stairs, pillar, near-surface pads
     static std::vector<SceneObject> BuildWaterfront();  // graybox of the target scene
     bool IsNumericView() const; // meters-as-color views: no sky, no lit pixels (depth-reconstruct)
+    // Scene Debug <-> water Debug Mode take turns in the test scenes (the other is parked, then restored).
+    static void SwapDebugViews(int& changed, int& changedParked, int& other, int& otherParked);
     void RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection,
                          const DirectX::XMFLOAT4& lightDir, const DirectX::XMFLOAT4& lightColor,
                          const DirectX::XMFLOAT4& ambientColor);
@@ -159,6 +161,8 @@ private:
     bool showWater_ = true;
     bool labWaves_ = false;
     int sceneDebug_ = 0; // 0 render, 1 depth below the water (the water is not drawn)
+    int parkedSceneDebug_ = 0; // Scene Debug view put aside while a water Debug Mode is on (SwapDebugViews)
+    int parkedWaterDebug_ = 0; // water Debug Mode put aside while a Scene Debug view is on
     int transmissionMode_ = 1; // test scenes: 0 opaque water (as before), 1 pass-through (scene-color-depth)
     float maxUnderwaterDistance_ = 50.0f; // m: view path where no surface is behind the water (depth-reconstruct)
     // Debug layer messages (Debug builds), counted per text; written next to a capture set.
@@ -257,6 +261,7 @@ private:
     bool showLightWindow_ = false;
     bool showWaterWindow_ = false;
     std::array<bool, 3> toggleKeyWasDown_ = {}; // edge detection for keys 1 / 2 / 3
+    bool swapKeyWasDown_ = false; // edge detection for X (swap the two debug views)
     // Last flow direction per normal layer, so the direction slider keeps its value at speed 0.
     std::array<float, 2> flowDirectionDeg_ = {0.0f, 0.0f};
     std::string captureStatus_;

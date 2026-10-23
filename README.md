@@ -65,6 +65,7 @@ cmake --build --preset vs2022-debug       # Release는 vs2022-release
 | 마우스 왼쪽 드래그 | 벤치 평면 회전 (오션 그리드에서는 시점 회전) |
 | 마우스 오른쪽 드래그 | 시점 회전 |
 | `1` / `2` / `3` | View / Light / Water 설정 창 열기·닫기 |
+| `X` | 테스트 장면에서 Scene Debug ↔ Debug Mode 화면 맞바꾸기 (정답지 ↔ 복원 비교) |
 | `Esc` | 종료 |
 
 | 창 | 섹션 |
