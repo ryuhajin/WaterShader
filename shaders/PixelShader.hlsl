@@ -9,6 +9,13 @@ Texture2D    g_NormalMap     : register(t1); // layer A
 Texture2D    g_NormalMapB    : register(t2); // layer B (may be the same texture as A)
 SamplerState g_NormalSampler : register(s1);
 
+#if SCENE_INPUTS
+// Test scenes (scene-color-depth): the scene as it was before the water was drawn. Read with Load, one texel
+// per pixel, so pass-through returns exactly the same value (a filtered sample would blend neighbors).
+Texture2D        g_SceneColor : register(t3); // HDR color copy
+Texture2D<float> g_SceneDepth : register(t4); // depth buffer, 0 (near) .. 1 (far), not linear in distance
+#endif
+
 float4 DebugOut(float3 value)
 {
     return float4(SrgbToLinear(saturate(value)), 1.0);
@@ -164,6 +171,18 @@ float GustMask(float2 positionXZ, float time)
 // SV_IsFrontFace = rasterizer stage에서 결정되는 system value. 픽셀이 front face에 속하면 true.
 float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
+#if SCENE_INPUTS
+    int3 scenePixel = int3(input.position.xy, 0); // SV_POSITION.xy is the pixel center (x + 0.5)
+    float3 sceneColor = g_SceneColor.Load(scenePixel).rgb;
+    float sceneDepth = g_SceneDepth.Load(scenePixel);
+    int sceneDebugMode = (int)g_DebugParams.x;
+    // 8 = raw depth as gray: almost everything sits near 1 (white), the value is not proportional to distance.
+    if (sceneDebugMode == 8) { return DebugOut(sceneDepth.xxx); }
+    // 9 = where the water is drawn: the scene tinted blue (HDR, tonemapped like a normal frame).
+    if (sceneDebugMode == 9) { return float4(sceneColor * float3(0.35, 0.55, 1.0) + float3(0.0, 0.02, 0.08), 1.0); }
+    // Pass-through: no water effect at all. Must match the frame with the water switched off.
+    if (g_SceneParams.x >= 1.0) { return float4(sceneColor, 1.0); }
+#endif
     // Two scrolling normal map samples blended in tangent space.
     float time = g_WaterParams.x;
     float reflectionStrength = g_WaterParams.y;

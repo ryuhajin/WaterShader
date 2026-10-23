@@ -1,6 +1,6 @@
 # Scene Color & Depth — 2단계 물 없는 장면의 색·깊이와 기본 투과
 
-> Branch: `feature/scene-color-depth` · Status: draft · Updated: 2026-10-23
+> Branch: `feature/scene-color-depth` · Status: done · Updated: 2026-10-24
 > waterfront 업그레이드 2단계. 앞 단계: [../water-lab/NOTES.md](../water-lab/NOTES.md)
 
 ## 1. Goal / Visual Target
@@ -53,7 +53,7 @@ if (transmissionMode == 1) return float4(background, 1.0); // 효과 없음 = �
 | 모드 | 내용 | 보여 주려는 것 |
 |---|---|---|
 | Scene color copy | 복사본 그대로 | 물이 무엇을 읽는가 |
-| Scene depth (raw) | 깊이 값을 대비를 키워 회색으로 | 깊이는 읽힌다. 그런데 0~1 값이 거리와 비례하지 않는다 → 3단계 |
+| Scene depth, water only (test scenes) | 깊이 버퍼 값(0~1)을 그대로 회색으로 | 깊이는 읽힌다. 그런데 0~1 값이 거리와 비례하지 않는다 → 3단계 |
 | Water coverage | 장면 색 위에 물이 그려진 픽셀만 파랗게 | 물 밖 기둥·계단 윗부분은 물이 안 그려짐 (깊이 테스트) |
 
 **참고 자료**
@@ -80,17 +80,17 @@ if (transmissionMode == 1) return float4(background, 1.0); // 효과 없음 = �
 
 **에이전트 검증**
 
-- [ ] Debug·Release 빌드 경고 0, D3D 디버그 레이어 RTV/SRV/DSV 충돌 경고 0 (Debug 빌드 출력 확인)
-- [ ] 기존 샷 21장이 0단계 기준과 바이트까지 같음 (벤치·오션 경로 회귀 없음)
-- [ ] 테스트 장면 5샷 × 프리셋 3: **Pass-through 물 켬 == 물 끔** (PNG 바이트 비교)
-- [ ] Water coverage 디버그에서 물 밖 기둥·계단 윗부분·+5cm 받침대에 물이 그려지지 않음
-- [ ] 창 리사이즈 후에도 같은 결과 (복사본·깊이 SRV 재생성)
+- [x] Debug·Release 빌드 경고 0, D3D 디버그 레이어 RTV/SRV/DSV 충돌 경고 0 (Debug 빌드 출력 확인)
+- [x] 기존 샷 21장이 0단계 기준과 바이트까지 같음 (벤치·오션 경로 회귀 없음)
+- [x] 테스트 장면 5샷 × 프리셋 3: **Pass-through 물 켬 == 물 끔** (PNG 바이트 비교)
+- [x] Water coverage 디버그에서 물 밖 기둥·계단 윗부분·+5cm 받침대에 물이 그려지지 않음
+- [x] 창 리사이즈 후에도 같은 결과 (복사본·깊이 SRV 재생성)
 
 **사용자 검증**
 
-- [ ] Transmission을 Pass-through ↔ Opaque로 바꾸며 "물이 아래를 읽는다"는 차이를 확인
-- [ ] Scene depth (raw) 화면을 보고 "깊이 값이 거리와 비례하지 않는다"를 확인
-- [ ] 왜 복사본이 필요한지, 왜 깊이를 읽기 전용으로 묶어야 하는지 설명할 수 있다
+- [x] Transmission을 Pass-through ↔ Opaque로 바꾸며 "물이 아래를 읽는다"는 차이를 확인
+- [x] Scene depth, water only (test scenes) 화면을 보고 "깊이 값이 거리와 비례하지 않는다"를 확인
+- [x] 왜 복사본이 필요한지, 왜 깊이를 읽기 전용으로 묶어야 하는지 설명할 수 있다
 
 ## 5. Notes
 

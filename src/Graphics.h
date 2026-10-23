@@ -18,6 +18,7 @@
 
 #include <array>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -54,6 +55,8 @@ private:
     std::filesystem::path CapturesRoot() const; // <capture root>/<feature>/captures
     bool BeginCaptureFrame();
     void EndCaptureFrame();
+    void DrainD3dMessages();                                      // debug layer messages so far -> d3dMessages_
+    void WriteD3dMessages(const std::filesystem::path& path);    // debug layer log of this run
 
     // Sun used only while the camera sits exactly on the fixed "top" shot. Looking straight down, the glint
     // shows only with the sun in front of the plane (high), which the other shots and the theme don't want.
@@ -155,6 +158,10 @@ private:
     bool showWater_ = true;
     bool labWaves_ = false;
     int sceneDebug_ = 0; // 0 render, 1 depth below the water (the water is not drawn)
+    int transmissionMode_ = 1; // test scenes: 0 opaque water (as before), 1 pass-through (scene-color-depth)
+    // Debug layer messages (Debug builds), counted per text; written next to a capture set.
+    std::map<std::string, int> d3dMessages_;
+    size_t d3dMessageTotal_ = 0;
     std::vector<std::unique_ptr<CubemapTexture>> environments_; // one per kEnvironments entry
     int environmentIndex_ = 0;
     // Water normal maps (kNormalMaps, plus the --normal-map file if given). Each layer picks its own.

@@ -56,7 +56,7 @@
 | ImGui | Scene | combo | Bench plane / Ocean / Water Lab / Waterfront |
 | ImGui | Show Water | checkbox | 기본 켬 |
 | ImGui | Lab Waves | checkbox | 기본 끔 (Lab·Waterfront에서 Gerstner 진폭 0) |
-| ImGui | Scene Debug | combo | Render / Depth below water |
+| ImGui | Scene Debug | combo | Render / Water depth (WP, m) |
 | 고정 샷 | `lab_top`, `lab_stairs`, `lab_low`, `lab_pillar`, `front_rails` | | 위에서 / 계단 사선 / 낮은 수면 / 기둥 근접 / 목표 장면 |
 | 파일 | `assets/camera_presets.txt` | v2 | 슬롯에 장면 번호 추가, v1도 읽음 |
 
