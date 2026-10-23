@@ -1,6 +1,6 @@
 # foam-mask
 
-> Branch: `feature/foam-mask` · Status: **deferred (post-2026-05-11)** · Updated: 2026-05-10
+> Branch: `feature/foam-mask` · Status: **deferred** · Updated: 2026-10-23 — waterfront 6B(접촉 거품)에서 `wave_foam.dds` 재사용 검토
 
 ## 0. Status — 마감 후 재개
 

@@ -1,7 +1,8 @@
 # Renders the ocean-hero comparison: wave variants (columns of make_compare) x shots.
 #   Each variant is a copy of assets/shader_presets.txt whose ocean Basic line has the variant's changes;
 #   the other presets and the bench lines are left as they are.
-#   Captures go to captures/<variant>/basic_<shot>.jpg, comparison sheets (one per shot) to compare/.
+#   Captures go to ../ws-capture/ocean-hero/captures/<variant>/basic_<shot>.jpg, comparison sheets
+#   (one per shot) to ../ws-capture/ocean-hero/compare/.
 #   -Cameras <file> + -Shots slot1,... renders camera slots of that file instead (framing candidates).
 # Usage: powershell -File make_samples.ps1                 (all variants)
 #        powershell -File make_samples.ps1 -Only w2,w3      (some of them)
@@ -121,4 +122,4 @@ foreach ($name in $variants.Keys) {
 }
 
 $steps = [string[]]@($variants.Keys)
-& (Join-Path $root "docs\features\water-polish\make_compare.ps1") -Dir $PSScriptRoot @steps
+& (Join-Path $root "docs\features\water-polish\make_compare.ps1") -Feature ocean-hero @steps

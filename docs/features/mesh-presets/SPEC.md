@@ -1,6 +1,6 @@
 # mesh-presets
 
-> Branch: `feature/mesh-presets` · Status: in-progress · Updated: 2026-10-04
+> Branch: `feature/mesh-presets` · Status: done · Updated: 2026-10-04 (상태 정정 2026-10-23)
 
 ## 1. Goal / Visual Target
 

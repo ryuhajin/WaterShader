@@ -39,6 +39,18 @@ std::wstring GetAssetPath(const wchar_t* relativePath)
 #endif
 }
 
+// Captures are kept outside the repository, in a ws-capture folder next to it, so the docs stay light
+// and the same place is used by Debug and Release (Release used to write next to the exe).
+std::filesystem::path GetDefaultCaptureRoot()
+{
+#ifdef WATERSHADER_CAPTURE_DIR
+    return std::filesystem::path(WATERSHADER_CAPTURE_DIR);
+#else
+    // assets/ -> project root -> its parent
+    return std::filesystem::path(GetAssetPath(L"shader_presets.txt")).parent_path().parent_path().parent_path() / L"ws-capture";
+#endif
+}
+
 // std::string(ws.begin(), ws.end()) truncates each wchar_t to one byte (C4244) and mangles any
 // non-ASCII path. ImGui and our logs expect UTF-8, so convert explicitly.
 std::string WideToUtf8(const std::wstring& text)
@@ -252,7 +264,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --shot <name>          start from a fixed camera shot (e.g. ocean_aerial)
     //   --ui <view|light|water|all>  open settings windows at start (screenshots; keys 1/2/3 otherwise)
     //   --no-vsync             start uncapped (for FPS / GPU ms measurement)
-    //   --capture-feature <f>  captures go to docs/features/<f>/captures (default water-polish)
+    //   --capture-feature <f>  captures go to <capture root>/<f>/captures (default water-polish)
+    //   --capture-root <dir>   capture root instead of ../ws-capture next to the repository
     //   --tonemap <none|reinhard|aces|aces-hue>  tone curve for this run
     //   --exposure <ev>        overrides every preset's exposure (operator comparisons)
     //   --far-waves <on|off>   pixel-shader wave slopes past the mesh wave fade (default on)
@@ -291,6 +304,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                     showWaterWindow_ = ui == L"water" || ui == L"all";
                 }
                 else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
+                else if (arg == L"--capture-root" && hasValue) { captureRootOverride_ = argv[++i]; }
                 else if (arg == L"--preset-file" && hasValue) { presetFileOverride_ = argv[++i]; }
                 else if (arg == L"--camera-file" && hasValue) { cameraFileOverride_ = argv[++i]; }
                 else if (arg == L"--capture-presets" && hasValue) { capturePresetFilter_ = SplitList(WideToUtf8(argv[++i])); }
@@ -524,6 +538,12 @@ void Graphics::SaveCurrentPreset(int theme)
     SavePresets();
 }
 
+std::filesystem::path Graphics::CapturesRoot() const
+{
+    const std::filesystem::path root = captureRootOverride_.empty() ? GetDefaultCaptureRoot() : captureRootOverride_;
+    return root / captureFeature_ / L"captures";
+}
+
 void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone, bool allowOverwrite)
 {
     // Shots: the fixed shots, or the ones named by --capture-shots (which may also name camera slots).
@@ -556,10 +576,8 @@ void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone, boo
         }
     }
 
-    // assets/ -> project root -> docs/features/<feature>/captures/<label>
-    const std::filesystem::path projectRoot =
-        std::filesystem::path(GetAssetPath(L"shader_presets.txt")).parent_path().parent_path();
-    const std::filesystem::path capturesRoot = projectRoot / "docs" / "features" / captureFeature_ / "captures";
+    // <capture root>/<feature>/captures/<label>
+    const std::filesystem::path capturesRoot = CapturesRoot();
     captureDir_ = capturesRoot / label;
     std::error_code ec;
     for (int suffix = 2; !allowOverwrite && std::filesystem::exists(captureDir_, ec); ++suffix)
@@ -1562,7 +1580,7 @@ void Graphics::DrawViewWindow()
     if (ImGui::BeginPopupModal("Confirm capture", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
         ImGui::Text("Capture %d images to", static_cast<int>(kPresetThemeCount * std::size(kCaptureShots)));
-        ImGui::Text("docs/features/%s/captures/%s ?", WideToUtf8(captureFeature_).c_str(), captureLabel_);
+        ImGui::Text("%s ?", WideToUtf8((CapturesRoot() / Utf8ToWide(captureLabel_)).wstring()).c_str());
         ImGui::TextDisabled("An existing folder is kept; a numbered folder is created instead.");
         if (ImGui::Button("Capture"))
         {
