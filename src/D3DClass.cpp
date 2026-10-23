@@ -236,7 +236,74 @@ bool D3DClass::CreateHdrTarget()
     ThrowIfFailed(device_->CreateTexture2D(&desc, nullptr, &hdrTexture_), "HDR target creation failed.");
     ThrowIfFailed(device_->CreateRenderTargetView(hdrTexture_.Get(), nullptr, &hdrRTV_), "HDR RTV creation failed.");
     ThrowIfFailed(device_->CreateShaderResourceView(hdrTexture_.Get(), nullptr, &hdrSRV_), "HDR SRV creation failed.");
+
+    // Same size and format as the HDR target (CopyResource needs both), read-only for the water.
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    ThrowIfFailed(device_->CreateTexture2D(&desc, nullptr, &sceneColorTexture_), "Scene color copy creation failed.");
+    ThrowIfFailed(device_->CreateShaderResourceView(sceneColorTexture_.Get(), nullptr, &sceneColorSRV_), "Scene color SRV creation failed.");
     return true;
+}
+
+void D3DClass::CopySceneColor()
+{
+    deviceContext_->CopyResource(sceneColorTexture_.Get(), hdrTexture_.Get());
+}
+
+void D3DClass::BindHdrTargetReadOnlyDepth()
+{
+    deviceContext_->OMSetRenderTargets(1, hdrRTV_.GetAddressOf(), depthStencilViewReadOnly_.Get());
+}
+
+void D3DClass::SetDepthTestNoWrite()
+{
+    deviceContext_->OMSetDepthStencilState(depthTestNoWriteState_.Get(), 0);
+}
+
+std::vector<std::string> D3DClass::TakeDebugMessages(size_t* allMessages)
+{
+    std::vector<std::string> messages;
+    Microsoft::WRL::ComPtr<ID3D11InfoQueue> queue;
+    if (!device_ || FAILED(device_.As(&queue)))
+    {
+        return messages;
+    }
+    const UINT64 count = queue->GetNumStoredMessages();
+    if (allMessages)
+    {
+        *allMessages += static_cast<size_t>(count);
+    }
+    for (UINT64 i = 0; i < count; ++i)
+    {
+        SIZE_T size = 0;
+        if (FAILED(queue->GetMessage(i, nullptr, &size)) || size == 0)
+        {
+            continue;
+        }
+        std::vector<char> buffer(size);
+        auto* message = reinterpret_cast<D3D11_MESSAGE*>(buffer.data());
+        if (SUCCEEDED(queue->GetMessage(i, message, &size)) && message->Severity <= D3D11_MESSAGE_SEVERITY_WARNING)
+        {
+            messages.emplace_back(message->pDescription);
+        }
+    }
+    queue->ClearStoredMessages();
+    return messages;
+}
+
+void D3DClass::TriggerHazardForTest()
+{
+    deviceContext_->OMSetRenderTargets(1, hdrRTV_.GetAddressOf(), depthStencilView_.Get());
+    ID3D11ShaderResourceView* srv = depthSRV_.Get();
+    deviceContext_->PSSetShaderResources(7, 1, &srv);
+    ID3D11ShaderResourceView* nullSrv = nullptr;
+    deviceContext_->PSSetShaderResources(7, 1, &nullSrv);
+}
+
+bool D3DClass::HasDebugLayer() const
+{
+    // The creation flag, not the interface: the device falls back to no debug layer when the Graphics Tools
+    // feature is missing (CreateDeviceAndSwapChain).
+    return device_ && (device_->GetCreationFlags() & D3D11_CREATE_DEVICE_DEBUG) != 0;
 }
 
 void D3DClass::BindBackBuffer()
@@ -280,6 +347,12 @@ bool D3DClass::CreateDepthStates()
     desc.StencilEnable = FALSE;
 
     ThrowIfFailed(device_->CreateDepthStencilState(&desc, &depthLessEqualState_), "CreateDepthStencilState (LessEqual) failed.");
+
+    // The water over the test scenes: tested against the scene (Less, like the default state), never written,
+    // so the depth of the scene under it survives for the passes that read it.
+    desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+    desc.DepthFunc = D3D11_COMPARISON_LESS;
+    ThrowIfFailed(device_->CreateDepthStencilState(&desc, &depthTestNoWriteState_), "CreateDepthStencilState (no write) failed.");
     return true;
 }
 
@@ -319,11 +392,13 @@ bool D3DClass::CreateDepthStencil()
     depthDesc.Height = screenHeight_;
     depthDesc.MipLevels = 1;
     depthDesc.ArraySize = 1;
-    depthDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    // Typeless, so the same memory can be a depth-stencil (D24_UNORM_S8_UINT) and a shader input
+    // (R24_UNORM_X8_TYPELESS: the 24 depth bits as 0..1, stencil ignored). Same precision as before.
+    depthDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;
     depthDesc.SampleDesc.Count = 1;
     depthDesc.SampleDesc.Quality = 0;
     depthDesc.Usage = D3D11_USAGE_DEFAULT;
-    depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+    depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
 
     ThrowIfFailed(device_->CreateTexture2D(&depthDesc, nullptr, &depthTexture_), "Depth texture creation failed.");
 
@@ -331,6 +406,17 @@ bool D3DClass::CreateDepthStencil()
     dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
     dsvDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
     ThrowIfFailed(device_->CreateDepthStencilView(depthTexture_.Get(), &dsvDesc, &depthStencilView_), "DSV creation failed.");
+
+    // Read-only view: depth testing still works, and D3D allows the depth SRV to be bound at the same time.
+    // (DepthWriteMask = ZERO alone is only a draw setting; the binding rule needs this flag on the view.)
+    dsvDesc.Flags = D3D11_DSV_READ_ONLY_DEPTH | D3D11_DSV_READ_ONLY_STENCIL;
+    ThrowIfFailed(device_->CreateDepthStencilView(depthTexture_.Get(), &dsvDesc, &depthStencilViewReadOnly_), "Read-only DSV creation failed.");
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+    ThrowIfFailed(device_->CreateShaderResourceView(depthTexture_.Get(), &srvDesc, &depthSRV_), "Depth SRV creation failed.");
 
     return true;
 }
@@ -342,8 +428,12 @@ void D3DClass::ReleaseRenderTarget()
         deviceContext_->OMSetRenderTargets(0, nullptr, nullptr);
     }
 
+    depthSRV_.Reset();
+    depthStencilViewReadOnly_.Reset();
     depthStencilView_.Reset();
     depthTexture_.Reset();
+    sceneColorSRV_.Reset();
+    sceneColorTexture_.Reset();
     hdrSRV_.Reset();
     hdrRTV_.Reset();
     hdrTexture_.Reset();

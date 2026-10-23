@@ -7,6 +7,9 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
+#include <string>
+#include <vector>
+
 class D3DClass
 {
 public:
@@ -32,6 +35,23 @@ public:
     // Scene renders into a linear float16 HDR target; the tonemap pass resolves it into the back buffer.
     ID3D11ShaderResourceView* GetHdrSRV() const { return hdrSRV_.Get(); }
     void BindBackBuffer();
+
+    // Water inputs (scene-color-depth): the scene as it was before the water is drawn.
+    // CopySceneColor snapshots the HDR target; BindHdrTargetReadOnlyDepth keeps depth testing while the
+    // same depth texture is read through GetSceneDepthSRV (a writable DSV and an SRV can't be bound together).
+    void CopySceneColor();
+    void BindHdrTargetReadOnlyDepth();
+    void SetDepthTestNoWrite();
+    ID3D11ShaderResourceView* GetSceneColorSRV() const { return sceneColorSRV_.Get(); }
+    ID3D11ShaderResourceView* GetSceneDepthSRV() const { return depthSRV_.Get(); }
+
+    // Debug layer (Debug builds): warnings and errors since the last call. Empty without the layer.
+    // allMessages (optional) counts every stored message, info included: proof the queue is live.
+    std::vector<std::string> TakeDebugMessages(size_t* allMessages = nullptr);
+    bool HasDebugLayer() const;
+    // Binds the depth SRV while the writable depth is bound: a hazard the debug layer must report.
+    // Proves the message log works (--d3d-selftest); the runtime unbinds it and nothing is drawn with it.
+    void TriggerHazardForTest();
     bool GetVSync() const { return vsyncEnabled_; }
     void SetVSync(bool enabled) { vsyncEnabled_ = enabled; }
 
@@ -58,8 +78,13 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Texture2D> hdrTexture_;
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> hdrRTV_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> hdrSRV_;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> depthTexture_;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> sceneColorTexture_; // copy of the HDR target before the water
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sceneColorSRV_;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> depthTexture_;      // R24G8_TYPELESS: depth-stencil and readable
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView_;
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilViewReadOnly_;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depthSRV_;
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthTestNoWriteState_;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState_;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateDoubleSided_;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateWaterSurface_;

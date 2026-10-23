@@ -57,6 +57,7 @@ struct PerFrameCB
     // x = ripple roughness, y = gust strength, z = gust scale, w = haze strength
     DirectX::XMFLOAT4 detailParams;
     DirectX::XMFLOAT4 detailParams2; // x = far wave crests (1 = as before)
+    DirectX::XMFLOAT4 sceneParams;   // x = transmission mode (test scenes, SCENE_INPUTS program only)
 };
 static_assert(sizeof(WaveParams) == 32, "WaveParams must match the 2-register HLSL layout");
 static_assert(sizeof(PerFrameCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
@@ -156,9 +157,11 @@ bool ColorShader::Render(
     ID3D11ShaderResourceView* normalSRVA, // layer A (t1)
     ID3D11ShaderResourceView* normalSRVB, // layer B (t2)
     ID3D11SamplerState* clampSampler,
-    ID3D11SamplerState* wrapSampler)
+    ID3D11SamplerState* wrapSampler,
+    ID3D11ShaderResourceView* sceneColorSRV,
+    ID3D11ShaderResourceView* sceneDepthSRV)
 {
-    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, ambientColor, time, cameraPositionWS, water, cubemapSRV, normalSRVA, normalSRVB, clampSampler, wrapSampler);
+    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, ambientColor, time, cameraPositionWS, water, cubemapSRV, normalSRVA, normalSRVB, clampSampler, wrapSampler, sceneColorSRV, sceneDepthSRV);
     return true;
 }
 
@@ -232,6 +235,15 @@ bool ColorShader::Reload(ID3D11Device* device)
         lastError_ = "[OCEAN_DETAIL] " + error;
         return false;
     }
+    // Test scene permutation (scene-color-depth): reads the scene without the water. Its own program for the
+    // same reason; OCEAN_DETAIL is on too, so the ocean presets' detail values still apply there.
+    Microsoft::WRL::ComPtr<ID3DBlob> psSceneBuffer;
+    const D3D_SHADER_MACRO sceneDefines[] = { {"OCEAN_DETAIL", "1"}, {"SCENE_INPUTS", "1"}, {nullptr, nullptr} };
+    if (!CompileShader(psPath_.c_str(), "PSMain", "ps_5_0", &psSceneBuffer, &error, sceneDefines))
+    {
+        lastError_ = "[SCENE_INPUTS] " + error;
+        return false;
+    }
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> newVS;
     if (FAILED(device->CreateVertexShader(vsBuffer->GetBufferPointer(), vsBuffer->GetBufferSize(), nullptr, &newVS)))
@@ -251,6 +263,13 @@ bool ColorShader::Reload(ID3D11Device* device)
     if (FAILED(device->CreatePixelShader(psDetailBuffer->GetBufferPointer(), psDetailBuffer->GetBufferSize(), nullptr, &newDetailPS)))
     {
         lastError_ = "CreatePixelShader (OCEAN_DETAIL) failed.";
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> newScenePS;
+    if (FAILED(device->CreatePixelShader(psSceneBuffer->GetBufferPointer(), psSceneBuffer->GetBufferSize(), nullptr, &newScenePS)))
+    {
+        lastError_ = "CreatePixelShader (SCENE_INPUTS) failed.";
         return false;
     }
 
@@ -275,6 +294,7 @@ bool ColorShader::Reload(ID3D11Device* device)
     vertexShader_ = newVS;
     pixelShader_ = newPS;
     pixelShaderDetail_ = newDetailPS;
+    pixelShaderScene_ = newScenePS;
     layout_ = newLayout;
 
     lastError_.clear();
@@ -318,6 +338,7 @@ void ColorShader::ShutdownShader()
 {
     perFrameCB_.Reset();
     layout_.Reset();
+    pixelShaderScene_.Reset();
     pixelShaderDetail_.Reset();
     pixelShader_.Reset();
     vertexShader_.Reset();
@@ -339,7 +360,9 @@ void ColorShader::RenderShader(
     ID3D11ShaderResourceView* normalSRVA, // layer A (t1)
     ID3D11ShaderResourceView* normalSRVB, // layer B (t2)
     ID3D11SamplerState* clampSampler,
-    ID3D11SamplerState* wrapSampler)
+    ID3D11SamplerState* wrapSampler,
+    ID3D11ShaderResourceView* sceneColorSRV,
+    ID3D11ShaderResourceView* sceneDepthSRV)
 {
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     if (SUCCEEDED(deviceContext->Map(perFrameCB_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
@@ -392,6 +415,7 @@ void ColorShader::RenderShader(
             water.gustScale,
             water.hazeStrength);
         data->detailParams2 = DirectX::XMFLOAT4(water.farWaveCrests, water.lodScale, std::log2(water.lodScale), 0.0f);
+        data->sceneParams = DirectX::XMFLOAT4(static_cast<float>(water.transmissionMode), 0.0f, 0.0f, 0.0f);
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
@@ -402,10 +426,17 @@ void ColorShader::RenderShader(
     deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
     const bool oceanDetail = water.rippleRoughness > 0.0f || water.gustStrength > 0.0f ||
         water.hazeStrength > 0.0f || water.farWaveCrests < 1.0f || water.lodScale != 1.0f || water.debugMode == 7;
-    deviceContext->PSSetShader(oceanDetail ? pixelShaderDetail_.Get() : pixelShader_.Get(), nullptr, 0);
+    const bool sceneInputs = sceneColorSRV != nullptr && sceneDepthSRV != nullptr;
+    deviceContext->PSSetShader(sceneInputs ? pixelShaderScene_.Get()
+                             : oceanDetail ? pixelShaderDetail_.Get() : pixelShader_.Get(), nullptr, 0);
     deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->PSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->PSSetShaderResources(0, 3, srvs);
+    if (sceneInputs)
+    {
+        ID3D11ShaderResourceView* sceneSrvs[2] = {sceneColorSRV, sceneDepthSRV};
+        deviceContext->PSSetShaderResources(3, 2, sceneSrvs);
+    }
     deviceContext->PSSetSamplers(0, 2, samplers);
     deviceContext->DrawIndexed(indexCount, 0, 0);
 }

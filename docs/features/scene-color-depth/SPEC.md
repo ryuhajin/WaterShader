@@ -1,6 +1,6 @@
 # Scene Color & Depth — 2단계 물 없는 장면의 색·깊이와 기본 투과
 
-> Branch: `feature/scene-color-depth` · Status: draft · Updated: 2026-10-23
+> Branch: `feature/scene-color-depth` · Status: in-progress · Updated: 2026-10-24
 > waterfront 업그레이드 2단계. 앞 단계: [../water-lab/NOTES.md](../water-lab/NOTES.md)
 
 ## 1. Goal / Visual Target

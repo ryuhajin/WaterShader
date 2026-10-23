@@ -294,6 +294,9 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --far-waves <on|off>   pixel-shader wave slopes past the mesh wave fade (default on)
     //   --water <on|off>       draw the water in the test scenes (lab_* / front_* shots, default on)
     //   --scene-debug <mode>   test scene debug view: 1 = depth below the water (the water is hidden)
+    //   --transmission <mode>  test scene water: 0 = opaque (old), 1 = pass-through (default)
+    //   --resize-cycle         recreate the size-dependent targets once before rendering (resize test)
+    //   --d3d-selftest         cause one known debug layer hazard (checks that d3d_messages.txt catches it)
     //   --align-ripples <on|off>  "Align to wind" for both normal map layers, overrides the presets
     //   --preset-file <path>   load/save presets from this file instead of assets/shader_presets.txt
     //                          (captures with fixed values while the working presets keep changing)
@@ -306,6 +309,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     std::wstring normalMapArg;
     std::wstring shotArg;
     bool vsyncArg = VSYNC_ENABLED;
+    bool resizeCycle = false;
+    bool d3dSelfTest = false;
     {
         int argc = 0;
         if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc))
@@ -352,6 +357,9 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--far-waves" && hasValue)  { farWaveNormals_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--water" && hasValue)      { showWater_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--scene-debug" && hasValue) { sceneDebug_ = _wtoi(argv[++i]); }
+                else if (arg == L"--transmission" && hasValue) { transmissionMode_ = _wtoi(argv[++i]); }
+                else if (arg == L"--resize-cycle")            { resizeCycle = true; }
+                else if (arg == L"--d3d-selftest")            { d3dSelfTest = true; }
                 else if (arg == L"--exposure" && hasValue)   { exposureOverrideEv_ = static_cast<float>(_wtof(argv[++i])); hasExposureOverride_ = true; }
                 else if (arg == L"--tonemap" && hasValue)
                 {
@@ -507,6 +515,18 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
 
     LoadPresets();
     ApplyPreset(0);
+
+    // --resize-cycle: recreate every size-dependent resource once (half size, then back) before rendering,
+    // so a capture set shows whether the recreated targets give the same frame.
+    if (d3dSelfTest)
+    {
+        d3d_->TriggerHazardForTest();
+    }
+    if (resizeCycle)
+    {
+        Resize(std::max<unsigned int>(screenWidth_ / 2, 1u), std::max<unsigned int>(screenHeight_ / 2, 1u));
+        Resize(static_cast<unsigned int>(screenWidth), static_cast<unsigned int>(screenHeight));
+    }
 
     if (!captureLabelArg.empty())
     {
@@ -724,6 +744,33 @@ void Graphics::EndCaptureFrame()
     elapsedTime_ = captureRestore_.elapsedTime;
     captureStatus_ = "Saved -> " + WideToUtf8(captureDir_.wstring());
     captureFinishedQuit_ = quitAfterCapture_;
+    WriteD3dMessages(captureDir_ / L"d3d_messages.txt"); // drains first: this frame and the start-up are included
+}
+
+void Graphics::DrainD3dMessages()
+{
+    // Debug layer (Debug builds): keep every warning / error, the capture set writes them out.
+    for (const std::string& message : d3d_->TakeDebugMessages(&d3dMessageTotal_))
+    {
+        ++d3dMessages_[message];
+    }
+}
+
+void Graphics::WriteD3dMessages(const std::filesystem::path& path)
+{
+    DrainD3dMessages();
+    std::ofstream file(path);
+    if (!file)
+    {
+        return;
+    }
+    file << "D3D11 debug layer: " << (d3d_->HasDebugLayer() ? "on (Debug build)" : "off - nothing was checked") << '\n';
+    file << "Messages since start (info included): " << d3dMessageTotal_ << '\n';
+    file << "Warnings and errors since start: " << d3dMessages_.size() << " different\n";
+    for (const auto& [message, count] : d3dMessages_)
+    {
+        file << count << "x  " << message << '\n';
+    }
 }
 
 Graphics::CameraView Graphics::MakeViewFromCurrent() const
@@ -1465,6 +1512,16 @@ bool Graphics::Render(float deltaTime)
                 wave.amplitude = 0.0f;
             }
         }
+        // Test scenes: the water reads the scene without the water (scene-color-depth). Snapshot the color,
+        // then rebind the depth read-only so it can be tested against and read in the same draw.
+        const bool sceneInputs = scene_ != NoScene;
+        if (sceneInputs)
+        {
+            d3d_->CopySceneColor();
+            d3d_->BindHdrTargetReadOnlyDepth();
+            d3d_->SetDepthTestNoWrite();
+            waterDraw.transmissionMode = transmissionMode_;
+        }
         waterMesh->Render(d3d_->GetDeviceContext());
         colorShader_->Render(
             d3d_->GetDeviceContext(),
@@ -1482,15 +1539,25 @@ bool Graphics::Render(float deltaTime)
             normalMaps_[normalMapA_]->GetSRV(),
             normalMaps_[normalMapB_]->GetSRV(),
             d3d_->GetSampler(),
-            d3d_->GetWrapSampler());
+            d3d_->GetWrapSampler(),
+            sceneInputs ? d3d_->GetSceneColorSRV() : nullptr,
+            sceneInputs ? d3d_->GetSceneDepthSRV() : nullptr);
         d3d_->SetRasterizerDefault();
+        if (sceneInputs)
+        {
+            // Unbind before the next frame binds the depth writable again (and the copy as a copy target).
+            ID3D11ShaderResourceView* nullSrvs[2] = {};
+            d3d_->GetDeviceContext()->PSSetShaderResources(3, 2, nullSrvs);
+            d3d_->SetDepthDefault();
+        }
     }
 
     // HDR scene -> sRGB back buffer. Debug views carry data, not light, so they skip exposure and the
     // tone curve (their values were pre-decoded in the pixel shader and come back out unchanged).
     d3d_->BindBackBuffer();
     d3d_->SetRasterizerDoubleSided(); // the fullscreen triangle is clockwise; don't let it get culled
-    const bool debugView = water_.debugMode != 0 || (scene_ != NoScene && sceneDebug_ != 0);
+    // Water coverage (9) is a tinted HDR frame, so it keeps exposure and the tone curve.
+    const bool debugView = (water_.debugMode != 0 && water_.debugMode != 9) || (scene_ != NoScene && sceneDebug_ != 0);
     tonemapShader_->Render(
         d3d_->GetDeviceContext(),
         d3d_->GetHdrSRV(),
@@ -1519,6 +1586,8 @@ bool Graphics::Render(float deltaTime)
     cpuFrameMs_ = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - now).count();
 
     d3d_->EndScene();
+
+    DrainD3dMessages();
 
     return !captureFinishedQuit_;
 }
@@ -1812,6 +1881,8 @@ void Graphics::DrawViewWindow()
         ImGui::Checkbox("Lab Waves", &labWaves_);
         const char* sceneDebugLabels[] = { "Render", "Depth below water (water hidden)" };
         ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels));
+        const char* transmissionLabels[] = { "Opaque (old water)", "Pass-through (no effect)" };
+        ImGui::Combo("Transmission", &transmissionMode_, transmissionLabels, IM_ARRAYSIZE(transmissionLabels));
         ImGui::TextDisabled("1 unit = 1 m, water at y = 0, ocean presets.");
         ImGui::TextDisabled("Waves stay flat unless Lab Waves is on.");
     }
@@ -1860,7 +1931,8 @@ void Graphics::DrawViewWindow()
     }
 
     ImGui::SeparatorText("Debug View");
-    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)" };
+    const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)",
+        "Scene depth, raw (test scenes)", "Water coverage (test scenes)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
     const std::string& shaderError = colorShader_->GetLastError();
     if (!shaderError.empty())

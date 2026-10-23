@@ -60,8 +60,12 @@ public:
             { { 0.574f,  0.819f}, 0.010f, 0.62f, 0.35f, 0.65f },
             { { 0.766f, -0.643f}, 0.006f, 0.41f, 0.28f, 0.70f },
         };
-        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face, 5=lighting terms, 6=wave LOD, 7=ocean detail
+        int debugMode = 0; // 0=normal, 1=sampled normal map, 2=world-space N, 3=UV, 4=front/back face, 5=lighting terms, 6=wave LOD, 7=ocean detail,
+                           // 8=scene depth raw, 9=water coverage (8 and 9: test scenes only)
         float farWaveNormals = 1.0f; // 1 = pixel shader adds the wave slopes the mesh LOD faded out
+        // Test scenes only (scene-color-depth), set every frame, not saved: 0 = the opaque water as before,
+        // 1 = pass-through (the scene without the water, unchanged).
+        int transmissionMode = 0;
         // Normal map rotation on the water (world XZ), as cos/sin: xy = layer A, zw = layer B. (1, 0) = as authored.
         DirectX::XMFLOAT4 normalRotation = {1.0f, 0.0f, 1.0f, 0.0f};
     };
@@ -85,7 +89,11 @@ public:
         ID3D11ShaderResourceView* normalSRVA, // layer A (t1)
         ID3D11ShaderResourceView* normalSRVB, // layer B (t2)
         ID3D11SamplerState* clampSampler,
-        ID3D11SamplerState* wrapSampler);
+        ID3D11SamplerState* wrapSampler,
+        // The scene without the water (t3 color, t4 depth). Given = the SCENE_INPUTS program; the caller
+        // unbinds them after the draw.
+        ID3D11ShaderResourceView* sceneColorSRV = nullptr,
+        ID3D11ShaderResourceView* sceneDepthSRV = nullptr);
 
     const std::string& GetLastError() const { return lastError_; }
     const std::string& GetLastReloadStamp() const { return lastReloadStamp_; }
@@ -110,11 +118,14 @@ private:
         ID3D11ShaderResourceView* normalSRVA, // layer A (t1)
         ID3D11ShaderResourceView* normalSRVB, // layer B (t2)
         ID3D11SamplerState* clampSampler,
-        ID3D11SamplerState* wrapSampler);
+        ID3D11SamplerState* wrapSampler,
+        ID3D11ShaderResourceView* sceneColorSRV,
+        ID3D11ShaderResourceView* sceneDepthSRV);
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShaderDetail_; // OCEAN_DETAIL: used while any ocean detail is on
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShaderScene_;  // SCENE_INPUTS (+ OCEAN_DETAIL): water over the test scenes
     Microsoft::WRL::ComPtr<ID3D11InputLayout> layout_;
     Microsoft::WRL::ComPtr<ID3D11Buffer> perFrameCB_;
 

@@ -38,6 +38,7 @@ cbuffer PerFrameCB : register(b0)
     float4 g_DetailParams;     // ocean detail, 0 = off: x = ripple roughness, y = gust strength, z = gust scale, w = haze strength
     float4 g_DetailParams2;    // x = far wave crests (1 = as before; lower turns the pixel-band crests into glint roughness)
                                // y = render height / 720 (--render-size, else 1), z = log2(y): LOD as a 720p frame
+    float4 g_SceneParams;      // test scenes (SCENE_INPUTS program): x = transmission mode (0 opaque water, 1 pass-through)
 };
 
 struct VSInput
