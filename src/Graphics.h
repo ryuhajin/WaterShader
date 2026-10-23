@@ -163,7 +163,7 @@ private:
     int sceneDebug_ = 0; // 0 render, 1 depth below the water (the water is not drawn)
     int parkedSceneDebug_ = 0; // Scene Debug view put aside while a water Debug Mode is on (SwapDebugViews)
     int parkedWaterDebug_ = 0; // water Debug Mode put aside while a Scene Debug view is on
-    int transmissionMode_ = 1; // test scenes: 0 opaque water (as before), 1 pass-through (scene-color-depth)
+    int transmissionMode_ = 2; // test scenes: 0 opaque water (as before), 1 pass-through (scene-color-depth), 2 attenuation (rgb-attenuation)
     float maxUnderwaterDistance_ = 50.0f; // m: view path where no surface is behind the water (depth-reconstruct)
     // Debug layer messages (Debug builds), counted per text; written next to a capture set.
     std::map<std::string, int> d3dMessages_;
@@ -189,6 +189,8 @@ private:
     // Final pass: exposure (per preset, EV) and tone curve (global, --tonemap to override).
     float exposureEv_ = 0.0f;
     bool hasExposureOverride_ = false;
+    bool hasExtinctionOverride_ = false; // --extinction: wins over the presets
+    DirectX::XMFLOAT3 extinctionOverride_ = {0.0f, 0.0f, 0.0f};
     float exposureOverrideEv_ = 0.0f;
     TonemapShader::Operator tonemapOperator_ = TonemapShader::AcesHuePreserving;
 

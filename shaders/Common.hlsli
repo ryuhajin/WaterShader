@@ -41,6 +41,7 @@ cbuffer PerFrameCB : register(b0)
     float4 g_SceneParams;      // test scenes (SCENE_INPUTS program): x = transmission mode (0 opaque water, 1 pass-through)
                                // y = max optical distance (m): view path used where no surface is behind the water
     row_major float4x4 g_InvViewProjection; // test scenes: inverse of view x projection (depth -> world position)
+    float4 g_Extinction;       // test scenes: rgb = extinction per meter of view path (1/m)
 };
 
 struct VSInput

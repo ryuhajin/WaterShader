@@ -47,6 +47,9 @@ public:
         float hazeStrength       = 0.0f;    // blend toward the horizon sky with distance
         float hazeDistance       = 150.0f;  // distance where the haze reaches 1 - 1/e of hazeStrength
         float farWaveCrests      = 1.0f;    // past the mesh fade: 1 = crests per pixel (as before), 0 = all glint roughness
+        // Underwater (rgb-attenuation, test scenes): how fast light fades per meter of view path, per channel (1/m).
+        // 0 = nothing fades (presets without the keys load as 0, the effect off).
+        DirectX::XMFLOAT3 extinction = {0.0f, 0.0f, 0.0f};
         // Set every frame from the selected normal maps (NormalMapEntry::slopeVariance), not saved in presets.
         float rippleSlopeVarianceA = 0.0f;
         float rippleSlopeVarianceB = 0.0f;
@@ -64,7 +67,7 @@ public:
                            // 8=scene depth raw, 9=water coverage (8 and 9: test scenes only)
         float farWaveNormals = 1.0f; // 1 = pixel shader adds the wave slopes the mesh LOD faded out
         // Test scenes only (scene-color-depth), set every frame, not saved: 0 = the opaque water as before,
-        // 1 = pass-through (the scene without the water, unchanged).
+        // 1 = pass-through (the scene without the water, unchanged), 2 = attenuation (rgb-attenuation).
         int transmissionMode = 0;
         float maxOpticalDistance = 50.0f; // m: the view path where no surface is behind the water (sky)
         DirectX::XMFLOAT4X4 invViewProjection = {}; // inverse of view x projection: depth buffer -> world position

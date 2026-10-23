@@ -1,6 +1,6 @@
 # RGB Attenuation — 4단계 RGB 감쇠
 
-> Branch: `feature/rgb-attenuation` · Status: draft · Updated: 2026-10-24
+> Branch: `feature/rgb-attenuation` · Status: in-progress · Updated: 2026-10-24
 > waterfront 업그레이드 4단계. 앞 단계: [../depth-reconstruct/NOTES.md](../depth-reconstruct/NOTES.md)
 
 ## 1. Goal / Visual Target
