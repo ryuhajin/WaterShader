@@ -39,6 +39,8 @@ cbuffer PerFrameCB : register(b0)
     float4 g_DetailParams2;    // x = far wave crests (1 = as before; lower turns the pixel-band crests into glint roughness)
                                // y = render height / 720 (--render-size, else 1), z = log2(y): LOD as a 720p frame
     float4 g_SceneParams;      // test scenes (SCENE_INPUTS program): x = transmission mode (0 opaque water, 1 pass-through)
+                               // y = max optical distance (m): view path used where no surface is behind the water
+    row_major float4x4 g_InvViewProjection; // test scenes: inverse of view x projection (depth -> world position)
 };
 
 struct VSInput

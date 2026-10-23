@@ -159,6 +159,7 @@ private:
     bool labWaves_ = false;
     int sceneDebug_ = 0; // 0 render, 1 depth below the water (the water is not drawn)
     int transmissionMode_ = 1; // test scenes: 0 opaque water (as before), 1 pass-through (scene-color-depth)
+    float maxUnderwaterDistance_ = 50.0f; // m: view path where no surface is behind the water (depth-reconstruct)
     // Debug layer messages (Debug builds), counted per text; written next to a capture set.
     std::map<std::string, int> d3dMessages_;
     size_t d3dMessageTotal_ = 0;

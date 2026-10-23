@@ -1,6 +1,6 @@
 # Depth Reconstruct — 3단계 위치·거리 복원
 
-> Branch: `feature/depth-reconstruct` · Status: draft · Updated: 2026-10-24
+> Branch: `feature/depth-reconstruct` · Status: in-progress · Updated: 2026-10-24
 > waterfront 업그레이드 3단계. 앞 단계: [../scene-color-depth/NOTES.md](../scene-color-depth/NOTES.md)
 
 ## 1. Goal / Visual Target

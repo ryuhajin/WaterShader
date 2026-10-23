@@ -14,6 +14,7 @@ SamplerState g_NormalSampler : register(s1);
 // per pixel, so pass-through returns exactly the same value (a filtered sample would blend neighbors).
 Texture2D        g_SceneColor : register(t3); // HDR color copy
 Texture2D<float> g_SceneDepth : register(t4); // depth buffer, 0 (near) .. 1 (far), not linear in distance
+#include "DepthBands.hlsli"
 #endif
 
 float4 DebugOut(float3 value)
@@ -180,6 +181,35 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     if (sceneDebugMode == 8) { return DebugOut(sceneDepth.xxx); }
     // 9 = where the water is drawn: the scene tinted blue (HDR, tonemapped like a normal frame).
     if (sceneDebugMode == 9) { return float4(sceneColor * float3(0.35, 0.55, 1.0) + float3(0.0, 0.02, 0.08), 1.0); }
+
+    // Receiver = the surface this pixel sees through the water (depth-reconstruct). The pixel and its depth are
+    // where projection and view put the surface; the inverse matrix takes them back, and dividing by w undoes
+    // the perspective divide. Depth 1 is the cleared buffer (sky): no surface, nothing to reconstruct.
+    uint sceneWidth, sceneHeight;
+    g_SceneDepth.GetDimensions(sceneWidth, sceneHeight);
+    float2 sceneUv = (float2(scenePixel.xy) + 0.5) / float2(sceneWidth, sceneHeight);
+    float4 receiverH = mul(float4(sceneUv.x * 2.0 - 1.0, 1.0 - sceneUv.y * 2.0, sceneDepth, 1.0), g_InvViewProjection);
+    float3 receiverWS = receiverH.xyz / receiverH.w;
+    bool hasReceiver = sceneDepth < 1.0;
+    float maxOpticalDistance = g_SceneParams.y;
+    // Water depth: how far the surface lies below the water (the answer key measures the same thing).
+    // View path: how much water the line of sight crosses, water surface -> surface (no air part).
+    float waterDepth = hasReceiver ? input.worldPos.y - receiverWS.y : maxOpticalDistance;
+    float viewPath = hasReceiver ? length(receiverWS - input.worldPos) : maxOpticalDistance;
+    // 10 / 11 = water depth / view path in the answer key's bands, 1 m contours, magenta = no surface.
+    if (sceneDebugMode == 10 || sceneDebugMode == 11)
+    {
+        float meters = sceneDebugMode == 10 ? waterDepth : viewPath;
+        float3 color = hasReceiver ? DepthBandColor(meters) : kNoSurfaceColor;
+        color = lerp(color, float3(0.05, 0.05, 0.05), MeterContour(meters) * 0.8);
+        return DebugOut(color);
+    }
+    // 12 / 13 = the same as numbers, for tools/compare_depth.ps1.
+    if (sceneDebugMode == 12 || sceneDebugMode == 13)
+    {
+        float meters = sceneDebugMode == 12 ? waterDepth : viewPath;
+        return DebugOut(hasReceiver ? EncodeMeters(meters, kMarkerMeasured) : float3(0.0, 0.0, kMarkerNoSurface));
+    }
     // Pass-through: no water effect at all. Must match the frame with the water switched off.
     if (g_SceneParams.x >= 1.0) { return float4(sceneColor, 1.0); }
 #endif

@@ -1,4 +1,5 @@
 #include "Color.hlsli"
+#include "DepthBands.hlsli"
 
 // Opaque objects of the test scenes (water-lab). Patterns follow world position (1 unit = 1 m), so a
 // scaled box keeps 1 m checker cells and the ruler bands read as heights.
@@ -13,7 +14,7 @@ cbuffer SceneCB : register(b0)
     float4 g_LightColor;     // linear rgb, a = intensity
     float4 g_AmbientColor;   // linear rgb, a = intensity
     float4 g_BaseColor;      // linear albedo
-    float4 g_MaterialParams; // x = pattern (0 solid, 1 checker, 2 ruler, 3 pebbles), y = debug mode (0 render, 1 depth)
+    float4 g_MaterialParams; // x = pattern (0 solid, 1 checker, 2 ruler, 3 pebbles), y = debug mode (0 render, 1 water depth bands, 2 water depth numeric)
 };
 
 struct VSInput
@@ -115,17 +116,6 @@ float PebblePattern(float2 coord, out float3 stoneTint)
     return lerp(stones, 0.66, farFade);
 }
 
-// Depth bands for the debug view, picked so the Water Lab pads (0.2 / 1 / 3 / 6 m) and the 8 m floor
-// each land in their own color.
-float3 DepthBandColor(float depth)
-{
-    if (depth < 0.5) return float3(0.30, 0.95, 1.00); // ~0.2 m
-    if (depth < 2.0) return float3(0.35, 0.90, 0.35); // ~1 m
-    if (depth < 4.5) return float3(1.00, 0.90, 0.25); // ~3 m
-    if (depth < 7.0) return float3(1.00, 0.55, 0.20); // ~6 m
-    return float3(0.75, 0.40, 0.95);                  // deeper (lab floor 8 m)
-}
-
 float4 PSMain(PSInput input) : SV_TARGET
 {
     float3 n = normalize(input.normalWS);
@@ -151,6 +141,14 @@ float4 PSMain(PSInput input) : SV_TARGET
     float3 lightDirWS = normalize(-g_LightDirection.xyz);
     float diffuse = saturate(dot(n, lightDirWS));
     float3 lighting = g_AmbientColor.rgb * g_AmbientColor.a + g_LightColor.rgb * g_LightColor.a * diffuse;
+
+    // 2 = water depth as numbers (EncodeMeters): the answer key the depth-buffer reconstruction is compared to.
+    if (debugMode == 2)
+    {
+        float depth = -p.y;
+        float3 encoded = depth > 0.0 ? EncodeMeters(depth, kMarkerMeasured) : float3(0.0, 0.0, kMarkerAboveWater);
+        return float4(SrgbToLinear(encoded), 1.0);
+    }
 
     if (debugMode == 1)
     {

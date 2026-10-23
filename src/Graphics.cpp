@@ -1452,7 +1452,9 @@ bool Graphics::Render(float deltaTime)
     // Clear color is the old sRGB background, converted because the HDR target holds linear values.
     d3d_->BeginScene(SrgbToLinear(0.02f), SrgbToLinear(0.08f), SrgbToLinear(0.11f), 1.0f);
 
-    if (skyboxVisible_)
+    // The numeric answer key (Scene Debug 2) leaves the sky out, so no sky pixel can pass for a measurement.
+    const bool numericAnswerKey = scene_ != NoScene && sceneDebug_ == 2;
+    if (skyboxVisible_ && !numericAnswerKey)
     {
         d3d_->SetDepthLessEqual();
         skybox_->Render(d3d_->GetDeviceContext());
@@ -1521,6 +1523,9 @@ bool Graphics::Render(float deltaTime)
             d3d_->BindHdrTargetReadOnlyDepth();
             d3d_->SetDepthTestNoWrite();
             waterDraw.transmissionMode = transmissionMode_;
+            // depth-reconstruct: pixel + depth -> world position goes back through view x projection.
+            waterDraw.maxOpticalDistance = maxUnderwaterDistance_;
+            DirectX::XMStoreFloat4x4(&waterDraw.invViewProjection, DirectX::XMMatrixInverse(nullptr, view * projection));
         }
         waterMesh->Render(d3d_->GetDeviceContext());
         colorShader_->Render(
@@ -1881,7 +1886,7 @@ void Graphics::DrawViewWindow()
         ImGui::Checkbox("Lab Waves", &labWaves_);
         // Water depth = 0 - world position y (the water is at y = 0): the answer key the depth buffer is
         // checked against later, not the depth buffer itself.
-        const char* sceneDebugLabels[] = { "Render", "Water depth (WP, m) - water hidden" };
+        const char* sceneDebugLabels[] = { "Render", "Water depth (WP, m) - water hidden", "Water depth numeric (WP) - compare tool" };
         ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels));
         if (sceneDebug_ == 1)
         {
@@ -1905,6 +1910,8 @@ void Graphics::DrawViewWindow()
         }
         const char* transmissionLabels[] = { "Opaque (old water)", "Pass-through (no effect)" };
         ImGui::Combo("Transmission", &transmissionMode_, transmissionLabels, IM_ARRAYSIZE(transmissionLabels));
+        ImGui::SliderFloat("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
+        ImGui::TextDisabled("View path where no surface is behind the water (sky).");
         ImGui::TextDisabled("1 unit = 1 m, water at y = 0, ocean presets.");
         ImGui::TextDisabled("Waves stay flat unless Lab Waves is on.");
     }
@@ -1954,7 +1961,8 @@ void Graphics::DrawViewWindow()
 
     ImGui::SeparatorText("Debug View");
     const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)",
-        "Scene depth, water only (test scenes)", "Water coverage (test scenes)" };
+        "Scene depth, water only (test scenes)", "Water coverage (test scenes)",
+        "Water depth (from depth buffer)", "Underwater view path", "Water depth numeric (compare tool)", "View path numeric (compare tool)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
     const std::string& shaderError = colorShader_->GetLastError();
     if (!shaderError.empty())
