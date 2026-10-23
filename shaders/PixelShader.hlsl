@@ -210,8 +210,19 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         float meters = sceneDebugMode == 12 ? waterDepth : viewPath;
         return DebugOut(hasReceiver ? EncodeMeters(meters, kMarkerMeasured) : float3(0.0, 0.0, kMarkerNoSurface));
     }
+    // Transmittance: the share of the light left after the view path through the water, per channel
+    // (rgb-attenuation). Each meter keeps the same fraction, so 2 m keeps the square of what 1 m keeps:
+    // exp(-extinction x path). Extinction 0 gives exactly 1.
+    float3 transmittance = exp(-g_Extinction.rgb * viewPath);
+    // 14 = transmittance as color (white = all light gets through, black = none); compare tool input.
+    if (sceneDebugMode == 14) { return DebugOut(transmittance); }
+
+    int transmissionMode = (int)(g_SceneParams.x + 0.5);
     // Pass-through: no water effect at all. Must match the frame with the water switched off.
-    if (g_SceneParams.x >= 1.0) { return float4(sceneColor, 1.0); }
+    if (transmissionMode == 1) { return float4(sceneColor, 1.0); }
+    // Attenuation: the scene without the water, dimmed by what the water took on the way. Nothing is added
+    // back yet (the water's own color is step 5), so very long paths and no surface go black.
+    if (transmissionMode == 2) { return float4(sceneColor * transmittance, 1.0); }
 #endif
     // Two scrolling normal map samples blended in tangent space.
     float time = g_WaterParams.x;

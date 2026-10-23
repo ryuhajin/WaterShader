@@ -196,6 +196,9 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("hazeStrength", preset.water.hazeStrength);
     fn("hazeDistance", preset.water.hazeDistance);
     fn("farWaveCrests", preset.water.farWaveCrests);
+    fn("extinctionR", preset.water.extinction.x);
+    fn("extinctionG", preset.water.extinction.y);
+    fn("extinctionB", preset.water.extinction.z);
 }
 
 // Tangent-space water normal maps (RGBA8 UNORM + mips, converted with texconv --ignore-srgb so the
@@ -294,7 +297,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --far-waves <on|off>   pixel-shader wave slopes past the mesh wave fade (default on)
     //   --water <on|off>       draw the water in the test scenes (lab_* / front_* shots, default on)
     //   --scene-debug <mode>   test scene debug view: 1 = depth below the water (the water is hidden)
-    //   --transmission <mode>  test scene water: 0 = opaque (old), 1 = pass-through (default)
+    //   --transmission <mode>  test scene water: 0 = opaque (old), 1 = pass-through, 2 = attenuation (default)
+    //   --extinction <r,g,b>   underwater extinction per meter, overrides every preset (rgb-attenuation)
     //   --resize-cycle         recreate the size-dependent targets once before rendering (resize test)
     //   --d3d-selftest         cause one known debug layer hazard (checks that d3d_messages.txt catches it)
     //   --align-ripples <on|off>  "Align to wind" for both normal map layers, overrides the presets
@@ -358,6 +362,15 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--water" && hasValue)      { showWater_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--scene-debug" && hasValue) { sceneDebug_ = _wtoi(argv[++i]); }
                 else if (arg == L"--transmission" && hasValue) { transmissionMode_ = _wtoi(argv[++i]); }
+                else if (arg == L"--extinction" && hasValue)
+                {
+                    DirectX::XMFLOAT3 k{};
+                    if (swscanf_s(argv[++i], L"%f,%f,%f", &k.x, &k.y, &k.z) == 3)
+                    {
+                        extinctionOverride_ = k;
+                        hasExtinctionOverride_ = true;
+                    }
+                }
                 else if (arg == L"--resize-cycle")            { resizeCycle = true; }
                 else if (arg == L"--d3d-selftest")            { d3dSelfTest = true; }
                 else if (arg == L"--exposure" && hasValue)   { exposureOverrideEv_ = static_cast<float>(_wtof(argv[++i])); hasExposureOverride_ = true; }
@@ -567,6 +580,10 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     rippleAlignA_ = rippleAlignOverride_ >= 0 ? rippleAlignOverride_ != 0 : preset.rippleAlignA != 0;
     rippleAlignB_ = rippleAlignOverride_ >= 0 ? rippleAlignOverride_ != 0 : preset.rippleAlignB != 0;
     water_ = preset.water;
+    if (hasExtinctionOverride_)
+    {
+        water_.extinction = extinctionOverride_;
+    }
     waveMacro_ = preset.waveMacro;
 }
 
@@ -1959,7 +1976,7 @@ void Graphics::DrawViewWindow()
             }
             ImGui::TextDisabled("Dark lines every 1 m, red line = water surface (y = 0)");
         }
-        const char* transmissionLabels[] = { "Opaque (old water)", "Pass-through (no effect)" };
+        const char* transmissionLabels[] = { "Opaque (old water)", "Pass-through (no effect)", "Attenuation (light fades with the view path)" };
         ImGui::Combo("Transmission", &transmissionMode_, transmissionLabels, IM_ARRAYSIZE(transmissionLabels));
         ImGui::SliderFloat("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
         ImGui::TextDisabled("View path where no surface is behind the water (sky).");
@@ -2013,7 +2030,8 @@ void Graphics::DrawViewWindow()
     ImGui::SeparatorText("Debug View");
     const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)",
         "Scene depth, water only (test scenes)", "Water coverage (test scenes)",
-        "Water depth (from depth buffer)", "Underwater view path", "Water depth numeric (compare tool)", "View path numeric (compare tool)" };
+        "Water depth (from depth buffer)", "Underwater view path", "Water depth numeric (compare tool)", "View path numeric (compare tool)",
+        "Transmittance (RGB, compare tool)" };
     if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
     {
         SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
@@ -2184,6 +2202,35 @@ void Graphics::DrawWaterWindow()
     ImGui::SeparatorText("Water Color");
     LabeledColor("Color looking straight down", &water_.facingColor.x);
     LabeledColor("Color at a low angle", &water_.grazingColor.x);
+
+    // rgb-attenuation: only the test scenes read it (Transmission = Attenuation in the View window).
+    ImGui::SeparatorText("Underwater Light Loss (test scenes)");
+    ImGui::TextDisabled("Per meter of view path through the water.");
+    ImGui::TextDisabled("Half distance = where half of that light is left.");
+    float* extinction[3] = { &water_.extinction.x, &water_.extinction.y, &water_.extinction.z };
+    const char* channelLabels[3] = { "Red fades per meter", "Green fades per meter", "Blue fades per meter" };
+    for (int c = 0; c < 3; ++c)
+    {
+        LabeledSlider(channelLabels[c], extinction[c], 0.0f, 2.0f, "%.3f /m");
+        if (*extinction[c] > 0.0f)
+        {
+            ImGui::TextDisabled("  half left after %.1f m", 0.693f / *extinction[c]);
+        }
+        else
+        {
+            ImGui::TextDisabled("  nothing fades");
+        }
+    }
+    if (ImGui::Button("Zero"))
+    {
+        water_.extinction = {0.0f, 0.0f, 0.0f};
+    }
+    ImGui::SameLine();
+    // Pure water absorption at ~650 / 550 / 450 nm (Pope & Fry 1997), a starting point, not a target.
+    if (ImGui::Button("Pure water (ref.)"))
+    {
+        water_.extinction = {0.35f, 0.06f, 0.01f};
+    }
 
     ImGui::SeparatorText("Reflection");
     LabeledSlider("Reflection strength", &water_.reflectionStrength, 0.0f, 1.0f, "%.2f");

@@ -59,6 +59,7 @@ struct PerFrameCB
     DirectX::XMFLOAT4 detailParams2; // x = far wave crests (1 = as before)
     DirectX::XMFLOAT4 sceneParams;   // x = transmission mode, y = max optical distance (test scenes, SCENE_INPUTS only)
     DirectX::XMFLOAT4X4 invViewProjection; // test scenes: depth buffer -> world position
+    DirectX::XMFLOAT4 extinction;          // rgb = extinction per meter (test scenes)
 };
 static_assert(sizeof(WaveParams) == 32, "WaveParams must match the 2-register HLSL layout");
 static_assert(sizeof(PerFrameCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
@@ -419,6 +420,7 @@ void ColorShader::RenderShader(
         data->detailParams2 = DirectX::XMFLOAT4(water.farWaveCrests, water.lodScale, std::log2(water.lodScale), 0.0f);
         data->sceneParams = DirectX::XMFLOAT4(static_cast<float>(water.transmissionMode), water.maxOpticalDistance, 0.0f, 0.0f);
         data->invViewProjection = water.invViewProjection;
+        data->extinction = DirectX::XMFLOAT4(water.extinction.x, water.extinction.y, water.extinction.z, 0.0f);
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
