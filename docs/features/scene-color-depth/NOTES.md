@@ -55,7 +55,7 @@
 | 물 덮임 | 디버그 9 화면 | 물 밖 기둥 윗부분, 계단 윗단, 승강장 윗면, 전주에는 물이 그려지지 않음 |
 
 캡처 위치 (로컬): `C:\Users\da171\ws-capture\scene-color-depth\captures\`
-`regress`, `pass_on`, `pass_off`, `pass_on_resized`, `dbg_coverage`, `dbg_depth_raw`, `dbg_opaque`, `dbg_pass`, `selftest`
+`dbg_coverage`, `dbg_depth_raw`, `dbg_opaque`, `dbg_pass`, `selftest` · `regress`, `pass_on`, `pass_off`, `pass_on_resized`: 회귀·동일성 캡처라 결과만 위 표에 남기고 2026-10-24 삭제 (CONVENTIONS "회귀·동일성 캡처는 남기지 않는다")
 
 **과정에서 고친 것**
 

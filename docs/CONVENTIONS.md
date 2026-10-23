@@ -38,6 +38,15 @@ docs/
 - 문서에서 캡처에 링크할 때는 `../../../../ws-capture/<feature>/...` 상대 경로를 씁니다. 공개 저장소에서는 열리지 않는 로컬 링크입니다. 공개용 이미지는 `docs/readme-images/` 에 골라 넣습니다.
 - 외부 레퍼런스(게임 스크린샷, 출처 미기재 사진)는 `references/` 에 두되 `.gitignore`로 올리지 않습니다. 설명과 출처는 `references/README.md`에 씁니다.
 
+### 회귀·동일성 캡처는 남기지 않는다 (2026-10-24)
+
+결과가 "같다 / 다르다" 한 줄인 캡처는 `ws-capture`에 쌓지 않습니다.
+
+- **대상**: 회귀 확인(기존 샷이 기준과 같은가 — `regress`, `rt`, `main_check`, `compile_check` 같은 것), 동일성 쌍(효과 없음 = 효과 끔 — `pass_on` / `pass_off` 같은 것).
+- **순서**: 임시 폴더(`--capture-root $env:TEMP\ws-check`)에 찍는다 → `tools\compare_sets.ps1`로 비교한다 → NOTES 검증 표에 결과 한 줄("21장 바이트 동일")과 비교 명령을 적는다 → 임시 폴더를 지운다.
+- **다를 때만 남긴다**: `-KeepDiffTo ws-capture\<기능>\captures\<라벨>_diff`를 주면 다른 이미지만 `<이름>.A` / `<이름>.B` 쌍으로 남는다. NOTES에 어느 샷이 왜 달랐는지 적는다.
+- **기준 세트는 남긴다**: 비교의 기준인 `waterfront/captures/baseline` 같은 before 세트, 단계별 결과, 디버그 화면, 숫자 비교 도구 입력은 지금처럼 `ws-capture`에 둔다.
+
 ## 기능 이름 규칙
 
 - **kebab-case**를 사용합니다 (예: `water-base`, `foam-mask`, `hlsl-hot-reload`, `imgui-panel`).

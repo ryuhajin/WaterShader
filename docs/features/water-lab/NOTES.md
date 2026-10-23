@@ -98,7 +98,7 @@
 | 배치 수치 | 위 표 = 코드 상수. 수심 디버그에서 받침대 4개가 각각 하늘색·초록·노랑·주황, −5cm / +5cm 받침대가 하늘색 / 회색으로 갈림 |
 
 캡처 위치 (저장소 밖, 로컬): `C:\Users\da171\ws-capture\water-lab\captures\`
-`step1_water_on`, `step1_water_off`, `step1_depth`, `regress`
+`step1_water_on`, `step1_water_off`, `step1_depth` · `regress`: 회귀·동일성 캡처라 결과만 위 표에 남기고 2026-10-24 삭제 (CONVENTIONS "회귀·동일성 캡처는 남기지 않는다")
 
 캡처 명령 (Release):
 

@@ -87,7 +87,7 @@
 | 원인 불명이던 `lab_stairs` 1픽셀 | 물 밖 물체를 정답지 숫자로 칠하던 중간 수정에서는 오히려 가려졌다가, "측정 아님" 표지로 바꾸자 다시 드러남 | 도구가 첫 불일치 좌표를 출력하게 해서 값을 확인: 수심 0.000m 근처, 수면선 위의 깊이 동률 (위 표 설명) |
 
 캡처 위치 (로컬): `C:\Users\da171\ws-capture\depth-reconstruct\captures\`
-`key`, `recon_depth`, `recon_path`, `view_key`, `view_depth`, `view_path`, `pass_on`, `pass_off`, `regress`, `dbg_*`
+`key`, `recon_depth`, `recon_path`, `view_key`, `view_depth`, `view_path`, `dbg_*` · `pass_on`, `pass_off`, `regress`, `compile_check`: 회귀·동일성 캡처라 결과만 위 표에 남기고 2026-10-24 삭제 (CONVENTIONS "회귀·동일성 캡처는 남기지 않는다")
 
 비교 명령:
 
