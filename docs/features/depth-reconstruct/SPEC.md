@@ -1,6 +1,6 @@
 # Depth Reconstruct — 3단계 위치·거리 복원
 
-> Branch: `feature/depth-reconstruct` · Status: in-progress · Updated: 2026-10-24
+> Branch: `feature/depth-reconstruct` · Status: done · Updated: 2026-10-24
 > waterfront 업그레이드 3단계. 앞 단계: [../scene-color-depth/NOTES.md](../scene-color-depth/NOTES.md)
 
 ## 1. Goal / Visual Target
@@ -67,17 +67,17 @@ float3 receiverWS = p.xyz / p.w;                                  // 원근 나�
 
 **에이전트 검증**
 
-- [ ] 빌드 경고 0, 디버그 레이어 경고 0
-- [ ] 기존 샷 21장, 투과 15장이 이전과 바이트 동일
-- [ ] 복원 수심 vs 정답지: 테스트 샷 5개에서 오차 `max(1cm, 1%)` 초과 픽셀 0 (하늘·화면 밖 제외, 제외 수 보고)
-- [ ] 시선 경로 ≥ 수직 수심 (모든 물 픽셀), 위에서 내려다본 샷에서 둘이 거의 같음
-- [ ] 같은 받침대를 낮은 각도로 볼수록 경로가 길어짐 (`lab_top` vs `lab_low` 수치)
+- [x] 빌드 경고 0, 디버그 레이어 경고 0
+- [x] 기존 샷 21장, 투과 15장이 이전과 바이트 동일
+- [x] 복원 수심 vs 정답지: 테스트 샷 5개에서 오차 `max(1cm, 1%)` 초과 픽셀 0 (하늘·화면 밖 제외, 제외 수 보고)
+- [x] 시선 경로 ≥ 수직 수심 (모든 물 픽셀), 위에서 내려다본 샷에서 둘이 거의 같음
+- [x] 같은 받침대를 낮은 각도로 볼수록 경로가 길어짐 (`lab_top` vs `lab_low` 수치)
 
 **사용자 검증**
 
-- [ ] 정답지(`Water depth (WP, m)`)와 복원(`Water depth (from depth buffer)`)이 같은 색으로 보인다
-- [ ] 시선 경로 화면에서 카메라를 낮추면 같은 받침대 색이 깊은 쪽으로 바뀐다
-- [ ] 수직 수심과 시선 경로의 차이, 4단계가 왜 시선 경로를 쓰는지 설명할 수 있다
+- [x] 정답지(`Water depth (WP, m)`)와 복원(`Water depth (from depth buffer)`)이 같은 색으로 보인다
+- [x] 시선 경로 화면에서 카메라를 낮추면 같은 받침대 색이 깊은 쪽으로 바뀐다
+- [x] 수직 수심과 시선 경로의 차이, 4단계가 왜 시선 경로를 쓰는지 설명할 수 있다
 
 ## 5. Notes
 
