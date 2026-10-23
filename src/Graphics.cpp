@@ -1954,7 +1954,7 @@ void Graphics::DrawViewWindow()
 
     ImGui::SeparatorText("Debug View");
     const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)",
-        "Depth buffer", "Water coverage (test scenes)" };
+        "Scene depth, water only (test scenes)", "Water coverage (test scenes)" };
     ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels));
     const std::string& shaderError = colorShader_->GetLastError();
     if (!shaderError.empty())
