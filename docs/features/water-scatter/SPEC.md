@@ -64,7 +64,7 @@ x = 램프 기준 거리 (기본: 수직 수심 / 선택: 시선 경로)
 | CBuffer | `g_ScatterColor` | float4 | rgb = 산란색(0~1), a = 세기 |
 | CBuffer | `g_RampShallow/Mid/Deep` | float4 ×3 | rgb 색 |
 | CBuffer | `g_RampParams` | float4 | x = 경계1(m), y = 경계2(m), z = 기준(0 수심, 1 경로), w = 모드(0 물리, 1 램프) |
-| Preset | `scatterR/G/B`, `scatterStrength`, `ramp*`, `waterColorMode` | float | 키가 없으면 산란 0 (4단계 화면 그대로) |
+| Preset | `scatterR/G/B`, `scatterStrength`, `ramp*`, `waterColorMode` | float | 소멸 계수와 세기가 모두 0(키 없음)이면 Clear로 시작. 세기만 0이면 4단계 화면 그대로 |
 | ImGui (Water 창) | Underwater Color | | 모드, 산란색·세기, 램프 3색·경계 2개·기준, 물 종류 버튼 3개 |
 | ImGui (View 창) | Transmission | combo | ... / **Scattering** (테스트 장면 기본값) |
 | CLI | `--scatter r,g,b,s` / `--water-type clear\|green\|lagoon` | | 캡처용 |

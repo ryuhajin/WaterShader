@@ -21,7 +21,7 @@
 | `shaders/PixelShader.hlsl` | `SCENE_INPUTS`: 들어오는 빛, 램프, 물색 몫, 투과 모드 3(Scattering), 디버그 15(물색 몫만)·16(램프 색) |
 | `shaders/Common.hlsli` | cbuffer에 `g_ScatterColor`, `g_RampShallow/Mid/Deep`, `g_RampParams` |
 | `src/ColorShader.*` | `WaterParams`에 물색 모드·산란색·세기·램프 3색·경계 2개·기준, sRGB → 선형 변환해 전달 |
-| `src/Graphics.*` | 프리셋 키 17개(세기 없으면 0 = 4단계 화면), Water 창 "Underwater Color"(물 종류 버튼, 모드, 세기, 색, 램프), Transmission 기본값 = Scattering, CLI `--water-type`, `--scatter`, `--ramp-by` |
+| `src/Graphics.*` | 프리셋 키 17개(소멸 계수와 세기가 모두 없거나 0이면 **Clear로 시작**, 세기만 0이면 4단계 화면), Water 창 "Underwater Color"(물 종류 버튼, 모드, 세기, 색, 램프), Transmission 기본값 = Scattering, CLI `--water-type`, `--scatter`, `--ramp-by` |
 | `tools/compare_depth.ps1` | `-Mode sum` (감쇠 + 물색 몫 = 최종, 선형), `-Mode contrast` (깊이별 체크무늬 대비 유지율) |
 
 **물 종류 버튼** (출발점, 측정값 아님)
@@ -44,6 +44,10 @@
 | 바닥 없는 곳 = 물색 | 위 sum의 "no-surface" | Green: 바닥 몫 **0.0%**. Clear: 최대 37% (아래 설명) |
 | 대비 유지 | `-Mode contrast`, Clear | 아래 표 |
 | 디버그 레이어 | Debug: Lagoon 산란, 물색 몫(15), 램프 색(16) | 경고·오류 0건 |
+| 기본값 = Clear (2026-11-01 수정 후) | 옵션 없이 연 테스트 장면 vs `--water-type clear`, 물색 몫(15) × 3샷 × 3프리셋 | **9장 바이트 동일** |
+| 수정 후 기존 장면 회귀 | 기존 샷 21장 vs 0단계 기준 | **21장 바이트 동일** |
+| 수정 후 계수 0 = 물 끔 | `--extinction 0,0,0` vs `--water off`, 3샷 × 3프리셋 | **9장 바이트 동일** |
+| 수정 후 디버그 레이어 | Debug: lab_stairs 기본값 | 경고·오류 0건 |
 
 **체크무늬 대비가 남는 비율** (Clear, 패스스루 대비)
 
@@ -67,6 +71,7 @@
 | `look_green`, `look_lagoon`, `look_lagoon_path` | 물 종류, 램프 수심 기준 vs 경로 기준 |
 | `sum_*`, `contrast_pass` | 수치 검사 입력 |
 | `dbg_scatter`, `dbg_part`, `dbg_ramp` | Debug 빌드 캡처 + `d3d_messages.txt` |
+| `dbg_part_default` | 수정 후 옵션 없이 연 테스트 장면의 물색 몫(15) = Clear |
 
 회귀·동일성 캡처는 임시 폴더에서 비교하고 지웠다.
 
@@ -79,11 +84,11 @@
 
 | 증상 | 원인 | 해결 |
 |---|---|---|
-| 없음 | — | — |
+| 앱을 켜고 바로 Debug Mode = Water color part only를 고르면 물 전체가 검정 (사용자 보고) | 저장된 프리셋에 물속 키가 없어 소멸 계수 0·세기 0으로 시작 → 투과율 1, 물색 몫 0. 검증 안내 7번도 물 종류를 누른 상태라는 조건을 빠뜨림 | 프리셋을 적용할 때 소멸 계수와 세기가 모두 0이면 **Clear**로 시작. 이 값은 테스트 장면 셰이더만 읽어 기존 바다 화면은 그대로 (21장 바이트 동일). 안내 6·7번 문구 보강 |
 
 ## 4. 사용자 검증 안내
 
-**실행:** `.\build\vs2022\Debug\WaterShader.exe` → `1` 키 → Scene = **Water Lab**, Transmission = **Scattering** (기본값) → `3` 키로 Water 창 → "Underwater Color"
+**실행:** `.\build\vs2022\Debug\WaterShader.exe` → `1` 키 → Scene = **Water Lab**, Transmission = **Scattering** (기본값) → `3` 키로 Water 창 → "Underwater Color". 처음에는 **Clear**가 적용된 상태로 열린다.
 
 | 순서 | 조작 | 정상 | 실패 징후 |
 |---|---|---|---|
@@ -92,8 +97,8 @@
 | 3 | **Green** | 탁한 초록, 계단이 몇 단 만에 사라짐 (레퍼런스 사진 2) | — |
 | 4 | **Lagoon (ramp)**, lab_low | 받침대 윗면(얕음) 청록, 깊은 곳 파랑 | — |
 | 5 | 4번에서 "Ramp by view path" 체크 | 낮은 시점에서 받침대 윗면까지 파랑으로 바뀜 | 바뀌지 않음 |
-| 6 | View 창(`1`) Presets에서 **Sunset** (물 종류는 다시 눌러 적용) | 물색도 어둡고 따뜻해짐 | 물만 한낮처럼 밝음 |
-| 7 | Debug Mode = **Water color part only** | 물색 몫만: 얕은 곳 검정에 가깝고 깊을수록 물색 | — |
+| 6 | View 창(`1`) Presets에서 **Sunset** (물은 Clear로 돌아간다. 다른 물 종류를 보려면 다시 누른다) | 물색도 어둡고 따뜻해짐 | 물만 한낮처럼 밝음 |
+| 7 | 물 종류(Clear 등)가 적용된 상태에서 Debug Mode = **Water color part only**, 카메라 lab_stairs | 바닥 몫을 지우고 물이 더한 색만 보인다: 수면 바로 아래 계단은 검정에 가깝고, 내려갈수록·멀수록 물색이 짙어진다. 어떤 곳이 어두울 때 바닥 탓인지(여기서 밝음) 물색 탓인지(여기서도 어두움) 가르는 화면 | 물 전체가 검정 (세기 0 또는 소멸 계수 0) |
 
 **확인 질문**
 

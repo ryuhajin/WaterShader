@@ -662,6 +662,15 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     rippleAlignA_ = rippleAlignOverride_ >= 0 ? rippleAlignOverride_ != 0 : preset.rippleAlignA != 0;
     rippleAlignB_ = rippleAlignOverride_ >= 0 ? rippleAlignOverride_ != 0 : preset.rippleAlignB != 0;
     water_ = preset.water;
+    // A preset saved before the underwater keys existed has no light loss and no water color, so a test scene
+    // would open as clear glass. Start it from Clear instead. Only the test scene program reads these values,
+    // so the open water frames stay the same.
+    const bool noUnderwater = water_.extinction.x == 0.0f && water_.extinction.y == 0.0f
+        && water_.extinction.z == 0.0f && water_.scatterStrength == 0.0f;
+    if (noUnderwater)
+    {
+        ApplyWaterType(water_, 0);
+    }
     // Command line overrides for captures, in this order: water type, then single values on top.
     if (waterTypeOverride_ >= 0)
     {
