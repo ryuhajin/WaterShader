@@ -14,6 +14,9 @@
 #                 A + B = C in linear light on every water pixel (water-scatter).
 #   -Mode contrast : -A = water depth (--debug 12), -B = pass-through, -C = scattering, both --tonemap none.
 #                 checker contrast kept per Water Lab depth (water-scatter).
+#   -Mode mean  : -A = water depth (--debug 12) as the water mask, -B = a gray debug view (e.g. --debug 17).
+#                 mean / min / max of the gray value over the water pixels (surface-reflection).
+#   The sum mode also checks reflection part (--debug 18) + underwater part (--debug 19) = final.
 #
 # Usage (PowerShell 5.1):
 #   .\tools\compare_depth.ps1 -A <folder> -B <folder> [-Mode depth|path|transmit] [-Extinction r,g,b] [-C <folder>]
@@ -21,7 +24,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$A,
     [Parameter(Mandatory = $true)][string]$B,
-    [ValidateSet('depth', 'path', 'transmit', 'sum', 'contrast')][string]$Mode = 'depth',
+    [ValidateSet('depth', 'path', 'transmit', 'sum', 'contrast', 'mean')][string]$Mode = 'depth',
     [string]$Extinction = '0,0,0',
     [string]$C = '',
     [string]$D = '',
@@ -232,6 +235,25 @@ public static class MeterImage
     // Sum mode (water-scatter), all captured with --tonemap none: on every water pixel (mask D: measured or
     // no surface) attenuation (A) + water color part (B) = scattering (C) in linear light, per channel.
     // Saturated C channels are skipped. Also: at no-surface pixels, how much of C the bed part (A) still is.
+
+    // -Mode mean: average of a gray debug view (B, R channel / 255) over the water pixels of the mask A.
+    public static string MeanOverWater(string pathA, string pathB)
+    {
+        byte[] ma; double[] va; int wa, ha, w, h;
+        Load(pathA, out ma, out va, out wa, out ha);
+        byte[] b = LoadRgb(pathB, out w, out h);
+        long n = 0;
+        double sum = 0.0, lo = 1.0, hi = 0.0;
+        for (int i = 0; i < ma.Length; ++i)
+        {
+            if (ma[i] != 128 && ma[i] != 255) continue;
+            double v = b[i * 3] / 255.0;
+            ++n; sum += v; lo = Math.Min(lo, v); hi = Math.Max(hi, v);
+        }
+        if (n == 0) return "no water pixels";
+        return string.Format("water pixels {0}  mean {1:F3}  min {2:F3}  max {3:F3}", n, sum / n, lo, hi);
+    }
+
     public static string CompareSum(string pathA, string pathB, string pathC, string pathD)
     {
         int w, h;
@@ -308,6 +330,9 @@ foreach ($file in $files) {
     if (-not (Test-Path $other)) { Write-Output ("{0,-28} missing in B" -f $file.Name); continue }
     if ($Mode -eq 'sum') {
         Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareSum($file.FullName, $other, (Join-Path $C $file.Name), (Join-Path $D $file.Name)))
+    }
+    elseif ($Mode -eq 'mean') {
+        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::MeanOverWater($file.FullName, $other))
     }
     elseif ($Mode -eq 'contrast') {
         Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareContrast($file.FullName, $other, (Join-Path $C $file.Name)))

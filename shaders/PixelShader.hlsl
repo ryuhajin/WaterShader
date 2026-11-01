@@ -237,13 +237,17 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     if (sceneDebugMode == 16) { return DebugOut(LinearToSrgb(rampColor)); }
 
     int transmissionMode = (int)(g_SceneParams.x + 0.5);
+    // What comes up from under the water, per Transmission mode (0 = the old opaque water, below).
     // Pass-through: no water effect at all. Must match the frame with the water switched off.
-    if (transmissionMode == 1) { return float4(sceneColor, 1.0); }
     // Attenuation: the scene without the water, dimmed by what the water took on the way. Nothing is added
-    // back yet (the water's own color is step 5), so very long paths and no surface go black.
-    if (transmissionMode == 2) { return float4(sceneColor * transmittance, 1.0); }
+    // back (that is the water's own color), so very long paths and no surface go black.
     // Scattering: what the extinction took is filled with the water's own color (bed part + water part).
-    if (transmissionMode == 3) { return float4(sceneColor * transmittance + inscatter, 1.0); }
+    float3 underwaterColor = transmissionMode == 1 ? sceneColor
+                           : transmissionMode == 2 ? sceneColor * transmittance
+                           : sceneColor * transmittance + inscatter;
+    // Surface reflection off: the water below alone, as if the surface reflected nothing.
+    bool surfaceReflection = g_SceneParams.z > 0.5;
+    if (transmissionMode != 0 && !surfaceReflection) { return float4(underwaterColor, 1.0); }
 #endif
     // Two scrolling normal map samples blended in tangent space.
     float time = g_WaterParams.x;
@@ -382,6 +386,25 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float sunGlintIntensity = g_SpecularParams.w;
     float lobe = SunGlintFactor(reflectionDirWS, lightDirWS, sunGlintPower) * (sunGlintPower + 2.0) * 0.5;
     finalColor += lobe * sunGlintIntensity * reflectionAmount * g_LightColor.rgb * g_LightColor.a;
+
+#if SCENE_INPUTS
+    // surface-reflection: the water below takes the place of the painted water color (two tints, diffuse light
+    // and the Blinn-Phong highlight are all left out, or the water's color and the sun would count twice).
+    // Fresnel splits the light: R of it is the mirrored sky and sun, the rest went into the water.
+    //   final = water below x (1 - R) + (sky + sun glint) x R
+    if (transmissionMode != 0)
+    {
+        float3 reflectionPart = (reflectedSceneColor + lobe * sunGlintIntensity * g_LightColor.rgb * g_LightColor.a)
+            * reflectionAmount;
+        float3 underwaterPart = underwaterColor * (1.0 - reflectionAmount);
+        // 17 = reflection amount R (black = see-through, white = mirror), 18 / 19 = the two parts (HDR,
+        // tonemapped like a normal frame: reflection part + underwater part = final, before any haze).
+        if (sceneDebugMode == 17) { return DebugOut(reflectionAmount.xxx); }
+        if (sceneDebugMode == 18) { return float4(reflectionPart, 1.0); }
+        if (sceneDebugMode == 19) { return float4(underwaterPart, 1.0); }
+        finalColor = reflectionPart + underwaterPart;
+    }
+#endif
 
 #if OCEAN_DETAIL
     // Aerial perspective toward the horizon: far water (glint included) fades into the sky just above the

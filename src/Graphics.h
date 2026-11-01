@@ -166,6 +166,7 @@ private:
     int transmissionMode_ = 3; // test scenes: 0 opaque water (as before), 1 pass-through (scene-color-depth),
                                // 2 attenuation (rgb-attenuation), 3 scattering (water-scatter)
     float maxUnderwaterDistance_ = 50.0f; // m: view path where no surface is behind the water (depth-reconstruct)
+    bool surfaceReflection_ = true; // test scenes: sky and sun mirrored on top of the water below (surface-reflection)
     // Debug layer messages (Debug builds), counted per text; written next to a capture set.
     std::map<std::string, int> d3dMessages_;
     size_t d3dMessageTotal_ = 0;

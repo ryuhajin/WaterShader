@@ -356,6 +356,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --water <on|off>       draw the water in the test scenes (lab_* / front_* shots, default on)
     //   --scene-debug <mode>   test scene debug view: 1 = depth below the water (the water is hidden)
     //   --transmission <mode>  test scene water: 0 = opaque (old), 1 = pass-through, 2 = attenuation, 3 = scattering (default)
+    //   --reflection <on|off>  test scene water: sky and sun mirrored on top of the water below (default on)
     //   --extinction <r,g,b>   underwater extinction per meter, overrides every preset (rgb-attenuation)
     //   --water-type <clear|green|lagoon>  underwater loss + color together, overrides every preset (water-scatter)
     //   --scatter <r,g,b,s>    water color (sRGB) and strength, overrides every preset (after --water-type)
@@ -423,6 +424,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--water" && hasValue)      { showWater_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--scene-debug" && hasValue) { sceneDebug_ = _wtoi(argv[++i]); }
                 else if (arg == L"--transmission" && hasValue) { transmissionMode_ = _wtoi(argv[++i]); }
+                else if (arg == L"--reflection" && hasValue) { surfaceReflection_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--water-type" && hasValue)
                 {
                     const std::string name = WideToUtf8(argv[++i]);
@@ -1693,6 +1695,7 @@ bool Graphics::Render(float deltaTime)
             d3d_->BindHdrTargetReadOnlyDepth();
             d3d_->SetDepthTestNoWrite();
             waterDraw.transmissionMode = transmissionMode_;
+            waterDraw.surfaceReflection = surfaceReflection_;
             // depth-reconstruct: pixel + depth -> world position goes back through view x projection.
             waterDraw.maxOpticalDistance = maxUnderwaterDistance_;
             DirectX::XMStoreFloat4x4(&waterDraw.invViewProjection, DirectX::XMMatrixInverse(nullptr, view * projection));
@@ -1731,8 +1734,9 @@ bool Graphics::Render(float deltaTime)
     // tone curve (their values were pre-decoded in the pixel shader and come back out unchanged).
     d3d_->BindBackBuffer();
     d3d_->SetRasterizerDoubleSided(); // the fullscreen triangle is clockwise; don't let it get culled
-    // Water coverage (9) and the water color part (15) are HDR frames, so they keep exposure and the tone curve.
-    const bool hdrDebug = water_.debugMode == 9 || water_.debugMode == 15;
+    // Water coverage (9), the water color part (15) and the reflection / underwater parts (18, 19) are HDR frames,
+    // so they keep exposure and the tone curve.
+    const bool hdrDebug = water_.debugMode == 9 || water_.debugMode == 15 || water_.debugMode == 18 || water_.debugMode == 19;
     const bool debugView = (water_.debugMode != 0 && !hdrDebug) || (scene_ != NoScene && sceneDebug_ != 0);
     tonemapShader_->Render(
         d3d_->GetDeviceContext(),
@@ -2085,6 +2089,9 @@ void Graphics::DrawViewWindow()
         const char* transmissionLabels[] = { "Opaque (old water)", "Pass-through (no effect)", "Attenuation (light fades with the view path)",
             "Scattering (+ the water's own color)" };
         ImGui::Combo("Transmission", &transmissionMode_, transmissionLabels, IM_ARRAYSIZE(transmissionLabels));
+        ImGui::BeginDisabled(transmissionMode_ == 0); // the opaque water keeps its own reflection
+        ImGui::Checkbox("Surface reflection (sky + sun, Fresnel)", &surfaceReflection_);
+        ImGui::EndDisabled();
         ImGui::SliderFloat("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
         ImGui::TextDisabled("View path where no surface is behind the water (sky).");
         ImGui::TextDisabled("1 unit = 1 m, water at y = 0, ocean presets.");
@@ -2138,7 +2145,8 @@ void Graphics::DrawViewWindow()
     const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)",
         "Scene depth, water only (test scenes)", "Water coverage (test scenes)",
         "Water depth (from depth buffer)", "Underwater view path", "Water depth numeric (compare tool)", "View path numeric (compare tool)",
-        "Transmittance (RGB, compare tool)", "Water color part only (scattering)", "Ramp color (as picked)" };
+        "Transmittance (RGB, compare tool)", "Water color part only (scattering)", "Ramp color (as picked)",
+        "Reflection amount (Fresnel x strength)", "Reflection part only", "Underwater part only" };
     if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
     {
         SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
@@ -2306,7 +2314,8 @@ void Graphics::DrawWaterWindow()
         return;
     }
 
-    ImGui::SeparatorText("Water Color");
+    ImGui::SeparatorText("Water Color (open water)");
+    ImGui::TextDisabled("Test scenes show the water below instead.");
     LabeledColor("Color looking straight down", &water_.facingColor.x);
     LabeledColor("Color at a low angle", &water_.grazingColor.x);
 
@@ -2377,6 +2386,7 @@ void Graphics::DrawWaterWindow()
     }
 
     ImGui::SeparatorText("Reflection");
+    ImGui::TextDisabled("Test scenes: final = water below x (1 - R) + sky x R");
     LabeledSlider("Reflection strength", &water_.reflectionStrength, 0.0f, 1.0f, "%.2f");
     LabeledSlider("Reflectivity head-on (F0, real water = 0.02)", &water_.fresnelF0, 0.0f, 0.6f, "%.3f");
     LabeledSlider("Fresnel curve (5 = physical; higher = mirror only at low angles)", &water_.fresnelPower, 1.0f, 8.0f, "%.1f");
