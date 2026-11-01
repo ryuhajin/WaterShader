@@ -1,6 +1,6 @@
 # Water Scatter — 5단계 산란색 근사 + 깊이 색 램프
 
-> Branch: `feature/water-scatter` · Status: draft · Updated: 2026-10-24
+> Branch: `feature/water-scatter` · Status: done · Updated: 2026-11-01
 > waterfront 업그레이드 5단계. 앞 단계: [../rgb-attenuation/NOTES.md](../rgb-attenuation/NOTES.md)
 
 ## 1. Goal / Visual Target
@@ -64,7 +64,7 @@ x = 램프 기준 거리 (기본: 수직 수심 / 선택: 시선 경로)
 | CBuffer | `g_ScatterColor` | float4 | rgb = 산란색(0~1), a = 세기 |
 | CBuffer | `g_RampShallow/Mid/Deep` | float4 ×3 | rgb 색 |
 | CBuffer | `g_RampParams` | float4 | x = 경계1(m), y = 경계2(m), z = 기준(0 수심, 1 경로), w = 모드(0 물리, 1 램프) |
-| Preset | `scatterR/G/B`, `scatterStrength`, `ramp*`, `waterColorMode` | float | 키가 없으면 산란 0 (4단계 화면 그대로) |
+| Preset | `scatterR/G/B`, `scatterStrength`, `ramp*`, `waterColorMode` | float | 소멸 계수와 세기가 모두 0(키 없음)이면 Clear로 시작. 세기만 0이면 4단계 화면 그대로 |
 | ImGui (Water 창) | Underwater Color | | 모드, 산란색·세기, 램프 3색·경계 2개·기준, 물 종류 버튼 3개 |
 | ImGui (View 창) | Transmission | combo | ... / **Scattering** (테스트 장면 기본값) |
 | CLI | `--scatter r,g,b,s` / `--water-type clear\|green\|lagoon` | | 캡처용 |
@@ -76,18 +76,18 @@ x = 램프 기준 거리 (기본: 수직 수심 / 선택: 시선 경로)
 
 **에이전트 검증**
 
-- [ ] 빌드 경고 0, 디버그 레이어 경고 0, 기존 샷 21장 바이트 동일
-- [ ] 산란 세기 0 → 4단계 감쇠 화면과 바이트 동일
-- [ ] 소멸 계수 0 → 물색이 아무리 진해도 투과 화면과 바이트 동일 (`1 − 1 = 0`)
-- [ ] 톤 곡선 끈 선형 화면에서 `감쇠만 + 물색만 = 최종` (8비트 반올림 안)
-- [ ] 바닥 없는 픽셀·아주 깊은 픽셀 = 물색 (투과율 ≈ 0)
-- [ ] 받침대별 체크무늬 대비가 얕을수록 남고 깊을수록 사라짐 (0.2m > 1m > 3m > 6m)
+- [x] 빌드 경고 0, 디버그 레이어 경고 0, 기존 샷 21장 바이트 동일
+- [x] 산란 세기 0 → 4단계 감쇠 화면과 바이트 동일
+- [x] 소멸 계수 0 → 물색이 아무리 진해도 투과 화면과 바이트 동일 (`1 − 1 = 0`)
+- [x] 톤 곡선 끈 선형 화면에서 `감쇠만 + 물색만 = 최종` (8비트 반올림 안)
+- [x] 바닥 없는 픽셀·아주 깊은 픽셀 = 물색 (투과율 ≈ 0)
+- [x] 받침대별 체크무늬 대비가 얕을수록 남고 깊을수록 사라짐 (0.2m > 1m > 3m > 6m)
 
 **사용자 검증**
 
-- [ ] 깊은 계단은 물색에 섞이지만 얕은 체크무늬는 유지된다
-- [ ] 산란 OFF(4단계)와 ON의 차이를 설명할 수 있다
-- [ ] 물리 모드와 램프 모드의 차이, 램프를 수심 기준으로 할 때와 경로 기준으로 할 때의 차이를 설명할 수 있다
+- [x] 깊은 계단은 물색에 섞이지만 얕은 체크무늬는 유지된다
+- [x] 산란 OFF(4단계)와 ON의 차이를 설명할 수 있다
+- [x] 물리 모드와 램프 모드의 차이, 램프를 수심 기준으로 할 때와 경로 기준으로 할 때의 차이를 설명할 수 있다
 
 ## 5. Notes
 

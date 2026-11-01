@@ -48,8 +48,20 @@ public:
         float hazeDistance       = 150.0f;  // distance where the haze reaches 1 - 1/e of hazeStrength
         float farWaveCrests      = 1.0f;    // past the mesh fade: 1 = crests per pixel (as before), 0 = all glint roughness
         // Underwater (rgb-attenuation, test scenes): how fast light fades per meter of view path, per channel (1/m).
-        // 0 = nothing fades (presets without the keys load as 0, the effect off).
+        // 0 = nothing fades. Presets without the keys load as 0 and are then started from the Clear water type.
         DirectX::XMFLOAT3 extinction = {0.0f, 0.0f, 0.0f};
+        // The water's own color, filling in what the extinction took (water-scatter, test scenes):
+        //   under-water color = scene x T + color x incoming light x strength x (1 - T)
+        // Colors are sRGB picker values (like facingColor). Strength 0 = off.
+        int waterColorMode = 0;                                  // 0 physical (one scatter color), 1 ramp (art)
+        DirectX::XMFLOAT3 scatterColor = {0.10f, 0.35f, 0.55f};  // physical: how much light the water sends back
+        float scatterStrength = 0.0f;
+        DirectX::XMFLOAT3 rampShallow = {0.35f, 0.95f, 0.90f};   // ramp: shallow -> mid -> deep
+        DirectX::XMFLOAT3 rampMid     = {0.05f, 0.65f, 0.80f};
+        DirectX::XMFLOAT3 rampDeep    = {0.02f, 0.20f, 0.55f};
+        float rampMidDepth  = 1.0f;  // m: shallow reaches mid here
+        float rampDeepDepth = 4.0f;  // m: mid reaches deep here
+        int rampByPath = 0;          // 0 = ramp by water depth (same bed, same color), 1 = by view path
         // Set every frame from the selected normal maps (NormalMapEntry::slopeVariance), not saved in presets.
         float rippleSlopeVarianceA = 0.0f;
         float rippleSlopeVarianceB = 0.0f;

@@ -42,6 +42,11 @@ cbuffer PerFrameCB : register(b0)
                                // y = max optical distance (m): view path used where no surface is behind the water
     row_major float4x4 g_InvViewProjection; // test scenes: inverse of view x projection (depth -> world position)
     float4 g_Extinction;       // test scenes: rgb = extinction per meter of view path (1/m)
+    float4 g_ScatterColor;     // test scenes: rgb = water color (physical mode, linear), a = strength
+    float4 g_RampShallow;      // test scenes: ramp colors (linear)
+    float4 g_RampMid;
+    float4 g_RampDeep;
+    float4 g_RampParams;       // x = mid depth (m), y = deep depth (m), z = by view path (0/1), w = color mode (0 physical, 1 ramp)
 };
 
 struct VSInput

@@ -199,6 +199,23 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("extinctionR", preset.water.extinction.x);
     fn("extinctionG", preset.water.extinction.y);
     fn("extinctionB", preset.water.extinction.z);
+    fn("waterColorMode", preset.water.waterColorMode);
+    fn("scatterR", preset.water.scatterColor.x);
+    fn("scatterG", preset.water.scatterColor.y);
+    fn("scatterB", preset.water.scatterColor.z);
+    fn("scatterStrength", preset.water.scatterStrength);
+    fn("rampShallowR", preset.water.rampShallow.x);
+    fn("rampShallowG", preset.water.rampShallow.y);
+    fn("rampShallowB", preset.water.rampShallow.z);
+    fn("rampMidR", preset.water.rampMid.x);
+    fn("rampMidG", preset.water.rampMid.y);
+    fn("rampMidB", preset.water.rampMid.z);
+    fn("rampDeepR", preset.water.rampDeep.x);
+    fn("rampDeepG", preset.water.rampDeep.y);
+    fn("rampDeepB", preset.water.rampDeep.z);
+    fn("rampMidDepth", preset.water.rampMidDepth);
+    fn("rampDeepDepth", preset.water.rampDeepDepth);
+    fn("rampByPath", preset.water.rampByPath);
 }
 
 // Tangent-space water normal maps (RGBA8 UNORM + mips, converted with texconv --ignore-srgb so the
@@ -221,6 +238,47 @@ constexpr NormalMapEntry kNormalMaps[] = {
     { L"textures/water_normal3.dds", "3 Long streaks (water_normal3)",     89.0f, 0.0229f },
     { L"textures/water_normal4.dds", "4 Fine chop (water_normal4)",        67.0f, 0.0619f },
 };
+
+// Water types (water-scatter): light loss and water color set together. A starting point to tune from, not a
+// measurement. Colors are sRGB picker values.
+//   Clear  - the bed shows far down, deep water turns blue.
+//   Green  - murky green water (reference photo 2): strong loss, green passes best, stairs vanish quickly.
+//   Lagoon - art ramp by water depth: saturated cyan over the shallows, deep blue beyond 4 m.
+constexpr int kWaterTypeCount = 3;
+constexpr const char* kWaterTypeLabels[kWaterTypeCount] = { "Clear", "Green", "Lagoon (ramp)" };
+constexpr const char* kWaterTypeNames[kWaterTypeCount] = { "clear", "green", "lagoon" };
+
+void ApplyWaterType(ColorShader::WaterParams& water, int type)
+{
+    switch (type)
+    {
+    case 0:
+        water.extinction = {0.35f, 0.07f, 0.03f};
+        water.waterColorMode = 0;
+        water.scatterColor = {0.10f, 0.35f, 0.55f};
+        water.scatterStrength = 1.0f;
+        break;
+    case 1:
+        water.extinction = {0.80f, 0.25f, 0.70f};
+        water.waterColorMode = 0;
+        water.scatterColor = {0.15f, 0.45f, 0.25f};
+        water.scatterStrength = 1.0f;
+        break;
+    case 2:
+        water.extinction = {0.60f, 0.20f, 0.15f};
+        water.waterColorMode = 1;
+        water.rampShallow = {0.35f, 0.95f, 0.90f};
+        water.rampMid = {0.05f, 0.65f, 0.80f};
+        water.rampDeep = {0.02f, 0.20f, 0.55f};
+        water.rampMidDepth = 1.0f;
+        water.rampDeepDepth = 4.0f;
+        water.rampByPath = 0;
+        water.scatterStrength = 1.0f;
+        break;
+    default:
+        break;
+    }
+}
 
 // Rotation (cos, sin) that turns a normal map whose ripples travel along axisDeg so they travel along
 // windDeg. Axes are mod 180, so the smaller of the two turns is used.
@@ -297,8 +355,11 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --far-waves <on|off>   pixel-shader wave slopes past the mesh wave fade (default on)
     //   --water <on|off>       draw the water in the test scenes (lab_* / front_* shots, default on)
     //   --scene-debug <mode>   test scene debug view: 1 = depth below the water (the water is hidden)
-    //   --transmission <mode>  test scene water: 0 = opaque (old), 1 = pass-through, 2 = attenuation (default)
+    //   --transmission <mode>  test scene water: 0 = opaque (old), 1 = pass-through, 2 = attenuation, 3 = scattering (default)
     //   --extinction <r,g,b>   underwater extinction per meter, overrides every preset (rgb-attenuation)
+    //   --water-type <clear|green|lagoon>  underwater loss + color together, overrides every preset (water-scatter)
+    //   --scatter <r,g,b,s>    water color (sRGB) and strength, overrides every preset (after --water-type)
+    //   --ramp-by <depth|path> what the ramp color follows, overrides every preset (after --water-type)
     //   --resize-cycle         recreate the size-dependent targets once before rendering (resize test)
     //   --d3d-selftest         cause one known debug layer hazard (checks that d3d_messages.txt catches it)
     //   --align-ripples <on|off>  "Align to wind" for both normal map layers, overrides the presets
@@ -362,6 +423,27 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--water" && hasValue)      { showWater_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--scene-debug" && hasValue) { sceneDebug_ = _wtoi(argv[++i]); }
                 else if (arg == L"--transmission" && hasValue) { transmissionMode_ = _wtoi(argv[++i]); }
+                else if (arg == L"--water-type" && hasValue)
+                {
+                    const std::string name = WideToUtf8(argv[++i]);
+                    for (int type = 0; type < kWaterTypeCount; ++type)
+                    {
+                        if (name == kWaterTypeNames[type])
+                        {
+                            waterTypeOverride_ = type;
+                        }
+                    }
+                }
+                else if (arg == L"--ramp-by" && hasValue) { rampByOverride_ = std::wstring(argv[++i]) == L"path" ? 1 : 0; }
+                else if (arg == L"--scatter" && hasValue)
+                {
+                    DirectX::XMFLOAT4 s{};
+                    if (swscanf_s(argv[++i], L"%f,%f,%f,%f", &s.x, &s.y, &s.z, &s.w) == 4)
+                    {
+                        scatterOverride_ = s;
+                        hasScatterOverride_ = true;
+                    }
+                }
                 else if (arg == L"--extinction" && hasValue)
                 {
                     DirectX::XMFLOAT3 k{};
@@ -580,9 +662,32 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     rippleAlignA_ = rippleAlignOverride_ >= 0 ? rippleAlignOverride_ != 0 : preset.rippleAlignA != 0;
     rippleAlignB_ = rippleAlignOverride_ >= 0 ? rippleAlignOverride_ != 0 : preset.rippleAlignB != 0;
     water_ = preset.water;
+    // A preset saved before the underwater keys existed has no light loss and no water color, so a test scene
+    // would open as clear glass. Start it from Clear instead. Only the test scene program reads these values,
+    // so the open water frames stay the same.
+    const bool noUnderwater = water_.extinction.x == 0.0f && water_.extinction.y == 0.0f
+        && water_.extinction.z == 0.0f && water_.scatterStrength == 0.0f;
+    if (noUnderwater)
+    {
+        ApplyWaterType(water_, 0);
+    }
+    // Command line overrides for captures, in this order: water type, then single values on top.
+    if (waterTypeOverride_ >= 0)
+    {
+        ApplyWaterType(water_, waterTypeOverride_);
+    }
     if (hasExtinctionOverride_)
     {
         water_.extinction = extinctionOverride_;
+    }
+    if (rampByOverride_ >= 0)
+    {
+        water_.rampByPath = rampByOverride_;
+    }
+    if (hasScatterOverride_)
+    {
+        water_.scatterColor = {scatterOverride_.x, scatterOverride_.y, scatterOverride_.z};
+        water_.scatterStrength = scatterOverride_.w;
     }
     waveMacro_ = preset.waveMacro;
 }
@@ -1626,8 +1731,9 @@ bool Graphics::Render(float deltaTime)
     // tone curve (their values were pre-decoded in the pixel shader and come back out unchanged).
     d3d_->BindBackBuffer();
     d3d_->SetRasterizerDoubleSided(); // the fullscreen triangle is clockwise; don't let it get culled
-    // Water coverage (9) is a tinted HDR frame, so it keeps exposure and the tone curve.
-    const bool debugView = (water_.debugMode != 0 && water_.debugMode != 9) || (scene_ != NoScene && sceneDebug_ != 0);
+    // Water coverage (9) and the water color part (15) are HDR frames, so they keep exposure and the tone curve.
+    const bool hdrDebug = water_.debugMode == 9 || water_.debugMode == 15;
+    const bool debugView = (water_.debugMode != 0 && !hdrDebug) || (scene_ != NoScene && sceneDebug_ != 0);
     tonemapShader_->Render(
         d3d_->GetDeviceContext(),
         d3d_->GetHdrSRV(),
@@ -1976,7 +2082,8 @@ void Graphics::DrawViewWindow()
             }
             ImGui::TextDisabled("Dark lines every 1 m, red line = water surface (y = 0)");
         }
-        const char* transmissionLabels[] = { "Opaque (old water)", "Pass-through (no effect)", "Attenuation (light fades with the view path)" };
+        const char* transmissionLabels[] = { "Opaque (old water)", "Pass-through (no effect)", "Attenuation (light fades with the view path)",
+            "Scattering (+ the water's own color)" };
         ImGui::Combo("Transmission", &transmissionMode_, transmissionLabels, IM_ARRAYSIZE(transmissionLabels));
         ImGui::SliderFloat("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
         ImGui::TextDisabled("View path where no surface is behind the water (sky).");
@@ -2031,7 +2138,7 @@ void Graphics::DrawViewWindow()
     const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)",
         "Scene depth, water only (test scenes)", "Water coverage (test scenes)",
         "Water depth (from depth buffer)", "Underwater view path", "Water depth numeric (compare tool)", "View path numeric (compare tool)",
-        "Transmittance (RGB, compare tool)" };
+        "Transmittance (RGB, compare tool)", "Water color part only (scattering)", "Ramp color (as picked)" };
     if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
     {
         SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
@@ -2230,6 +2337,43 @@ void Graphics::DrawWaterWindow()
     if (ImGui::Button("Pure water (ref.)"))
     {
         water_.extinction = {0.35f, 0.06f, 0.01f};
+    }
+
+    // water-scatter: what the light loss took is filled with the water's own color (Transmission = Scattering).
+    ImGui::SeparatorText("Underwater Color (test scenes)");
+    ImGui::TextDisabled("Fills in what the light loss took: deep = this color.");
+    for (int type = 0; type < kWaterTypeCount; ++type)
+    {
+        if (type > 0)
+        {
+            ImGui::SameLine();
+        }
+        if (ImGui::Button(kWaterTypeLabels[type]))
+        {
+            ApplyWaterType(water_, type);
+        }
+    }
+    const char* colorModes[] = { "Physical (one color)", "Ramp (shallow / mid / deep)" };
+    ImGui::Combo("Water color", &water_.waterColorMode, colorModes, IM_ARRAYSIZE(colorModes));
+    LabeledSlider("Strength (0 = off, the light loss alone)", &water_.scatterStrength, 0.0f, 3.0f, "%.2f");
+    if (water_.waterColorMode == 0)
+    {
+        LabeledColor("Water color (lit by the sun and sky)", &water_.scatterColor.x);
+    }
+    else
+    {
+        LabeledColor("Shallow", &water_.rampShallow.x);
+        LabeledColor("Mid", &water_.rampMid.x);
+        LabeledColor("Deep", &water_.rampDeep.x);
+        LabeledSlider("Mid at (m)", &water_.rampMidDepth, 0.1f, 10.0f, "%.2f m");
+        LabeledSlider("Deep at (m)", &water_.rampDeepDepth, 0.2f, 30.0f, "%.2f m");
+        bool byPath = water_.rampByPath != 0;
+        if (ImGui::Checkbox("Ramp by view path (off = by water depth)", &byPath))
+        {
+            water_.rampByPath = byPath ? 1 : 0;
+        }
+        ImGui::TextDisabled(byPath ? "Lower view = deeper color, like the physical mode."
+                                   : "Same bed keeps its color from any angle.");
     }
 
     ImGui::SeparatorText("Reflection");
