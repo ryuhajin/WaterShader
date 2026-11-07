@@ -356,6 +356,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --water <on|off>       draw the water in the test scenes (lab_* / front_* shots, default on)
     //   --scene-debug <mode>   test scene debug view: 1 = depth below the water (the water is hidden)
     //   --transmission <mode>  test scene water: 0 = opaque (old), 1 = pass-through, 2 = attenuation, 3 = scattering (default)
+    //   --reflection <on|off>  test scene water: sky and sun mirrored on top of the water below (default on)
     //   --extinction <r,g,b>   underwater extinction per meter, overrides every preset (rgb-attenuation)
     //   --water-type <clear|green|lagoon>  underwater loss + color together, overrides every preset (water-scatter)
     //   --scatter <r,g,b,s>    water color (sRGB) and strength, overrides every preset (after --water-type)
@@ -423,6 +424,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--water" && hasValue)      { showWater_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--scene-debug" && hasValue) { sceneDebug_ = _wtoi(argv[++i]); }
                 else if (arg == L"--transmission" && hasValue) { transmissionMode_ = _wtoi(argv[++i]); }
+                else if (arg == L"--reflection" && hasValue) { surfaceReflection_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--water-type" && hasValue)
                 {
                     const std::string name = WideToUtf8(argv[++i]);
@@ -1693,6 +1695,7 @@ bool Graphics::Render(float deltaTime)
             d3d_->BindHdrTargetReadOnlyDepth();
             d3d_->SetDepthTestNoWrite();
             waterDraw.transmissionMode = transmissionMode_;
+            waterDraw.surfaceReflection = surfaceReflection_;
             // depth-reconstruct: pixel + depth -> world position goes back through view x projection.
             waterDraw.maxOpticalDistance = maxUnderwaterDistance_;
             DirectX::XMStoreFloat4x4(&waterDraw.invViewProjection, DirectX::XMMatrixInverse(nullptr, view * projection));
@@ -1731,8 +1734,9 @@ bool Graphics::Render(float deltaTime)
     // tone curve (their values were pre-decoded in the pixel shader and come back out unchanged).
     d3d_->BindBackBuffer();
     d3d_->SetRasterizerDoubleSided(); // the fullscreen triangle is clockwise; don't let it get culled
-    // Water coverage (9) and the water color part (15) are HDR frames, so they keep exposure and the tone curve.
-    const bool hdrDebug = water_.debugMode == 9 || water_.debugMode == 15;
+    // Water coverage (9), the water color part (15) and the reflection / underwater parts (18, 19) are HDR frames,
+    // so they keep exposure and the tone curve.
+    const bool hdrDebug = water_.debugMode == 9 || water_.debugMode == 15 || water_.debugMode == 18 || water_.debugMode == 19;
     const bool debugView = (water_.debugMode != 0 && !hdrDebug) || (scene_ != NoScene && sceneDebug_ != 0);
     tonemapShader_->Render(
         d3d_->GetDeviceContext(),
@@ -2037,6 +2041,28 @@ void Graphics::DrawViewWindow()
         cameraPosition_.x, cameraPosition_.y, cameraPosition_.z, cameraRotation_.x, cameraRotation_.y);
 
     ImGui::SeparatorText("Scene");
+    // Two water versions: Old = the painted opaque water (open water, bench, and the test scenes on request),
+    // New = the water below computed from the scene (test scenes only, transmissionMode_ 1-3). The Light and
+    // Water windows show the picked version's settings. The camera is not touched (shared by both).
+    const bool testScene = scene_ != NoScene;
+    const bool newWater = IsNewWater();
+    ImGui::TextUnformatted("Water version");
+    ImGui::BeginDisabled(!testScene);
+    if (ImGui::RadioButton("Old (opaque, painted)", !newWater) && newWater)
+    {
+        lastNewTransmission_ = transmissionMode_;
+        transmissionMode_ = 0;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("New (underwater)", newWater) && !newWater)
+    {
+        transmissionMode_ = lastNewTransmission_;
+    }
+    ImGui::EndDisabled();
+    if (!testScene)
+    {
+        ImGui::TextDisabled("New needs a test scene (Water Lab / Waterfront).");
+    }
     const char* sceneLabels[] = { "Bench plane", "Ocean grid (open water)", "Water Lab (test depths)", "Waterfront (graybox)" };
     int sceneChoice = scene_ != NoScene ? 1 + scene_ : (oceanMode_ ? 1 : 0);
     if (ImGui::Combo("Scene", &sceneChoice, sceneLabels, IM_ARRAYSIZE(sceneLabels)))
@@ -2044,9 +2070,14 @@ void Graphics::DrawViewWindow()
         oceanMode_ = sceneChoice != 0;
         scene_ = sceneChoice >= 2 ? sceneChoice - 1 : NoScene;
         // Entering a test scene from anywhere else would leave the camera far off: start from its overview shot.
+        // Picking a test scene here also picks the New water, the version the test scenes are built for.
         if (scene_ != NoScene)
         {
             ApplyCameraShot(FindCaptureShot(scene_ == WaterLab ? "lab_stairs" : "front_rails"));
+            if (transmissionMode_ == 0)
+            {
+                transmissionMode_ = lastNewTransmission_;
+            }
         }
     }
     ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
@@ -2082,11 +2113,7 @@ void Graphics::DrawViewWindow()
             }
             ImGui::TextDisabled("Dark lines every 1 m, red line = water surface (y = 0)");
         }
-        const char* transmissionLabels[] = { "Opaque (old water)", "Pass-through (no effect)", "Attenuation (light fades with the view path)",
-            "Scattering (+ the water's own color)" };
-        ImGui::Combo("Transmission", &transmissionMode_, transmissionLabels, IM_ARRAYSIZE(transmissionLabels));
-        ImGui::SliderFloat("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
-        ImGui::TextDisabled("View path where no surface is behind the water (sky).");
+        ImGui::TextDisabled("The water version's settings: Water window (3).");
         ImGui::TextDisabled("1 unit = 1 m, water at y = 0, ocean presets.");
         ImGui::TextDisabled("Waves stay flat unless Lab Waves is on.");
     }
@@ -2138,7 +2165,8 @@ void Graphics::DrawViewWindow()
     const char* debugLabels[] = { "render", "Sampled normal map", "World-space N", "UV", "Front/back face", "Lighting terms (R diffuse, G spec, B fresnel)", "Wave LOD (R mesh, G pixel, B roughness)", "Ocean detail (R ripple roughness, G gust, B haze)",
         "Scene depth, water only (test scenes)", "Water coverage (test scenes)",
         "Water depth (from depth buffer)", "Underwater view path", "Water depth numeric (compare tool)", "View path numeric (compare tool)",
-        "Transmittance (RGB, compare tool)", "Water color part only (scattering)", "Ramp color (as picked)" };
+        "Transmittance (RGB, compare tool)", "Water color part only (scattering)", "Ramp color (as picked)",
+        "Reflection amount (Fresnel x strength)", "Reflection part only", "Underwater part only" };
     if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
     {
         SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
@@ -2235,37 +2263,46 @@ void Graphics::DrawLightWindow()
     {
         ImGui::TextColored(kHighlightColor, "Not in use on the top shot: Top View Sun below\nlights it. These sliders are for every other view.");
     }
+    // Sun and ambient light both versions; what they light differs (the picked version: View window > Scene).
+    const bool newWater = IsNewWater();
+    ImGui::TextDisabled(newWater ? "New: lights the scene and the water's own color"
+                                 : "Old: lights the painted water color");
     ImGui::SliderFloat("Yaw (deg)", &sunYawDeg_, 0.0f, 360.0f, "%.1f");
     ImGui::SliderFloat("Elevation (deg)", &sunElevationDeg_, 0.0f, 90.0f, "%.1f");
     ImGui::ColorEdit3("Color", &lightColor_.x);
     ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 5.0f);
 
-    ImGui::SeparatorText("Top View Sun (top shot only)");
-    bool topSunEnabled = topSun_.enabled != 0;
-    if (ImGui::Checkbox("Own sun for the top shot", &topSunEnabled))
+    // The top shot is an open water shot, so its own sun never lights a test scene.
+    if (scene_ == NoScene)
     {
-        topSun_.enabled = topSunEnabled ? 1 : 0;
+        ImGui::SeparatorText("Top View Sun (top shot only)");
+        bool topSunEnabled = topSun_.enabled != 0;
+        if (ImGui::Checkbox("Own sun for the top shot", &topSunEnabled))
+        {
+            topSun_.enabled = topSunEnabled ? 1 : 0;
+        }
+        if (topSunActive)
+        {
+            ImGui::TextColored(kHighlightColor, "IN USE: the camera is on the top shot");
+        }
+        else if (topSunEnabled)
+        {
+            ImGui::TextDisabled("Waiting: used once the camera is on\nView > Camera Presets > top (any move leaves it)");
+        }
+        else
+        {
+            ImGui::TextDisabled("Off: the top shot uses the Sun above");
+        }
+        ImGui::BeginDisabled(!topSunEnabled);
+        ImGui::SliderFloat("Yaw (deg)##top", &topSun_.yawDeg, 0.0f, 360.0f, "%.1f");
+        ImGui::SliderFloat("Elevation (deg)##top", &topSun_.elevationDeg, 0.0f, 90.0f, "%.1f");
+        ImGui::SliderFloat("Intensity##top", &topSun_.intensity, 0.0f, 5.0f);
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("Elevation 90 = sun right above the plane,\nso its glint faces the top camera. Color = Sun color.");
     }
-    if (topSunActive)
-    {
-        ImGui::TextColored(kHighlightColor, "IN USE: the camera is on the top shot");
-    }
-    else if (topSunEnabled)
-    {
-        ImGui::TextDisabled("Waiting: used once the camera is on\nView > Camera Presets > top (any move leaves it)");
-    }
-    else
-    {
-        ImGui::TextDisabled("Off: the top shot uses the Sun above");
-    }
-    ImGui::BeginDisabled(!topSunEnabled);
-    ImGui::SliderFloat("Yaw (deg)##top", &topSun_.yawDeg, 0.0f, 360.0f, "%.1f");
-    ImGui::SliderFloat("Elevation (deg)##top", &topSun_.elevationDeg, 0.0f, 90.0f, "%.1f");
-    ImGui::SliderFloat("Intensity##top", &topSun_.intensity, 0.0f, 5.0f);
-    ImGui::EndDisabled();
-    ImGui::TextDisabled("Elevation 90 = sun right above the plane,\nso its glint faces the top camera. Color = Sun color.");
 
     ImGui::SeparatorText("Sun Glint (sun mirrored on the water)");
+    ImGui::TextDisabled(newWater ? "New: part of the reflection, x R" : "Old: added on top of the painted water, x R");
     ImGui::SliderFloat("Sharpness", &water_.sunGlintPower, 64.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
     ImGui::SliderFloat("Strength", &water_.sunGlintIntensity, 0.0f, 5.0f, "%.2f");
     ImGui::TextDisabled("Strength 1 = physically based");
@@ -2306,12 +2343,55 @@ void Graphics::DrawWaterWindow()
         return;
     }
 
-    ImGui::SeparatorText("Water Color");
-    LabeledColor("Color looking straight down", &water_.facingColor.x);
-    LabeledColor("Color at a low angle", &water_.grazingColor.x);
+    // Only the water version's own settings are shown (switch: View window, Scene); the hidden values stay as
+    // they are.
+    const bool newWater = IsNewWater();
+    ImGui::TextDisabled("Water version: %s (View window > Scene)", newWater ? "New (underwater)" : "Old (opaque, painted)");
 
-    // rgb-attenuation: only the test scenes read it (Transmission = Attenuation in the View window).
-    ImGui::SeparatorText("Underwater Light Loss (test scenes)");
+    if (!newWater)
+    {
+        ImGui::SeparatorText("Old: Painted Color");
+        ImGui::TextDisabled("The color the opaque water is painted with.");
+        LabeledColor("Color looking straight down", &water_.facingColor.x);
+        LabeledColor("Color at a low angle", &water_.grazingColor.x);
+    }
+    else
+    {
+        DrawNewWaterSettings();
+    }
+
+    ImGui::SeparatorText("Surface (both versions)");
+    ImGui::TextDisabled("Reflection, ripples and waves of the water surface.");
+    ImGui::SeparatorText("Reflection");
+    ImGui::TextDisabled(newWater ? "New: final = water below x (1 - R) + sky x R"
+                                 : "Old: final = painted color blended to the sky by R");
+    LabeledSlider("Reflection strength", &water_.reflectionStrength, 0.0f, 1.0f, "%.2f");
+    LabeledSlider("Reflectivity head-on (F0, real water = 0.02)", &water_.fresnelF0, 0.0f, 0.6f, "%.3f");
+    LabeledSlider("Fresnel curve (5 = physical; higher = mirror only at low angles)", &water_.fresnelPower, 1.0f, 8.0f, "%.1f");
+
+    DrawSurfaceSettings();
+
+    ImGui::End();
+}
+
+// The New water's own settings (test scenes): what comes up from under the water.
+void Graphics::DrawNewWaterSettings()
+{
+    ImGui::SeparatorText("New: Underwater");
+    const char* modeLabels[] = { "Pass-through (no effect)", "Attenuation (light fades with the view path)",
+        "Scattering (+ the water's own color)" };
+    int modeIndex = transmissionMode_ - 1;
+    if (ImGui::Combo("Transmission", &modeIndex, modeLabels, IM_ARRAYSIZE(modeLabels)))
+    {
+        transmissionMode_ = modeIndex + 1;
+        lastNewTransmission_ = transmissionMode_;
+    }
+    ImGui::Checkbox("Surface reflection (sky + sun, Fresnel)", &surfaceReflection_);
+    LabeledSlider("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
+    ImGui::TextDisabled("View path where no surface is behind the water (sky).");
+
+    // rgb-attenuation: read from Transmission = Attenuation on.
+    ImGui::SeparatorText("New: Underwater Light Loss");
     ImGui::TextDisabled("Per meter of view path through the water.");
     ImGui::TextDisabled("Half distance = where half of that light is left.");
     float* extinction[3] = { &water_.extinction.x, &water_.extinction.y, &water_.extinction.z };
@@ -2340,7 +2420,7 @@ void Graphics::DrawWaterWindow()
     }
 
     // water-scatter: what the light loss took is filled with the water's own color (Transmission = Scattering).
-    ImGui::SeparatorText("Underwater Color (test scenes)");
+    ImGui::SeparatorText("New: Underwater Color");
     ImGui::TextDisabled("Fills in what the light loss took: deep = this color.");
     for (int type = 0; type < kWaterTypeCount; ++type)
     {
@@ -2375,12 +2455,11 @@ void Graphics::DrawWaterWindow()
         ImGui::TextDisabled(byPath ? "Lower view = deeper color, like the physical mode."
                                    : "Same bed keeps its color from any angle.");
     }
+}
 
-    ImGui::SeparatorText("Reflection");
-    LabeledSlider("Reflection strength", &water_.reflectionStrength, 0.0f, 1.0f, "%.2f");
-    LabeledSlider("Reflectivity head-on (F0, real water = 0.02)", &water_.fresnelF0, 0.0f, 0.6f, "%.3f");
-    LabeledSlider("Fresnel curve (5 = physical; higher = mirror only at low angles)", &water_.fresnelPower, 1.0f, 8.0f, "%.1f");
-
+// Surface settings both water versions use: ripples, ocean detail, waves.
+void Graphics::DrawSurfaceSettings()
+{
     // Two textures of small ripples scrolled across the surface; they change the lighting only,
     // the mesh itself is moved by the Waves below.
     ImGui::SeparatorText("Normal Map");
@@ -2434,6 +2513,10 @@ void Graphics::DrawWaterWindow()
 
     // Gerstner waves move the mesh vertices. The presets order them big -> small.
     ImGui::SeparatorText("Waves (geometry)");
+    if (scene_ != NoScene && !labWaves_)
+    {
+        ImGui::TextColored(kHighlightColor, "Test scene: flat until View > Lab Waves is on.");
+    }
     ImGui::TextDisabled("Moving swells that shape the mesh. Arrow = travel\ndirection as seen from the camera (up = away).");
     ImGui::Checkbox("Far waves (lighting only past the mesh fade)", &farWaveNormals_);
 
@@ -2504,7 +2587,5 @@ void Graphics::DrawWaterWindow()
             ImGui::PopID();
         }
     }
-
-    ImGui::End();
 }
 

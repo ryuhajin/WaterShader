@@ -1,6 +1,6 @@
 # Surface Reflection — 6단계 반사 재연결
 
-> Branch: `feature/surface-reflection` · Status: draft · Updated: 2026-11-01
+> Branch: `feature/surface-reflection` · Status: done · Updated: 2026-11-07
 > waterfront 업그레이드 6단계. 앞 단계: [../water-scatter/NOTES.md](../water-scatter/NOTES.md)
 
 ## 1. Goal / Visual Target
@@ -63,8 +63,9 @@ R         = F × 반사 세기                                           // 반�
 |---|---|---|---|
 | CBuffer | 기존 `fresnelF0`, `fresnelPower`, `reflectionStrength`, 글린트 값 | float | 새 값 없음. 테스트 장면에서도 그대로 쓴다 |
 | CBuffer | 반사 켬/끔 | float | `g_SceneParams.z` (0 끔 = 5단계 화면, 1 켬) |
-| ImGui (View 창) | Surface reflection | checkbox | 테스트 장면 기본 켬 |
-| ImGui (Water 창) | Water Color 섹션 | | "(open water only)" 표시: 테스트 장면에서는 쓰이지 않음 |
+| ImGui (View 창) | Water version | radio | Scene 목록 바로 위. Old(opaque, painted) / New(underwater). 바다·벤치는 Old 고정, 테스트 장면을 고르면 자동 New. Light·Water 창이 버전을 따라감. 카메라는 두 버전 공유 |
+| ImGui (Water 창) | New: Underwater | combo, checkbox, slider | Transmission 하위 3모드, Surface reflection(기본 켬), Max underwater distance (View 창에서 옮김) |
+| ImGui (Water 창) | Old: Painted Color | | Old일 때만 표시. New 섹션들은 New일 때만 표시 |
 | CLI | `--reflection on\|off` | | 캡처용 |
 | Debug Mode | 17 / 18 / 19 | | 위 표 |
 | 도구 | `compare_depth.ps1 -Mode sum` 재사용 | | `반사 몫 + 물속 몫 = 최종` |
@@ -75,22 +76,22 @@ R         = F × 반사 세기                                           // 반�
 
 **에이전트 검증**
 
-- [ ] 빌드 경고 0, 디버그 레이어 경고 0, 기존 샷 21장 바이트 동일
-- [ ] 반사 끔 → 5단계(Scattering) 화면과 바이트 동일
-- [ ] 톤 곡선 끈 선형 화면에서 `반사 몫(18) + 물속 몫(19) = 최종` (8비트 반올림 안)
-- [ ] Fresnel 화면(17)의 평균: `lab_top` < `lab_stairs` < `lab_low` (낮게 볼수록 반사 증가). `lab_top` 중앙은 F0 근처
-- [ ] 테스트 장면에서 칠한 물색 값(Facing/Grazing 색)을 바꿔도 화면이 바뀌지 않음 (경로를 실제로 뺐는지 확인)
+- [x] 빌드 경고 0, 디버그 레이어 경고 0, 기존 샷 21장 바이트 동일
+- [x] 반사 끔 → 5단계(Scattering) 화면과 바이트 동일
+- [x] 톤 곡선 끈 선형 화면에서 `반사 몫(18) + 물속 몫(19) = 최종` (8비트 반올림 안)
+- [x] Fresnel 화면(17)의 평균: `lab_top` < `lab_stairs` < `lab_low` (낮게 볼수록 반사 증가). `lab_top` 중앙은 F0 근처
+- [x] 테스트 장면에서 칠한 물색 값(Facing/Grazing 색)을 바꿔도 화면이 바뀌지 않음 (경로를 실제로 뺐는지 확인)
 
 **사용자 검증**
 
-- [ ] 위에서 보면 물속이 잘 보이고, 낮은 시점에서는 하늘 반사가 물속을 덮는다
-- [ ] 반사 몫과 물속 몫을 디버그로 나눠 보고, 둘을 더하면 최종 화면이 되는 것을 설명할 수 있다
-- [ ] 예전 불투명 물(2색 + 확산광)에서 무엇을 빼고 무엇으로 바꿨는지 설명할 수 있다
+- [x] 위에서 보면 물속이 잘 보이고, 낮은 시점에서는 하늘 반사가 물속을 덮는다
+- [x] 반사 몫과 물속 몫을 디버그로 나눠 보고, 둘을 더하면 최종 화면이 되는 것을 설명할 수 있다
+- [x] 예전 불투명 물(2색 + 확산광)에서 무엇을 빼고 무엇으로 바꿨는지 설명할 수 있다
 
 ## 5. 결정 필요
 
 - **기존 바다 모드도 바꿀지**: PLAN R6은 바다 모드(바닥 없음)도 "최대 광학 거리"로 같은 경로를 타게 하자고 했다. 바꾸면 기존 바다 21장이 모두 달라지고, 프리셋 3종(Basic/Sunset/Tropical)을 다시 튜닝해야 한다.
-  - **제안: 6단계는 테스트 장면만 바꾼다.** 기존 바다는 21장 바이트 동일로 지킨다. 바다 모드 전환은 11단계(적용 장면 완성)에서 수변 장면과 함께 판단한다.
+  - **결정 (사용자, 2026-11-02): 6단계는 테스트 장면만 바꾼다.** 기존 바다는 21장 바이트 동일로 지킨다. 바다 모드 전환은 11단계(적용 장면 완성)에서 수변 장면과 함께 판단한다.
 
 ## 6. Notes
 

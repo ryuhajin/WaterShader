@@ -70,9 +70,9 @@ cmake --build --preset vs2022-debug       # Release는 vs2022-release
 
 | 창 | 섹션 |
 |---|---|
-| **View Settings [1]** | Presets(Apply / Save Current), Camera, Camera Presets(고정 샷 7개 + 슬롯 4개), Scene(Ocean Grid, Skybox), Capture, Debug View |
+| **View Settings [1]** | Presets(Apply / Save Current), Camera, Camera Presets(고정 샷 7개 + 슬롯 4개), Scene(Water version Old/New, 장면 선택, Skybox), Capture, Debug View |
 | **Light Settings [2]** | Sky / Environment(하늘 선택, Calibrate From Sky), Sun(방향·색·세기), Sun Glint(날카로움·세기·먼 바다 확산 Far spread), Ambient, Tonemapping(커브·노출) |
-| **Water Settings [3]** | Water Color, Reflection, Normal Map(레이어 A/B: 텍스처·바람 정렬·크기·흐름), Ocean Detail(먼 파도 마루·원경 리플 글리터·돌풍 패치·수평선 연무), Waves(Simple: 바람 방향·퍼짐·크기·높이·거칠기·속도로 파도 4개 생성 / Advanced: 파도 4개 개별 조정 / Far waves 토글) |
+| **Water Settings [3]** | 지금 물 버전(View 창 Scene의 Water version: Old 불투명 / New 물속 계산)의 색 설정, Reflection, Normal Map(레이어 A/B: 텍스처·바람 정렬·크기·흐름), Ocean Detail(먼 파도 마루·원경 리플 글리터·돌풍 패치·수평선 연무), Waves(Simple: 바람 방향·퍼짐·크기·높이·거칠기·속도로 파도 4개 생성 / Advanced: 파도 4개 개별 조정 / Far waves 토글) |
 
 좌측 상단 Stats에는 FPS, CPU/GPU 시간, VSync 토글, 단축키 안내가 표시됩니다.
 

@@ -57,7 +57,7 @@ struct PerFrameCB
     // x = ripple roughness, y = gust strength, z = gust scale, w = haze strength
     DirectX::XMFLOAT4 detailParams;
     DirectX::XMFLOAT4 detailParams2; // x = far wave crests (1 = as before)
-    DirectX::XMFLOAT4 sceneParams;   // x = transmission mode, y = max optical distance (test scenes, SCENE_INPUTS only)
+    DirectX::XMFLOAT4 sceneParams;   // x = transmission mode, y = max optical distance, z = surface reflection (SCENE_INPUTS only)
     DirectX::XMFLOAT4X4 invViewProjection; // test scenes: depth buffer -> world position
     DirectX::XMFLOAT4 extinction;          // rgb = extinction per meter (test scenes)
     DirectX::XMFLOAT4 scatterColor;        // rgb = linear scatter color, a = strength (test scenes)
@@ -423,7 +423,8 @@ void ColorShader::RenderShader(
             water.gustScale,
             water.hazeStrength);
         data->detailParams2 = DirectX::XMFLOAT4(water.farWaveCrests, water.lodScale, std::log2(water.lodScale), 0.0f);
-        data->sceneParams = DirectX::XMFLOAT4(static_cast<float>(water.transmissionMode), water.maxOpticalDistance, 0.0f, 0.0f);
+        data->sceneParams = DirectX::XMFLOAT4(static_cast<float>(water.transmissionMode), water.maxOpticalDistance,
+            water.surfaceReflection ? 1.0f : 0.0f, 0.0f);
         data->invViewProjection = water.invViewProjection;
         data->extinction = DirectX::XMFLOAT4(water.extinction.x, water.extinction.y, water.extinction.z, 0.0f);
         const auto linear = [](const DirectX::XMFLOAT3& c, float w) { return SrgbToLinear(DirectX::XMFLOAT4(c.x, c.y, c.z, w)); };

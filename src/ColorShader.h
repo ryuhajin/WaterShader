@@ -82,6 +82,8 @@ public:
         // 1 = pass-through (the scene without the water, unchanged), 2 = attenuation (rgb-attenuation).
         int transmissionMode = 0;
         float maxOpticalDistance = 50.0f; // m: the view path where no surface is behind the water (sky)
+        // surface-reflection: the sky and sun mirrored on top of the water below (false = the water below alone).
+        bool surfaceReflection = true;
         DirectX::XMFLOAT4X4 invViewProjection = {}; // inverse of view x projection: depth buffer -> world position
         // Normal map rotation on the water (world XZ), as cos/sin: xy = layer A, zw = layer B. (1, 0) = as authored.
         DirectX::XMFLOAT4 normalRotation = {1.0f, 0.0f, 1.0f, 0.0f};
