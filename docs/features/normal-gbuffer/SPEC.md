@@ -1,6 +1,6 @@
 # Normal G-Buffer — 6C단계 저장 노멀 vs 깊이 복원 노멀
 
-> Branch: `feature/normal-gbuffer` · Status: in-progress · Updated: 2026-11-07
+> Branch: `feature/normal-gbuffer` · Status: done · Updated: 2026-11-07
 > waterfront 업그레이드 6C단계. 앞 단계: [../contact-foam/NOTES.md](../contact-foam/NOTES.md)
 
 ## 1. Goal
@@ -53,8 +53,8 @@
 
 **사용자 검증**
 
-- [ ] Normal source를 바꿔 가며 모서리·레일·기둥에서 거품과 노멀이 어떻게 달라지는지 본다
-- [ ] 두 방식의 비용 차이(노멀 버퍼 메모리·쓰기 vs 픽셀당 계산)를 숫자로 설명할 수 있다
+- [x] Normal source를 바꿔 가며 모서리·레일·기둥에서 거품과 노멀이 어떻게 달라지는지 본다
+- [x] 두 방식의 비용 차이(노멀 버퍼 메모리·쓰기 vs 픽셀당 계산)를 숫자로 설명할 수 있다
 
 ## 5. Notes
 
