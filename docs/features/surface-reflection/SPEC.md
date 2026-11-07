@@ -1,6 +1,6 @@
 # Surface Reflection — 6단계 반사 재연결
 
-> Branch: `feature/surface-reflection` · Status: in-progress · Updated: 2026-11-02
+> Branch: `feature/surface-reflection` · Status: done · Updated: 2026-11-07
 > waterfront 업그레이드 6단계. 앞 단계: [../water-scatter/NOTES.md](../water-scatter/NOTES.md)
 
 ## 1. Goal / Visual Target
@@ -84,9 +84,9 @@ R         = F × 반사 세기                                           // 반�
 
 **사용자 검증**
 
-- [ ] 위에서 보면 물속이 잘 보이고, 낮은 시점에서는 하늘 반사가 물속을 덮는다
-- [ ] 반사 몫과 물속 몫을 디버그로 나눠 보고, 둘을 더하면 최종 화면이 되는 것을 설명할 수 있다
-- [ ] 예전 불투명 물(2색 + 확산광)에서 무엇을 빼고 무엇으로 바꿨는지 설명할 수 있다
+- [x] 위에서 보면 물속이 잘 보이고, 낮은 시점에서는 하늘 반사가 물속을 덮는다
+- [x] 반사 몫과 물속 몫을 디버그로 나눠 보고, 둘을 더하면 최종 화면이 되는 것을 설명할 수 있다
+- [x] 예전 불투명 물(2색 + 확산광)에서 무엇을 빼고 무엇으로 바꿨는지 설명할 수 있다
 
 ## 5. 결정 필요
 
