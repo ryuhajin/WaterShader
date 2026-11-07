@@ -63,8 +63,9 @@ R         = F × 반사 세기                                           // 반�
 |---|---|---|---|
 | CBuffer | 기존 `fresnelF0`, `fresnelPower`, `reflectionStrength`, 글린트 값 | float | 새 값 없음. 테스트 장면에서도 그대로 쓴다 |
 | CBuffer | 반사 켬/끔 | float | `g_SceneParams.z` (0 끔 = 5단계 화면, 1 켬) |
-| ImGui (View 창) | Surface reflection | checkbox | 테스트 장면 기본 켬 |
-| ImGui (Water 창) | Water Color 섹션 | | "(open water only)" 표시: 테스트 장면에서는 쓰이지 않음 |
+| ImGui (Water 창) | Water version | radio | Old(opaque, painted) / New(underwater). 바다·벤치는 Old 고정. 카메라는 두 버전 공유 |
+| ImGui (Water 창) | New: Underwater | combo, checkbox, slider | Transmission 하위 3모드, Surface reflection(기본 켬), Max underwater distance (View 창에서 옮김) |
+| ImGui (Water 창) | Old: Painted Color | | Old일 때만 표시. New 섹션들은 New일 때만 표시 |
 | CLI | `--reflection on\|off` | | 캡처용 |
 | Debug Mode | 17 / 18 / 19 | | 위 표 |
 | 도구 | `compare_depth.ps1 -Mode sum` 재사용 | | `반사 몫 + 물속 몫 = 최종` |

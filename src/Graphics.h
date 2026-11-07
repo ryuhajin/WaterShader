@@ -38,7 +38,9 @@ private:
     // Settings windows, toggled with keys 1 / 2 / 3 (UpdateWindowToggles).
     void DrawViewWindow();  // presets, camera, scene, capture, debug view
     void DrawLightWindow(); // sky, sun, glint, ambient, tonemapping
-    void DrawWaterWindow(); // water color, reflection, normal maps, waves
+    void DrawWaterWindow(); // water version, its own settings, then the shared surface (reflection, ripples, waves)
+    void DrawNewWaterSettings(); // test scenes: transmission, underwater light loss and color
+    void DrawSurfaceSettings();  // both versions: normal maps, ocean detail, waves
     void DrawStatsOverlay();
     void UpdateFrameStats(float deltaTime);
     void UpdateCamera(float deltaTime, const Input& input);
@@ -165,6 +167,7 @@ private:
     int parkedWaterDebug_ = 0; // water Debug Mode put aside while a Scene Debug view is on
     int transmissionMode_ = 3; // test scenes: 0 opaque water (as before), 1 pass-through (scene-color-depth),
                                // 2 attenuation (rgb-attenuation), 3 scattering (water-scatter)
+    int lastNewTransmission_ = 3; // the New water's mode to go back to after the Water window switch picked Old
     float maxUnderwaterDistance_ = 50.0f; // m: view path where no surface is behind the water (depth-reconstruct)
     bool surfaceReflection_ = true; // test scenes: sky and sun mirrored on top of the water below (surface-reflection)
     // Debug layer messages (Debug builds), counted per text; written next to a capture set.

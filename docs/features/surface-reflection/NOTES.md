@@ -20,7 +20,11 @@ R    = Fresnel 비율 × 반사 세기        // 정면 F0(물 0.02), 낮게 볼
 |---|---|
 | `shaders/PixelShader.hlsl` | `SCENE_INPUTS`: 투과 모드별 물속 색(`underwaterColor`)을 계산만 해 두고 노멀·Fresnel·하늘·글린트 계산으로 이어감. 끝에서 `물속 × (1 − R) + 반사 × R`. 반사 끔이면 물속 색을 바로 반환. 디버그 17(R)·18(반사 몫)·19(물속 몫) |
 | `src/ColorShader.*` | `WaterParams::surfaceReflection` → `g_SceneParams.z` |
-| `src/Graphics.*` | View 창 Scene 섹션 "Surface reflection" 체크박스(기본 켬, Opaque 모드에서는 비활성), CLI `--reflection on\|off`, Debug Mode 17~19 라벨, 18·19는 HDR 화면(톤 곡선 적용). Water 창 "Water Color (open water)" 표시, Reflection 섹션에 테스트 장면 공식 한 줄 |
+| `src/Graphics.*` | CLI `--reflection on\|off`, Debug Mode 17~19 라벨, 18·19는 HDR 화면(톤 곡선 적용). **Water 창을 버전별로 정리** (아래) |
+| | Water 창 맨 위 **Water version** 스위치: Old(opaque, painted) / New(underwater). 바다·벤치에서는 Old 고정(비활성). 상태는 기존 `transmissionMode_` 하나(0 = Old, 1~3 = New), New로 돌아오면 직전 하위 모드 복원(`lastNewTransmission_`) |
+| | Old일 때만 "Old: Painted Color"(Facing/Grazing 색). New일 때만 "New: Underwater"(Transmission 하위 3모드, Surface reflection 체크 기본 켬, Max underwater distance — View 창에서 옮김), "New: Underwater Light Loss", "New: Underwater Color" |
+| | 항상: "Surface (both versions)" — Reflection(버전별 공식 한 줄), Normal Map, Ocean Detail, Waves. 숨긴 섹션의 값은 그대로 유지·저장 |
+| | 카메라는 두 버전 공유: 스위치는 `transmissionMode_`만 바꾸고 카메라를 건드리지 않음. 슬롯·고정 샷(`CameraView`)에는 버전이 없음 |
 | `tools/compare_depth.ps1` | `-Mode mean`: 회색 디버그 화면의 물 픽셀 평균·최소·최대 |
 
 ## 3. 에이전트 검증 (2026-11-02)
@@ -34,6 +38,7 @@ R    = Fresnel 비율 × 반사 세기        // 정면 F0(물 0.02), 낮게 볼
 | 칠한 물색 경로 제거 | 바다 프리셋의 Facing/Grazing 색을 자홍·초록, 하이라이트 세기 5로 바꾼 프리셋 파일(`--preset-file`) vs 원래 프리셋, 5샷 × 3프리셋 | 13장 동일, 2장이 1픽셀씩 1레벨 차이 → 같은 조건으로 다시 찍자 동일 (아래 설명). 대조: Opaque 모드에서는 3장 모두 달라짐 |
 | 낮게 볼수록 반사 증가 | `-Mode mean`: R 화면(17) 물 픽셀 평균, Basic | 아래 표 |
 | 디버그 레이어 | Debug: 최종, 17, 18, 19 × 4샷 | 경고·오류 0건 |
+| UI 정리 후 화면 불변 (2026-11-07) | 기존 바다 21장 vs 0단계 기준 / 테스트 장면 5샷 × 3프리셋 vs `after_step6` / `--transmission 0` 2샷 × 3프리셋 수정 전후 / Debug lab_stairs | **21장 동일 / 14장 동일 + 1장 GPU 흔들림(다시 3번 찍어 모두 동일) / 6장 동일 / 경고 0건** |
 
 **반사 비율 R의 물 픽셀 평균** (Basic: F0 0.04, 반사 세기 0.7 → 정면 최솟값 0.028, 최댓값 0.7)
 
@@ -69,7 +74,7 @@ R    = Fresnel 비율 × 반사 세기        // 정면 F0(물 0.02), 낮게 볼
 
 | 증상 | 원인 | 해결 |
 |---|---|---|
-| 없음 | — | — |
+| Water 창에 Old 물 색(Facing/Grazing)과 New 물 색(물속 색·램프)이 나란히 있어 어느 것이 화면을 바꾸는지 헷갈림 (사용자 보고) | 버전 선택이 View 창 Transmission 콤보 안에 New 하위 모드와 섞여 있었고, Water 창은 버전과 상관없이 모든 섹션을 보여 줌 | Water 창 맨 위에 버전 스위치를 두고, 고른 버전의 전용 섹션만 표시. New 전용 값(Transmission 하위 모드·Surface reflection·Max underwater distance)은 View 창에서 Water 창으로 옮김. 공통 값은 "Surface (both versions)" 아래에 둠. 렌더링은 그대로 |
 
 ### 관찰: 위에서 내려다보면 기둥이 잠겨 보이지 않는다 (사용자 검증 중, 2026-11-07)
 
@@ -80,17 +85,20 @@ R    = Fresnel 비율 × 반사 세기        // 정면 F0(물 0.02), 낮게 볼
 
 ## 4. 사용자 검증 안내
 
-**실행:** `.\build\vs2022\Debug\WaterShader.exe` → `1` 키 → Scene = **Water Lab** (Clear 물, Transmission = Scattering, Surface reflection 켬이 기본)
+**실행:** `.\build\vs2022\Debug\WaterShader.exe` → `1` 키 → Scene = **Water Lab** → `3` 키로 Water 창. 기본은 Water version = **New**, Transmission = Scattering, Surface reflection 켬, Clear 물
 
 | 순서 | 조작 | 정상 | 실패 징후 |
 |---|---|---|---|
 | 1 | 카메라 **lab_top** | 5단계와 거의 같음. 하늘이 아주 옅게(약 3%) 얹히고 잔물결 무늬가 살짝 보임 | 위에서도 하늘이 진하게 덮음 |
 | 2 | 카메라 **lab_low** | 먼 수면은 하늘·풀숲이 비치고 물속이 잘 안 보임. 가까운 수면은 물속이 보임. **기둥이 수면에서 끊겨 보임** (위는 그대로, 아래는 반사가 얹혀 흐려짐) | 먼 곳까지 물속이 그대로 보임 |
-| 3 | 2번에서 Surface reflection 끄기/켜기 | 끄면 5단계 화면 (기둥 수면선 사라짐) | 끄고 켜도 같음 |
+| 3 | 2번에서 Water 창 "New: Underwater"의 Surface reflection 끄기/켜기 | 끄면 5단계 화면 (기둥 수면선 사라짐) | 끄고 켜도 같음 |
 | 4 | Debug Mode = **Reflection amount** | 가까운 수면 검정, 먼 수면일수록 밝음 | 전체가 같은 밝기 |
 | 5 | Debug Mode = **Reflection part only** ↔ **Underwater part only** | 반사 몫은 먼 곳이 밝음, 물속 몫은 가까운 곳이 밝음. 두 화면이 서로 반대 | — |
 | 6 | Water 창(`3`) Reflection의 **Reflection strength**를 0 ↔ 1 | 0이면 반사 끔과 같음, 1이면 먼 수면일수록 거울에 가까워짐 | — |
-| 7 | Water 창 "Water Color (open water)"의 색을 바꿈 | 테스트 장면은 바뀌지 않음 (Transmission을 Opaque로 바꾸면 바뀜) | 테스트 장면 물색이 바뀜 |
+| 7 | Water 창 맨 위 **Water version**을 New ↔ Old로 전환 | New: "New: Underwater / Light Loss / Color"만 보임. Old: "Old: Painted Color"만 보이고 화면이 예전 불투명 물로 바뀜. 어느 쪽이든 Reflection 아래 공통 섹션은 그대로. **카메라는 움직이지 않음** | 두 버전의 색 섹션이 함께 보임, 전환할 때 카메라가 튐 |
+| 8 | New에서 Transmission을 Attenuation으로 → Old → 다시 New | Attenuation이 그대로 복원됨 | Scattering으로 돌아감 |
+| 9 | 카메라 슬롯을 하나 Save → 버전 전환 → Load | 두 버전에서 같은 위치로 감 (슬롯에 버전이 저장되지 않음) | 버전이 같이 바뀜 |
+| 10 | View 창 Scene = **Ocean grid** 후 Water 창 | 스위치가 회색(Old 고정), "New needs a test scene" 안내, Painted Color가 보임 | New 섹션이 보임 |
 
 **확인 질문**
 

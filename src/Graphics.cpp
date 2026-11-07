@@ -2086,14 +2086,7 @@ void Graphics::DrawViewWindow()
             }
             ImGui::TextDisabled("Dark lines every 1 m, red line = water surface (y = 0)");
         }
-        const char* transmissionLabels[] = { "Opaque (old water)", "Pass-through (no effect)", "Attenuation (light fades with the view path)",
-            "Scattering (+ the water's own color)" };
-        ImGui::Combo("Transmission", &transmissionMode_, transmissionLabels, IM_ARRAYSIZE(transmissionLabels));
-        ImGui::BeginDisabled(transmissionMode_ == 0); // the opaque water keeps its own reflection
-        ImGui::Checkbox("Surface reflection (sky + sun, Fresnel)", &surfaceReflection_);
-        ImGui::EndDisabled();
-        ImGui::SliderFloat("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
-        ImGui::TextDisabled("View path where no surface is behind the water (sky).");
+        ImGui::TextDisabled("Water version and its settings: Water window (3).");
         ImGui::TextDisabled("1 unit = 1 m, water at y = 0, ocean presets.");
         ImGui::TextDisabled("Waves stay flat unless Lab Waves is on.");
     }
@@ -2314,13 +2307,73 @@ void Graphics::DrawWaterWindow()
         return;
     }
 
-    ImGui::SeparatorText("Water Color (open water)");
-    ImGui::TextDisabled("Test scenes show the water below instead.");
-    LabeledColor("Color looking straight down", &water_.facingColor.x);
-    LabeledColor("Color at a low angle", &water_.grazingColor.x);
+    // Two water versions: Old = the painted opaque water (open water, bench, and the test scenes on request),
+    // New = the water below computed from the scene (test scenes only, transmissionMode_ 1-3). Only the picked
+    // version's own settings are shown; the hidden values stay as they are. The camera is not touched.
+    ImGui::SeparatorText("Water version");
+    const bool testScene = scene_ != NoScene;
+    const bool newWater = testScene && transmissionMode_ != 0;
+    ImGui::BeginDisabled(!testScene);
+    if (ImGui::RadioButton("Old (opaque, painted)", !newWater) && newWater)
+    {
+        lastNewTransmission_ = transmissionMode_;
+        transmissionMode_ = 0;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("New (underwater)", newWater) && !newWater)
+    {
+        transmissionMode_ = lastNewTransmission_;
+    }
+    ImGui::EndDisabled();
+    if (!testScene)
+    {
+        ImGui::TextDisabled("New needs a test scene (Water Lab / Waterfront).");
+    }
 
-    // rgb-attenuation: only the test scenes read it (Transmission = Attenuation in the View window).
-    ImGui::SeparatorText("Underwater Light Loss (test scenes)");
+    if (!newWater)
+    {
+        ImGui::SeparatorText("Old: Painted Color");
+        ImGui::TextDisabled("The color the opaque water is painted with.");
+        LabeledColor("Color looking straight down", &water_.facingColor.x);
+        LabeledColor("Color at a low angle", &water_.grazingColor.x);
+    }
+    else
+    {
+        DrawNewWaterSettings();
+    }
+
+    ImGui::SeparatorText("Surface (both versions)");
+    ImGui::TextDisabled("Reflection, ripples and waves of the water surface.");
+    ImGui::SeparatorText("Reflection");
+    ImGui::TextDisabled(newWater ? "New: final = water below x (1 - R) + sky x R"
+                                 : "Old: final = painted color blended to the sky by R");
+    LabeledSlider("Reflection strength", &water_.reflectionStrength, 0.0f, 1.0f, "%.2f");
+    LabeledSlider("Reflectivity head-on (F0, real water = 0.02)", &water_.fresnelF0, 0.0f, 0.6f, "%.3f");
+    LabeledSlider("Fresnel curve (5 = physical; higher = mirror only at low angles)", &water_.fresnelPower, 1.0f, 8.0f, "%.1f");
+
+    DrawSurfaceSettings();
+
+    ImGui::End();
+}
+
+// The New water's own settings (test scenes): what comes up from under the water.
+void Graphics::DrawNewWaterSettings()
+{
+    ImGui::SeparatorText("New: Underwater");
+    const char* modeLabels[] = { "Pass-through (no effect)", "Attenuation (light fades with the view path)",
+        "Scattering (+ the water's own color)" };
+    int modeIndex = transmissionMode_ - 1;
+    if (ImGui::Combo("Transmission", &modeIndex, modeLabels, IM_ARRAYSIZE(modeLabels)))
+    {
+        transmissionMode_ = modeIndex + 1;
+        lastNewTransmission_ = transmissionMode_;
+    }
+    ImGui::Checkbox("Surface reflection (sky + sun, Fresnel)", &surfaceReflection_);
+    LabeledSlider("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
+    ImGui::TextDisabled("View path where no surface is behind the water (sky).");
+
+    // rgb-attenuation: read from Transmission = Attenuation on.
+    ImGui::SeparatorText("New: Underwater Light Loss");
     ImGui::TextDisabled("Per meter of view path through the water.");
     ImGui::TextDisabled("Half distance = where half of that light is left.");
     float* extinction[3] = { &water_.extinction.x, &water_.extinction.y, &water_.extinction.z };
@@ -2349,7 +2402,7 @@ void Graphics::DrawWaterWindow()
     }
 
     // water-scatter: what the light loss took is filled with the water's own color (Transmission = Scattering).
-    ImGui::SeparatorText("Underwater Color (test scenes)");
+    ImGui::SeparatorText("New: Underwater Color");
     ImGui::TextDisabled("Fills in what the light loss took: deep = this color.");
     for (int type = 0; type < kWaterTypeCount; ++type)
     {
@@ -2384,13 +2437,11 @@ void Graphics::DrawWaterWindow()
         ImGui::TextDisabled(byPath ? "Lower view = deeper color, like the physical mode."
                                    : "Same bed keeps its color from any angle.");
     }
+}
 
-    ImGui::SeparatorText("Reflection");
-    ImGui::TextDisabled("Test scenes: final = water below x (1 - R) + sky x R");
-    LabeledSlider("Reflection strength", &water_.reflectionStrength, 0.0f, 1.0f, "%.2f");
-    LabeledSlider("Reflectivity head-on (F0, real water = 0.02)", &water_.fresnelF0, 0.0f, 0.6f, "%.3f");
-    LabeledSlider("Fresnel curve (5 = physical; higher = mirror only at low angles)", &water_.fresnelPower, 1.0f, 8.0f, "%.1f");
-
+// Surface settings both water versions use: ripples, ocean detail, waves.
+void Graphics::DrawSurfaceSettings()
+{
     // Two textures of small ripples scrolled across the surface; they change the lighting only,
     // the mesh itself is moved by the Waves below.
     ImGui::SeparatorText("Normal Map");
@@ -2514,7 +2565,5 @@ void Graphics::DrawWaterWindow()
             ImGui::PopID();
         }
     }
-
-    ImGui::End();
 }
 
