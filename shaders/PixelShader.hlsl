@@ -232,13 +232,16 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 
     // Receiver = the surface this pixel sees through the water (depth-reconstruct). The pixel and its depth are
     // where projection and view put the surface; the inverse matrix takes them back, and dividing by w undoes
-    // the perspective divide. Depth 1 is the cleared buffer (sky): no surface, nothing to reconstruct.
+    // the perspective divide. Depth 1 is the sky (cleared, or the skybox drawn at z = w): no surface, nothing to
+    // reconstruct. The skybox's interpolated z / w can land a step or two below 1 in the 24-bit buffer, and those
+    // pixels then reconstruct onto the far plane (rows of far-plane normals in debug 22), so everything past
+    // ~900 m counts as sky (depth 0.99999; the test scenes reach ~50 m, the far plane is 1000 m).
     uint sceneWidth, sceneHeight;
     g_SceneDepth.GetDimensions(sceneWidth, sceneHeight);
     float2 sceneUv = (float2(scenePixel.xy) + 0.5) / float2(sceneWidth, sceneHeight);
     float4 receiverH = mul(float4(sceneUv.x * 2.0 - 1.0, 1.0 - sceneUv.y * 2.0, sceneDepth, 1.0), g_InvViewProjection);
     float3 receiverWS = receiverH.xyz / receiverH.w;
-    bool hasReceiver = sceneDepth < 1.0;
+    bool hasReceiver = sceneDepth < 0.99999;
     float maxOpticalDistance = g_SceneParams.y;
     // Water depth: how far the surface lies below the water (the answer key measures the same thing).
     // View path: how much water the line of sight crosses, water surface -> surface (no air part).
