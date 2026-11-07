@@ -51,6 +51,15 @@ public:
     void BindHdrTarget();              // back to the HDR color alone, writable depth
     ID3D11ShaderResourceView* GetSceneNormalSRV() const { return sceneNormalSRV_.Get(); }
 
+    // Water depth (wave-occlusion): starts as a copy of the scene depth; the water depth prepass writes the
+    // nearest water surface into it, then the color pass tests EQUAL against it (read-only).
+    void CopySceneDepthToWaterDepth();
+    void BindWaterDepthOnly();                     // no color target: depth-only draw
+    void BindHdrTargetWaterDepth(bool readOnly);   // HDR color + water depth
+    void SetDepthEqualNoWrite();   // color pass: EQUAL depth and stencil = 1 (the water won the prepass here)
+    void SetWaterPrepassDepth();   // prepass: LESS + write, stencil = 1 where the water wins
+    void ClearWaterStencil();      // after the depth copy: no pixel marked yet
+
     // Debug layer (Debug builds): warnings and errors since the last call. Empty without the layer.
     // allMessages (optional) counts every stored message, info included: proof the queue is live.
     std::vector<std::string> TakeDebugMessages(size_t* allMessages = nullptr);
@@ -94,6 +103,11 @@ private:
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilViewReadOnly_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depthSRV_;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthTestNoWriteState_;
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthEqualNoWriteState_;
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilState> waterPrepassState_;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> waterDepthTexture_;        // scene depth + the nearest water surface
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilView> waterDepthDSV_;
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilView> waterDepthDSVReadOnly_;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState_;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateDoubleSided_;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateWaterSurface_;

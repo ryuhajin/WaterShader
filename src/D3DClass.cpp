@@ -377,6 +377,27 @@ bool D3DClass::CreateDepthStates()
     desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
     desc.DepthFunc = D3D11_COMPARISON_LESS;
     ThrowIfFailed(device_->CreateDepthStencilState(&desc, &depthTestNoWriteState_), "CreateDepthStencilState (no write) failed.");
+
+    // The water color pass after the water depth prepass (wave-occlusion): only the fragment whose depth is the
+    // one the prepass kept (the nearest water surface) is shaded.
+    // EQUAL alone would also pass where the water ties with the scene depth (the waterline, where the old LESS test
+    // let the scene win), so the prepass marks the pixels the water actually won in the stencil (1) and the color
+    // pass requires that mark as well.
+    desc.DepthFunc = D3D11_COMPARISON_EQUAL;
+    desc.StencilEnable = TRUE;
+    desc.StencilReadMask = 0xFF;
+    desc.StencilWriteMask = 0x00;
+    desc.FrontFace = {D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_COMPARISON_EQUAL};
+    desc.BackFace = desc.FrontFace;
+    ThrowIfFailed(device_->CreateDepthStencilState(&desc, &depthEqualNoWriteState_), "CreateDepthStencilState (equal) failed.");
+
+    // The water depth prepass: LESS with depth writes like the default, and the stencil set to 1 where it wins.
+    desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+    desc.DepthFunc = D3D11_COMPARISON_LESS;
+    desc.StencilWriteMask = 0xFF;
+    desc.FrontFace = {D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_REPLACE, D3D11_COMPARISON_ALWAYS};
+    desc.BackFace = desc.FrontFace;
+    ThrowIfFailed(device_->CreateDepthStencilState(&desc, &waterPrepassState_), "CreateDepthStencilState (water prepass) failed.");
     return true;
 }
 
@@ -442,7 +463,46 @@ bool D3DClass::CreateDepthStencil()
     srvDesc.Texture2D.MipLevels = 1;
     ThrowIfFailed(device_->CreateShaderResourceView(depthTexture_.Get(), &srvDesc, &depthSRV_), "Depth SRV creation failed.");
 
+    // Water depth (wave-occlusion): a copy of the scene depth that the water then writes into, so the nearest wave
+    // hides the ones behind it while the scene depth stays readable for the water's own math.
+    depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+    ThrowIfFailed(device_->CreateTexture2D(&depthDesc, nullptr, &waterDepthTexture_), "Water depth creation failed.");
+    dsvDesc.Flags = 0;
+    ThrowIfFailed(device_->CreateDepthStencilView(waterDepthTexture_.Get(), &dsvDesc, &waterDepthDSV_), "Water DSV creation failed.");
+    dsvDesc.Flags = D3D11_DSV_READ_ONLY_DEPTH | D3D11_DSV_READ_ONLY_STENCIL;
+    ThrowIfFailed(device_->CreateDepthStencilView(waterDepthTexture_.Get(), &dsvDesc, &waterDepthDSVReadOnly_), "Read-only water DSV creation failed.");
+
     return true;
+}
+
+void D3DClass::CopySceneDepthToWaterDepth()
+{
+    deviceContext_->CopyResource(waterDepthTexture_.Get(), depthTexture_.Get());
+}
+
+void D3DClass::BindWaterDepthOnly()
+{
+    deviceContext_->OMSetRenderTargets(0, nullptr, waterDepthDSV_.Get());
+}
+
+void D3DClass::BindHdrTargetWaterDepth(bool readOnly)
+{
+    deviceContext_->OMSetRenderTargets(1, hdrRTV_.GetAddressOf(), readOnly ? waterDepthDSVReadOnly_.Get() : waterDepthDSV_.Get());
+}
+
+void D3DClass::SetDepthEqualNoWrite()
+{
+    deviceContext_->OMSetDepthStencilState(depthEqualNoWriteState_.Get(), 1);
+}
+
+void D3DClass::SetWaterPrepassDepth()
+{
+    deviceContext_->OMSetDepthStencilState(waterPrepassState_.Get(), 1);
+}
+
+void D3DClass::ClearWaterStencil()
+{
+    deviceContext_->ClearDepthStencilView(waterDepthDSV_.Get(), D3D11_CLEAR_STENCIL, 1.0f, 0);
 }
 
 void D3DClass::ReleaseRenderTarget()
@@ -454,6 +514,9 @@ void D3DClass::ReleaseRenderTarget()
 
     depthSRV_.Reset();
     depthStencilViewReadOnly_.Reset();
+    waterDepthDSVReadOnly_.Reset();
+    waterDepthDSV_.Reset();
+    waterDepthTexture_.Reset();
     depthStencilView_.Reset();
     depthTexture_.Reset();
     sceneColorSRV_.Reset();

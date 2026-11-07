@@ -98,6 +98,10 @@ public:
         // normal-gbuffer: where the water gets the normal of the surface behind it. 0 = estimated from the depth
         // buffer, 1 = stored by the opaque pass (scene normal buffer).
         int normalSource = 0;
+        // wave-occlusion: x = half size of the square water patch (m, 0 = none), y = width over which the waves fade
+        // out toward its edge (test scenes; set every frame, not saved).
+        DirectX::XMFLOAT4 waterArea = {0.0f, 0.0f, 0.0f, 0.0f};
+        bool depthOnly = false; // water depth prepass draw: vertex shader alone, no pixel shader
         DirectX::XMFLOAT4X4 invViewProjection = {}; // inverse of view x projection: depth buffer -> world position
         // Normal map rotation on the water (world XZ), as cos/sin: xy = layer A, zw = layer B. (1, 0) = as authored.
         DirectX::XMFLOAT4 normalRotation = {1.0f, 0.0f, 1.0f, 0.0f};
@@ -160,6 +164,7 @@ private:
         ID3D11ShaderResourceView* sceneNormalSRV);
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader_;
+    Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShaderScene_; // SCENE_INPUTS: waves fade at the water patch edge
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShaderDetail_; // OCEAN_DETAIL: used while any ocean detail is on
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShaderScene_;  // SCENE_INPUTS (+ OCEAN_DETAIL): water over the test scenes

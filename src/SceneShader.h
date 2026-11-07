@@ -34,6 +34,14 @@ public:
         const DirectX::XMFLOAT4& ambientColor,   // sRGB rgb, a = intensity
         int debugMode,                           // 0 render, 1 depth below the water
         bool writeNormal = false);               // also write the world normal to render target 1 (normal-gbuffer)
+    // The water surface the answer key (debug 1 / 2) measures depth from (wave-occlusion): the water's own waves.
+    struct WaterSurface
+    {
+        DirectX::XMFLOAT4 waves[8];  // per wave: (direction.x, direction.y, amplitude, wavelength), (speed, steepness, 0, 0)
+        DirectX::XMFLOAT4 camera;    // xyz = camera position (the waves fade with distance)
+        DirectX::XMFLOAT4 timeArea;  // x = time, y = water patch half size, z = wave edge fade width
+    };
+    void SetWaterSurface(const WaterSurface& surface) { waterSurface_ = surface; }
     void Render(ID3D11DeviceContext* deviceContext, int indexCount, const DirectX::XMMATRIX& world, const Material& material);
 
     const std::string& GetLastError() const { return lastError_; }
@@ -57,6 +65,7 @@ private:
     DirectX::XMFLOAT4 lightColor_{};
     DirectX::XMFLOAT4 ambientColor_{};
     int debugMode_ = 0;
+    WaterSurface waterSurface_{};
 
     std::wstring shaderPath_;
     std::filesystem::file_time_type lastWriteTime_{};

@@ -137,6 +137,12 @@ constexpr CaptureShot kCaptureShots[] = {
 };
 constexpr int kFirstLabShotIndex = 7; // UI: the lab shots start a new button row
 
+// Water patches of the test scenes (half size, m) and how far in from their edge the waves die out
+// (wave-occlusion: the sideways motion would otherwise pull the edge in and open a gap).
+constexpr float kLabWaterHalfSize = 12.0f;
+constexpr float kFrontWaterHalfSize = 40.0f;
+constexpr float kWaveEdgeFade = 1.0f;
+
 // Index of the fixed shot with this name (0 if there is none).
 int FindCaptureShot(const char* name)
 {
@@ -370,6 +376,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --exposure <ev>        overrides every preset's exposure (operator comparisons)
     //   --far-waves <on|off>   pixel-shader wave slopes past the mesh wave fade (default on)
     //   --water <on|off>       draw the water in the test scenes (lab_* / front_* shots, default on)
+    //   --lab-waves <on|off>   Gerstner waves in the test scenes (Surface window values, default on)
+    //   --water-occlusion <none|single|prepass>  test scenes: how overlapping waves hide each other (default prepass)
     //   --scene-debug <mode>   test scene debug view: 1 = depth below the water (the water is hidden)
     //   --transmission <mode>  test scene water: 0 = opaque (old), 1 = pass-through, 2 = attenuation, 3 = scattering (default)
     //   --reflection <on|off>  test scene water: sky and sun mirrored on top of the water below (default on)
@@ -444,6 +452,12 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--align-ripples" && hasValue) { rippleAlignOverride_ = std::wstring(argv[++i]) == L"off" ? 0 : 1; }
                 else if (arg == L"--far-waves" && hasValue)  { farWaveNormals_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--water" && hasValue)      { showWater_ = std::wstring(argv[++i]) != L"off"; }
+                else if (arg == L"--lab-waves" && hasValue)  { labWaves_ = std::wstring(argv[++i]) != L"off"; }
+                else if (arg == L"--water-occlusion" && hasValue)
+                {
+                    const std::wstring mode = argv[++i];
+                    waterOcclusion_ = mode == L"none" ? 0 : mode == L"single" ? 1 : 2;
+                }
                 else if (arg == L"--scene-debug" && hasValue) { sceneDebug_ = _wtoi(argv[++i]); }
                 else if (arg == L"--transmission" && hasValue) { transmissionMode_ = _wtoi(argv[++i]); }
                 else if (arg == L"--reflection" && hasValue) { surfaceReflection_ = std::wstring(argv[++i]) != L"off"; }
@@ -586,8 +600,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     frontWater_ = std::make_unique<Model>();
     if (!unitBox_->InitializeBox(d3d_->GetDevice())
         || !unitCylinder_->InitializeCylinder(d3d_->GetDevice(), 32)
-        || !labWater_->InitializeGrid(d3d_->GetDevice(), 192, 12.0f, 0.001f)
-        || !frontWater_->InitializeGrid(d3d_->GetDevice(), 256, 40.0f, 0.001f))
+        || !labWater_->InitializeGrid(d3d_->GetDevice(), 192, kLabWaterHalfSize, 0.001f)
+        || !frontWater_->InitializeGrid(d3d_->GetDevice(), 256, kFrontWaterHalfSize, 0.001f))
     {
         return false;
     }
@@ -1696,6 +1710,19 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
     const bool waterNumeric = scene_ != NoScene && (water_.debugMode == 12 || water_.debugMode == 13);
     const int sceneDebugMode = waterNumeric ? 3 : sceneDebug_;
     const bool writeNormal = UsesStoredNormal();
+    // wave-occlusion: the answer key measures water depth from the same wave surface the water draws.
+    SceneShader::WaterSurface surface{};
+    for (int i = 0; i < ColorShader::kWaveCount; ++i)
+    {
+        const ColorShader::Wave& wave = water_.waves[i];
+        const float amplitude = labWaves_ ? wave.amplitude : 0.0f;
+        surface.waves[i * 2] = DirectX::XMFLOAT4(wave.direction.x, wave.direction.y, amplitude, wave.wavelength);
+        surface.waves[i * 2 + 1] = DirectX::XMFLOAT4(wave.speed, wave.steepness, 0.0f, 0.0f);
+    }
+    surface.camera = DirectX::XMFLOAT4(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z, 0.0f);
+    const DirectX::XMFLOAT4 area = SceneWaterArea();
+    surface.timeArea = DirectX::XMFLOAT4(elapsedTime_, area.x, area.y, 0.0f);
+    sceneShader_->SetWaterSurface(surface);
     sceneShader_->Begin(context, view, projection, lightDir, lightColor, ambientColor, sceneDebugMode, writeNormal);
     // normal-gbuffer: the objects also write their world normal to a second target (MRT), only when the water reads
     // it, so the depth-reconstructed source keeps the cost of 6B.
@@ -1729,6 +1756,12 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
 bool Graphics::UsesStoredNormal() const
 {
     return scene_ != NoScene && (normalSource_ == 1 || water_.debugMode == 23 || water_.debugMode == 24);
+}
+
+DirectX::XMFLOAT4 Graphics::SceneWaterArea() const
+{
+    const float halfSize = scene_ == WaterLab ? kLabWaterHalfSize : scene_ == Waterfront ? kFrontWaterHalfSize : 0.0f;
+    return DirectX::XMFLOAT4(halfSize, kWaveEdgeFade, 0.0f, 0.0f);
 }
 
 bool Graphics::Render(float deltaTime)
@@ -1845,7 +1878,7 @@ bool Graphics::Render(float deltaTime)
         Model* waterMesh = scene_ == WaterLab ? labWater_.get()
                          : scene_ == Waterfront ? frontWater_.get()
                          : oceanMode_ ? oceanGrid_.get() : model_.get();
-        // Test scenes keep the water flat at y = 0 (known depths) unless Lab Waves is on. Not saved in presets.
+        // Test scenes: the Surface window waves, or flat at y = 0 (known depths) with Lab Waves off. Not saved in presets.
         ColorShader::WaterParams waterDraw = water_;
         if (scene_ != NoScene && !labWaves_)
         {
@@ -1857,19 +1890,52 @@ bool Graphics::Render(float deltaTime)
         // Test scenes: the water reads the scene without the water (scene-color-depth). Snapshot the color,
         // then rebind the depth read-only so it can be tested against and read in the same draw.
         const bool sceneInputs = scene_ != NoScene;
+        waterMesh->Render(d3d_->GetDeviceContext());
         if (sceneInputs)
         {
             d3d_->CopySceneColor();
-            d3d_->BindHdrTargetReadOnlyDepth();
-            d3d_->SetDepthTestNoWrite();
             waterDraw.transmissionMode = transmissionMode_;
             waterDraw.surfaceReflection = surfaceReflection_;
             waterDraw.normalSource = normalSource_;
+            waterDraw.waterArea = SceneWaterArea();
             // depth-reconstruct: pixel + depth -> world position goes back through view x projection.
             waterDraw.maxOpticalDistance = maxUnderwaterDistance_;
             DirectX::XMStoreFloat4x4(&waterDraw.invViewProjection, DirectX::XMMatrixInverse(nullptr, view * projection));
+            // wave-occlusion: which water fragment wins where waves overlap on screen. The water reads the scene
+            // depth, so it cannot write it too; the nearest wave is kept in a separate water depth buffer.
+            if (waterOcclusion_ == 0)
+            {
+                // None (up to step 6): tested against the scene only, the last triangle drawn wins.
+                d3d_->BindHdrTargetReadOnlyDepth();
+                d3d_->SetDepthTestNoWrite();
+            }
+            else
+            {
+                d3d_->CopySceneDepthToWaterDepth();
+                if (waterOcclusion_ == 2)
+                {
+                    // Prepass: the water's depth alone, so every pixel ends with the nearest water surface (or the
+                    // scene in front of it). The color pass then shades only that fragment (EQUAL), once.
+                    ColorShader::WaterParams depthPass = waterDraw;
+                    depthPass.depthOnly = true;
+                    d3d_->ClearWaterStencil();
+                    d3d_->BindWaterDepthOnly();
+                    d3d_->SetWaterPrepassDepth();
+                    colorShader_->Render(d3d_->GetDeviceContext(), waterMesh->GetIndexCount(), world, view, projection,
+                        lightDir, lightColorPacked, ambientColorPacked, elapsedTime_, cameraPosWS, depthPass,
+                        nullptr, nullptr, nullptr, d3d_->GetSampler(), d3d_->GetWrapSampler());
+                    d3d_->BindHdrTargetWaterDepth(true);
+                    d3d_->SetDepthEqualNoWrite();
+                }
+                else
+                {
+                    // Single pass: the color pass writes the water depth itself (right result, overlapped fragments
+                    // are shaded more than once).
+                    d3d_->BindHdrTargetWaterDepth(false);
+                    d3d_->SetDepthDefault();
+                }
+            }
         }
-        waterMesh->Render(d3d_->GetDeviceContext());
         colorShader_->Render(
             d3d_->GetDeviceContext(),
             waterMesh->GetIndexCount(),
@@ -2289,7 +2355,7 @@ void Graphics::DrawViewWindow()
         }
         ImGui::TextDisabled("The water version's settings: Water window (3).");
         ImGui::TextDisabled("1 unit = 1 m, water at y = 0, ocean presets.");
-        ImGui::TextDisabled("Waves stay flat unless Lab Waves is on.");
+        ImGui::TextDisabled("Lab Waves: the Surface window (4) waves; off = flat.");
     }
     else if (oceanMode_)
     {
@@ -2342,7 +2408,8 @@ void Graphics::DrawViewWindow()
         "Transmittance (RGB, compare tool)", "Water color part only (scattering)", "Ramp color (as picked)",
         "Reflection amount (Fresnel x strength)", "Reflection part only", "Underwater part only",
         "Contact foam amount", "Steepness behind the water (active normal)", "Normal from depth (world, color)",
-        "Stored scene normal (G-buffer, color)", "Normal difference: depth vs stored (0-30 deg)" };
+        "Stored scene normal (G-buffer, color)", "Normal difference: depth vs stored (0-30 deg)",
+        "Wave height lookup error (white = 1 mm)" };
     if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
     {
         SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
@@ -2583,6 +2650,9 @@ void Graphics::DrawNewWaterSettings()
         lastNewTransmission_ = transmissionMode_;
     }
     ImGui::Checkbox("Surface reflection (sky + sun, Fresnel)", &surfaceReflection_);
+    // wave-occlusion: where waves overlap on screen, which water fragment wins.
+    const char* occlusionModes[] = { "None (last drawn wins)", "Single pass (writes water depth)", "Depth prepass (nearest, shaded once)" };
+    ImGui::Combo("Water occlusion", &waterOcclusion_, occlusionModes, IM_ARRAYSIZE(occlusionModes));
     LabeledSlider("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
     ImGui::TextDisabled("View path where no surface is behind the water (sky).");
 
@@ -2729,7 +2799,7 @@ void Graphics::DrawSurfaceSettings()
     ImGui::SeparatorText("Waves (geometry)");
     if (scene_ != NoScene && !labWaves_)
     {
-        ImGui::TextColored(kHighlightColor, "Test scene: flat until View > Lab Waves is on.");
+        ImGui::TextColored(kHighlightColor, "Test scene: flat while View > Lab Waves is off.");
     }
     ImGui::TextDisabled("Moving swells that shape the mesh. Arrow = travel\ndirection as seen from the camera (up = away).");
     ImGui::Checkbox("Far waves (lighting only past the mesh fade)", &farWaveNormals_);
