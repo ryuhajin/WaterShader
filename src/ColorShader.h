@@ -95,6 +95,9 @@ public:
         float maxOpticalDistance = 50.0f; // m: the view path where no surface is behind the water (sky)
         // surface-reflection: the sky and sun mirrored on top of the water below (false = the water below alone).
         bool surfaceReflection = true;
+        // normal-gbuffer: where the water gets the normal of the surface behind it. 0 = estimated from the depth
+        // buffer, 1 = stored by the opaque pass (scene normal buffer).
+        int normalSource = 0;
         DirectX::XMFLOAT4X4 invViewProjection = {}; // inverse of view x projection: depth buffer -> world position
         // Normal map rotation on the water (world XZ), as cos/sin: xy = layer A, zw = layer B. (1, 0) = as authored.
         DirectX::XMFLOAT4 normalRotation = {1.0f, 0.0f, 1.0f, 0.0f};
@@ -124,7 +127,8 @@ public:
         // unbinds them after the draw.
         ID3D11ShaderResourceView* sceneColorSRV = nullptr,
         ID3D11ShaderResourceView* sceneDepthSRV = nullptr,
-        ID3D11ShaderResourceView* foamSRV = nullptr); // contact foam noise (t5), SCENE_INPUTS only
+        ID3D11ShaderResourceView* foamSRV = nullptr,   // contact foam noise (t5), SCENE_INPUTS only
+        ID3D11ShaderResourceView* sceneNormalSRV = nullptr); // normal stored by the opaque pass (t6)
 
     const std::string& GetLastError() const { return lastError_; }
     const std::string& GetLastReloadStamp() const { return lastReloadStamp_; }
@@ -152,7 +156,8 @@ private:
         ID3D11SamplerState* wrapSampler,
         ID3D11ShaderResourceView* sceneColorSRV,
         ID3D11ShaderResourceView* sceneDepthSRV,
-        ID3D11ShaderResourceView* foamSRV);
+        ID3D11ShaderResourceView* foamSRV,
+        ID3D11ShaderResourceView* sceneNormalSRV);
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader_;

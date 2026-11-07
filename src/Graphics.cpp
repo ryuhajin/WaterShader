@@ -379,6 +379,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --ramp-by <depth|path> what the ramp color follows, overrides every preset (after --water-type)
     //   --foam <strength>      contact foam strength, overrides every preset (0 = off)
     //   --foam-slope <0..1>    contact foam slope filter (0 = water depth alone, 1 = steep surfaces only)
+    //   --normal-source <depth|stored>  where the water gets the normal behind it: depth buffer (default) or normal buffer
     //   --resize-cycle         recreate the size-dependent targets once before rendering (resize test)
     //   --d3d-selftest         cause one known debug layer hazard (checks that d3d_messages.txt catches it)
     //   --align-ripples <on|off>  "Align to wind" for both normal map layers, overrides the presets
@@ -460,6 +461,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--ramp-by" && hasValue) { rampByOverride_ = std::wstring(argv[++i]) == L"path" ? 1 : 0; }
                 else if (arg == L"--foam" && hasValue)       { foamStrengthOverride_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--foam-slope" && hasValue) { foamSlopeOverride_ = static_cast<float>(_wtof(argv[++i])); }
+                else if (arg == L"--normal-source" && hasValue) { normalSource_ = std::wstring(argv[++i]) == L"stored" ? 1 : 0; }
                 else if (arg == L"--scatter" && hasValue)
                 {
                     DirectX::XMFLOAT4 s{};
@@ -1693,7 +1695,15 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
     // debug 3), so neither a lit pixel nor the answer key can pass for a reconstructed value.
     const bool waterNumeric = scene_ != NoScene && (water_.debugMode == 12 || water_.debugMode == 13);
     const int sceneDebugMode = waterNumeric ? 3 : sceneDebug_;
-    sceneShader_->Begin(context, view, projection, lightDir, lightColor, ambientColor, sceneDebugMode);
+    const bool writeNormal = UsesStoredNormal();
+    sceneShader_->Begin(context, view, projection, lightDir, lightColor, ambientColor, sceneDebugMode, writeNormal);
+    // normal-gbuffer: the objects also write their world normal to a second target (MRT), only when the water reads
+    // it, so the depth-reconstructed source keeps the cost of 6B.
+    if (writeNormal)
+    {
+        d3d_->ClearSceneNormal();
+        d3d_->BindSceneTargetsWithNormal();
+    }
     const std::vector<SceneObject>& objects = scene_ == WaterLab ? labObjects_ : frontObjects_;
     Model* boundMesh = nullptr;
     for (const SceneObject& object : objects)
@@ -1708,7 +1718,17 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
                              * XMMatrixTranslation(object.center.x, object.center.y, object.center.z);
         sceneShader_->Render(context, mesh->GetIndexCount(), world, object.material);
     }
+    if (writeNormal)
+    {
+        d3d_->BindHdrTarget();
+    }
     d3d_->SetRasterizerDefault();
+}
+
+// The scene normal buffer is written when the water reads it: the stored source, or the debug views that show it.
+bool Graphics::UsesStoredNormal() const
+{
+    return scene_ != NoScene && (normalSource_ == 1 || water_.debugMode == 23 || water_.debugMode == 24);
 }
 
 bool Graphics::Render(float deltaTime)
@@ -1844,6 +1864,7 @@ bool Graphics::Render(float deltaTime)
             d3d_->SetDepthTestNoWrite();
             waterDraw.transmissionMode = transmissionMode_;
             waterDraw.surfaceReflection = surfaceReflection_;
+            waterDraw.normalSource = normalSource_;
             // depth-reconstruct: pixel + depth -> world position goes back through view x projection.
             waterDraw.maxOpticalDistance = maxUnderwaterDistance_;
             DirectX::XMStoreFloat4x4(&waterDraw.invViewProjection, DirectX::XMMatrixInverse(nullptr, view * projection));
@@ -1868,13 +1889,14 @@ bool Graphics::Render(float deltaTime)
             d3d_->GetWrapSampler(),
             sceneInputs ? d3d_->GetSceneColorSRV() : nullptr,
             sceneInputs ? d3d_->GetSceneDepthSRV() : nullptr,
-            sceneInputs ? foamMap_->GetSRV() : nullptr);
+            sceneInputs ? foamMap_->GetSRV() : nullptr,
+            sceneInputs && UsesStoredNormal() ? d3d_->GetSceneNormalSRV() : nullptr);
         d3d_->SetRasterizerDefault();
         if (sceneInputs)
         {
             // Unbind before the next frame binds the depth writable again (and the copy as a copy target).
-            ID3D11ShaderResourceView* nullSrvs[3] = {};
-            d3d_->GetDeviceContext()->PSSetShaderResources(3, 3, nullSrvs);
+            ID3D11ShaderResourceView* nullSrvs[4] = {};
+            d3d_->GetDeviceContext()->PSSetShaderResources(3, 4, nullSrvs);
             d3d_->SetDepthDefault();
         }
     }
@@ -2319,7 +2341,8 @@ void Graphics::DrawViewWindow()
         "Water depth (from depth buffer)", "Underwater view path", "Water depth numeric (compare tool)", "View path numeric (compare tool)",
         "Transmittance (RGB, compare tool)", "Water color part only (scattering)", "Ramp color (as picked)",
         "Reflection amount (Fresnel x strength)", "Reflection part only", "Underwater part only",
-        "Contact foam amount", "Steepness behind the water (depth normal)", "Normal from depth (world, color)" };
+        "Contact foam amount", "Steepness behind the water (active normal)", "Normal from depth (world, color)",
+        "Stored scene normal (G-buffer, color)", "Normal difference: depth vs stored (0-30 deg)" };
     if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
     {
         SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
@@ -2639,7 +2662,10 @@ void Graphics::DrawNewWaterSettings()
     LabeledSlider("Noise drift (downwind)", &water_.foamFlow, 0.0f, 0.5f, "%.2f m/s");
     LabeledSlider("Slope filter (0 = depth alone, 1 = walls only)", &water_.foamSlopeFilter, 0.0f, 1.0f, "%.2f");
     ImGui::TextDisabled(water_.foamSlopeFilter < 0.5f ? "Flat shallows (rail heads, a 0.2 m pad) foam too."
-                                                      : "Steep surfaces only (normal from the depth buffer).");
+                                                      : "Steep surfaces only.");
+    // normal-gbuffer: compare the screen-space estimate with the normal the opaque pass stored.
+    const char* normalSources[] = { "Depth reconstructed (4 depth reads + cross)", "Stored scene normal (G-buffer)" };
+    ImGui::Combo("Normal source", &normalSource_, normalSources, IM_ARRAYSIZE(normalSources));
     LabeledSlider("Steepness: foam starts", &water_.foamSteepStart, 0.0f, 1.0f, "%.2f");
     LabeledSlider("Steepness: foam full", &water_.foamSteepFull, 0.0f, 1.0f, "%.2f");
     LabeledColor("Foam color (lit by the sun and sky)", &water_.foamColor.x);

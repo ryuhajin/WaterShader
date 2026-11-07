@@ -241,7 +241,31 @@ bool D3DClass::CreateHdrTarget()
     desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     ThrowIfFailed(device_->CreateTexture2D(&desc, nullptr, &sceneColorTexture_), "Scene color copy creation failed.");
     ThrowIfFailed(device_->CreateShaderResourceView(sceneColorTexture_.Get(), nullptr, &sceneColorSRV_), "Scene color SRV creation failed.");
+
+    // Scene normal (normal-gbuffer): world normal x 0.5 + 0.5 in 10 bits per channel, alpha 1 = a surface wrote it.
+    desc.Format = DXGI_FORMAT_R10G10B10A2_UNORM;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    ThrowIfFailed(device_->CreateTexture2D(&desc, nullptr, &sceneNormalTexture_), "Scene normal creation failed.");
+    ThrowIfFailed(device_->CreateRenderTargetView(sceneNormalTexture_.Get(), nullptr, &sceneNormalRTV_), "Scene normal RTV creation failed.");
+    ThrowIfFailed(device_->CreateShaderResourceView(sceneNormalTexture_.Get(), nullptr, &sceneNormalSRV_), "Scene normal SRV creation failed.");
     return true;
+}
+
+void D3DClass::BindSceneTargetsWithNormal()
+{
+    ID3D11RenderTargetView* targets[2] = {hdrRTV_.Get(), sceneNormalRTV_.Get()};
+    deviceContext_->OMSetRenderTargets(2, targets, depthStencilView_.Get());
+}
+
+void D3DClass::BindHdrTarget()
+{
+    deviceContext_->OMSetRenderTargets(1, hdrRTV_.GetAddressOf(), depthStencilView_.Get());
+}
+
+void D3DClass::ClearSceneNormal()
+{
+    const float noNormal[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    deviceContext_->ClearRenderTargetView(sceneNormalRTV_.Get(), noNormal);
 }
 
 void D3DClass::CopySceneColor()
@@ -434,6 +458,9 @@ void D3DClass::ReleaseRenderTarget()
     depthTexture_.Reset();
     sceneColorSRV_.Reset();
     sceneColorTexture_.Reset();
+    sceneNormalSRV_.Reset();
+    sceneNormalRTV_.Reset();
+    sceneNormalTexture_.Reset();
     hdrSRV_.Reset();
     hdrRTV_.Reset();
     hdrTexture_.Reset();
