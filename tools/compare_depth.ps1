@@ -17,6 +17,11 @@
 #   -Mode mean  : -A = water depth (--debug 12) as the water mask, -B = a gray debug view (e.g. --debug 17).
 #                 mean / min / max of the gray value over the water pixels (surface-reflection).
 #   The sum mode also checks reflection part (--debug 18) + underwater part (--debug 19) = final.
+#   -Mode foam  : -A = answer key depth (--scene-debug 2), -B = foam amount (--debug 20), -C = water mask (--debug 12),
+#                 optional -D = answer key normal (--scene-debug 4), -Width = foam width (m). Foam pixels must sit on a
+#                 measured surface no deeper than the width; with -D, counts foam on flat (|n.y| > 0.9) surfaces (contact-foam).
+#   -Mode normal: -A = water mask (--debug 12), -B = normal from depth (--debug 22), -C = answer key normal (--scene-debug 4).
+#                 angle between them on measured water pixels; -MapDir writes error maps (contact-foam).
 #
 # Usage (PowerShell 5.1):
 #   .\tools\compare_depth.ps1 -A <folder> -B <folder> [-Mode depth|path|transmit] [-Extinction r,g,b] [-C <folder>]
@@ -24,11 +29,13 @@
 param(
     [Parameter(Mandatory = $true)][string]$A,
     [Parameter(Mandatory = $true)][string]$B,
-    [ValidateSet('depth', 'path', 'transmit', 'sum', 'contrast', 'mean')][string]$Mode = 'depth',
+    [ValidateSet('depth', 'path', 'transmit', 'sum', 'contrast', 'mean', 'foam', 'normal')][string]$Mode = 'depth',
     [string]$Extinction = '0,0,0',
     [string]$C = '',
     [string]$D = '',
-    [double]$Offset = 0.5 # kEncodeOffset the captures were made with (0 = captures from before the shift)
+    [double]$Offset = 0.5, # kEncodeOffset the captures were made with (0 = captures from before the shift)
+    [double]$Width = 0.25, # -Mode foam: the foam width the captures were made with (m)
+    [string]$MapDir = ''   # -Mode normal: write an angle error map per image here (black 0 .. white 30 deg)
 )
 
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
@@ -237,6 +244,84 @@ public static class MeterImage
     // Saturated C channels are skipped. Also: at no-surface pixels, how much of C the bed part (A) still is.
 
     // -Mode mean: average of a gray debug view (B, R channel / 255) over the water pixels of the mask A.
+
+
+    // -Mode foam: where the contact foam (B, --debug 20) shows on the water (C, --debug 12 as the mask), checked
+    // against the answer key depth (A, --scene-debug 2) and, if given, the answer key normal (D, --scene-debug 4).
+    public static string CompareFoam(string pathA, string pathB, string pathC, string pathD, double width)
+    {
+        byte[] ma; double[] va; byte[] mc; double[] vc; int w, h;
+        Load(pathA, out ma, out va, out w, out h);
+        Load(pathC, out mc, out vc, out w, out h);
+        byte[] b = LoadRgb(pathB, out w, out h);
+        byte[] d = !string.IsNullOrEmpty(pathD) ? LoadRgb(pathD, out w, out h) : null;
+        long water = 0, foam = 0, outside = 0, unmeasured = 0, onFlat = 0, onSteep = 0;
+        double maxDepth = 0.0;
+        for (int i = 0; i < mc.Length; ++i)
+        {
+            if (mc[i] != 128 && mc[i] != 255) continue;
+            ++water;
+            if (b[i * 3] == 0) continue;
+            ++foam;
+            if (ma[i] != 128) { ++unmeasured; continue; }
+            maxDepth = Math.Max(maxDepth, va[i]);
+            if (va[i] > width + 0.01) ++outside;
+            if (d != null)
+            {
+                double ny = d[i * 3 + 1] / 255.0 * 2.0 - 1.0;
+                if (Math.Abs(ny) > 0.9) ++onFlat; else ++onSteep;
+            }
+        }
+        string result = string.Format("water pixels {0}  foam pixels {1} ({2:P1})  deepest foam {3:F3} m  deeper than width {4}  foam without a measured surface {5}",
+            water, foam, foam / Math.Max(1.0, water), maxDepth, outside, unmeasured);
+        if (d != null) result += string.Format("  on flat (|n.y| > 0.9) {0}  on steep {1}", onFlat, onSteep);
+        return result;
+    }
+
+    // -Mode normal: angle between the normal reconstructed from depth (B, --debug 22) and the answer key normal
+    // (C, --scene-debug 4) on the water pixels with a measured surface (A, --debug 12). Optional error map.
+    public static string CompareNormal(string pathA, string pathB, string pathC, string mapPath)
+    {
+        byte[] ma; double[] va; int w, h;
+        Load(pathA, out ma, out va, out w, out h);
+        byte[] b = LoadRgb(pathB, out w, out h), c = LoadRgb(pathC, out w, out h);
+        var angles = new System.Collections.Generic.List<double>();
+        var map = new byte[w * h];
+        for (int i = 0; i < ma.Length; ++i)
+        {
+            if (ma[i] != 128) continue;
+            double bx = b[i * 3] / 255.0 * 2 - 1, by = b[i * 3 + 1] / 255.0 * 2 - 1, bz = b[i * 3 + 2] / 255.0 * 2 - 1;
+            double cx = c[i * 3] / 255.0 * 2 - 1, cy = c[i * 3 + 1] / 255.0 * 2 - 1, cz = c[i * 3 + 2] / 255.0 * 2 - 1;
+            double lb = Math.Sqrt(bx * bx + by * by + bz * bz), lc = Math.Sqrt(cx * cx + cy * cy + cz * cz);
+            if (lb < 0.5 || lc < 0.5) continue;
+            double cos = (bx * cx + by * cy + bz * cz) / (lb * lc);
+            double angle = Math.Acos(Math.Max(-1.0, Math.Min(1.0, cos))) * 180.0 / Math.PI;
+            angles.Add(angle);
+            map[i] = (byte)Math.Min(255.0, angle / 30.0 * 255.0);
+        }
+        if (angles.Count == 0) return "no measured water pixels";
+        angles.Sort();
+        int n = angles.Count;
+        long over5 = 0, over20 = 0;
+        foreach (double a in angles) { if (a > 5.0) ++over5; if (a > 20.0) ++over20; }
+        if (!string.IsNullOrEmpty(mapPath))
+        {
+            using (var bmp = new Bitmap(w, h, PixelFormat.Format24bppRgb))
+            {
+                for (int y = 0; y < h; ++y)
+                    for (int x = 0; x < w; ++x)
+                    {
+                        int i = y * w + x;
+                        // gray = the frame is not compared here; black..white = 0..30 degrees and more
+                        bmp.SetPixel(x, y, ma[i] != 128 ? Color.FromArgb(40, 40, 70) : Color.FromArgb(map[i], map[i], map[i]));
+                    }
+                bmp.Save(mapPath, ImageFormat.Png);
+            }
+        }
+        return string.Format("measured water pixels {0}  angle median {1:F2} deg  95% {2:F2}  99% {3:F2}  over 5 deg {4:P2}  over 20 deg {5:P2}",
+            n, angles[n / 2], angles[(int)(n * 0.95)], angles[(int)(n * 0.99)], over5 / (double)n, over20 / (double)n);
+    }
+
     public static string MeanOverWater(string pathA, string pathB)
     {
         byte[] ma; double[] va; int wa, ha, w, h;
@@ -333,6 +418,15 @@ foreach ($file in $files) {
     }
     elseif ($Mode -eq 'mean') {
         Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::MeanOverWater($file.FullName, $other))
+    }
+    elseif ($Mode -eq 'foam') {
+        $normalFile = if ($D) { Join-Path $D $file.Name } else { $null }
+        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareFoam($file.FullName, $other, (Join-Path $C $file.Name), $normalFile, $Width))
+    }
+    elseif ($Mode -eq 'normal') {
+        $mapFile = $null
+        if ($MapDir) { New-Item -ItemType Directory -Force $MapDir | Out-Null; $mapFile = Join-Path $MapDir $file.Name }
+        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareNormal($file.FullName, $other, (Join-Path $C $file.Name), $mapFile))
     }
     elseif ($Mode -eq 'contrast') {
         Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareContrast($file.FullName, $other, (Join-Path $C $file.Name)))

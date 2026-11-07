@@ -14,6 +14,7 @@ SamplerState g_NormalSampler : register(s1);
 // per pixel, so pass-through returns exactly the same value (a filtered sample would blend neighbors).
 Texture2D        g_SceneColor : register(t3); // HDR color copy
 Texture2D<float> g_SceneDepth : register(t4); // depth buffer, 0 (near) .. 1 (far), not linear in distance
+Texture2D        g_FoamMap    : register(t5); // contact foam noise (R), the cloud texture of the old foam-mask branch
 #include "DepthBands.hlsli"
 #endif
 
@@ -21,6 +22,53 @@ float4 DebugOut(float3 value)
 {
     return float4(SrgbToLinear(saturate(value)), 1.0);
 }
+
+#if SCENE_INPUTS
+// World position of the surface the depth buffer holds at this pixel (the same math as the receiver in PSMain).
+float3 SceneWorldPosition(int2 pixel, float depth, float2 size)
+{
+    float2 uv = (float2(pixel) + 0.5) / size;
+    float4 positionH = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0), g_InvViewProjection);
+    return positionH.xyz / positionH.w;
+}
+
+// Normal of the surface behind this pixel from the depth buffer alone (contact-foam; no normal buffer yet):
+// the positions of a horizontal and a vertical neighbor span the surface, and their cross product is the normal.
+// Of the two neighbors on each axis the one whose depth is closer to this pixel's is used, so a neighbor on
+// another object across a silhouette is skipped when the other side is still on this surface (Turanszki 2019).
+// At the frame edge the missing neighbor is mirrored. The sign is set to face the camera.
+float3 SceneNormalFromDepth(int2 pixel, float depth, float3 center, int2 size)
+{
+    int2 left  = int2(pixel.x > 0 ? pixel.x - 1 : pixel.x + 1, pixel.y);
+    int2 right = int2(pixel.x < size.x - 1 ? pixel.x + 1 : pixel.x - 1, pixel.y);
+    int2 up    = int2(pixel.x, pixel.y > 0 ? pixel.y - 1 : pixel.y + 1);
+    int2 down  = int2(pixel.x, pixel.y < size.y - 1 ? pixel.y + 1 : pixel.y - 1);
+    float depthLeft  = g_SceneDepth.Load(int3(left, 0));
+    float depthRight = g_SceneDepth.Load(int3(right, 0));
+    float depthUp    = g_SceneDepth.Load(int3(up, 0));
+    float depthDown  = g_SceneDepth.Load(int3(down, 0));
+    bool useRight = abs(depthRight - depth) < abs(depthLeft - depth);
+    bool useDown  = abs(depthDown - depth) < abs(depthUp - depth);
+    float2 sizeF = float2(size);
+    float3 alongX = useRight ? SceneWorldPosition(right, depthRight, sizeF) - center
+                             : center - SceneWorldPosition(left, depthLeft, sizeF);
+    float3 alongY = useDown  ? SceneWorldPosition(down, depthDown, sizeF) - center
+                             : center - SceneWorldPosition(up, depthUp, sizeF);
+    float3 normal = normalize(cross(alongY, alongX));
+    return dot(normal, g_CameraPositionWS.xyz - center) < 0.0 ? -normal : normal;
+}
+
+// Foam noise, 0..1. The texture does not tile (its edges do not match), so it is read mirrored: every other
+// repeat is flipped, which hides the seam. A second read, turned and smaller, breaks the mirror symmetry.
+float FoamNoise(float2 uv)
+{
+    float2 uvB = float2(uv.x * 0.8 - uv.y * 0.6, uv.x * 0.6 + uv.y * 0.8) * 1.7 + 0.37;
+    float2 mirroredA = 1.0 - abs(frac(uv * 0.5) * 2.0 - 1.0);
+    float2 mirroredB = 1.0 - abs(frac(uvB * 0.5) * 2.0 - 1.0);
+    float noise = 0.6 * g_FoamMap.Sample(g_Sampler, mirroredA).r + 0.4 * g_FoamMap.Sample(g_Sampler, mirroredB).r;
+    return saturate((noise - 0.5) * 1.6 + 0.5); // two reads average toward gray: give the contrast back
+}
+#endif
 
 // Far-field waves, in three bands per wave (debug mode 6 shows them as R / G / B):
 //   mesh   - near: the vertex shader displaces the mesh and supplies the normal (weight = vertex fade).
@@ -184,13 +232,16 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 
     // Receiver = the surface this pixel sees through the water (depth-reconstruct). The pixel and its depth are
     // where projection and view put the surface; the inverse matrix takes them back, and dividing by w undoes
-    // the perspective divide. Depth 1 is the cleared buffer (sky): no surface, nothing to reconstruct.
+    // the perspective divide. Depth 1 is the sky (cleared, or the skybox drawn at z = w): no surface, nothing to
+    // reconstruct. The skybox's interpolated z / w can land a step or two below 1 in the 24-bit buffer, and those
+    // pixels then reconstruct onto the far plane (rows of far-plane normals in debug 22), so everything past
+    // ~900 m counts as sky (depth 0.99999; the test scenes reach ~50 m, the far plane is 1000 m).
     uint sceneWidth, sceneHeight;
     g_SceneDepth.GetDimensions(sceneWidth, sceneHeight);
     float2 sceneUv = (float2(scenePixel.xy) + 0.5) / float2(sceneWidth, sceneHeight);
     float4 receiverH = mul(float4(sceneUv.x * 2.0 - 1.0, 1.0 - sceneUv.y * 2.0, sceneDepth, 1.0), g_InvViewProjection);
     float3 receiverWS = receiverH.xyz / receiverH.w;
-    bool hasReceiver = sceneDepth < 1.0;
+    bool hasReceiver = sceneDepth < 0.99999;
     float maxOpticalDistance = g_SceneParams.y;
     // Water depth: how far the surface lies below the water (the answer key measures the same thing).
     // View path: how much water the line of sight crosses, water surface -> surface (no air part).
@@ -245,9 +296,46 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float3 underwaterColor = transmissionMode == 1 ? sceneColor
                            : transmissionMode == 2 ? sceneColor * transmittance
                            : sceneColor * transmittance + inscatter;
-    // Surface reflection off: the water below alone, as if the surface reflected nothing.
+
+    // Contact foam (contact-foam): a white band where a surface comes up through the water, so a pillar reads as
+    // standing in the water even from above, where the reflection is only a few percent. The band follows the
+    // water depth of the surface behind the pixel (1 right under the water, 0 at the band width, in meters, so
+    // the width does not change with the camera). Water depth alone also catches flat shallows (rail heads,
+    // a 0.2 m pad), so the slope filter keeps the band on steep surfaces, with the normal estimated from the
+    // depth buffer. Not in pass-through, which has to stay the frame without the water.
+    float foamWidth = max(g_FoamParams.x, 1e-3);
+    bool foamCandidate = transmissionMode >= 2 && g_FoamParams.w > 0.0 && hasReceiver && waterDepth < foamWidth;
+    float3 receiverNormal = float3(0.0, 0.0, 0.0);
+    float steepness = 0.0;
+    [branch] if (hasReceiver && (foamCandidate || sceneDebugMode == 21 || sceneDebugMode == 22))
+    {
+        receiverNormal = SceneNormalFromDepth(scenePixel.xy, sceneDepth, receiverWS, int2(sceneWidth, sceneHeight));
+        steepness = 1.0 - abs(receiverNormal.y);
+    }
+    // 21 = steepness of the surface behind the water (black = flat, white = wall), 22 = that normal as color.
+    if (sceneDebugMode == 21) { return DebugOut(steepness.xxx); }
+    if (sceneDebugMode == 22) { return DebugOut(hasReceiver ? receiverNormal * 0.5 + 0.5 : float3(0.0, 0.0, 0.0)); }
+    float foamAmount = 0.0;
+    [branch] if (foamCandidate)
+    {
+        float closeness = 1.0 - saturate(waterDepth / foamWidth);
+        float slopeMask = lerp(1.0, smoothstep(g_FoamParams2.y, g_FoamParams2.z, steepness), g_FoamParams2.x);
+        // The noise drifts downwind on the water surface; its threshold sits inside [softness, 1 - softness],
+        // so closeness 0 never shows foam and closeness 1 always does, whatever the noise.
+        float2 drift = g_Waves[0].direction * (g_WaterParams.x * g_FoamParams2.w);
+        float noise = FoamNoise((input.worldPos.xz - drift) / max(g_FoamParams.z, 1e-3));
+        float softness = clamp(g_FoamParams.y, 1e-3, 0.5);
+        float threshold = lerp(softness, 1.0 - softness, noise);
+        foamAmount = saturate(smoothstep(threshold - softness, threshold + softness, closeness * slopeMask) * g_FoamParams.w);
+    }
+    // 20 = foam amount (white = foam).
+    if (sceneDebugMode == 20) { return DebugOut(foamAmount.xxx); }
+    // Foam floats on the surface: it covers the reflection and the water below alike, lit like the water color.
+    float3 foamColor = g_FoamColor.rgb * incomingLight;
+
+    // Surface reflection off: the water below alone, as if the surface reflected nothing (foam still on top).
     bool surfaceReflection = g_SceneParams.z > 0.5;
-    if (transmissionMode != 0 && !surfaceReflection) { return float4(underwaterColor, 1.0); }
+    if (transmissionMode != 0 && !surfaceReflection) { return float4(lerp(underwaterColor, foamColor, foamAmount), 1.0); }
 #endif
     // Two scrolling normal map samples blended in tangent space.
     float time = g_WaterParams.x;
@@ -402,7 +490,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         if (sceneDebugMode == 17) { return DebugOut(reflectionAmount.xxx); }
         if (sceneDebugMode == 18) { return float4(reflectionPart, 1.0); }
         if (sceneDebugMode == 19) { return float4(underwaterPart, 1.0); }
-        finalColor = reflectionPart + underwaterPart;
+        finalColor = lerp(reflectionPart + underwaterPart, foamColor, foamAmount);
     }
 #endif
 

@@ -65,6 +65,9 @@ struct PerFrameCB
     DirectX::XMFLOAT4 rampMid;
     DirectX::XMFLOAT4 rampDeep;
     DirectX::XMFLOAT4 rampParams;          // x = mid depth (m), y = deep depth (m), z = by view path (0/1), w = color mode (0 physical, 1 ramp)
+    DirectX::XMFLOAT4 foamParams;          // x = width (m), y = softness, z = noise size (m), w = strength (test scenes)
+    DirectX::XMFLOAT4 foamParams2;         // x = slope filter, y / z = steepness start / full, w = flow speed (m/s)
+    DirectX::XMFLOAT4 foamColor;           // rgb = linear foam color
 };
 static_assert(sizeof(WaveParams) == 32, "WaveParams must match the 2-register HLSL layout");
 static_assert(sizeof(PerFrameCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
@@ -166,9 +169,10 @@ bool ColorShader::Render(
     ID3D11SamplerState* clampSampler,
     ID3D11SamplerState* wrapSampler,
     ID3D11ShaderResourceView* sceneColorSRV,
-    ID3D11ShaderResourceView* sceneDepthSRV)
+    ID3D11ShaderResourceView* sceneDepthSRV,
+    ID3D11ShaderResourceView* foamSRV)
 {
-    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, ambientColor, time, cameraPositionWS, water, cubemapSRV, normalSRVA, normalSRVB, clampSampler, wrapSampler, sceneColorSRV, sceneDepthSRV);
+    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, ambientColor, time, cameraPositionWS, water, cubemapSRV, normalSRVA, normalSRVB, clampSampler, wrapSampler, sceneColorSRV, sceneDepthSRV, foamSRV);
     return true;
 }
 
@@ -370,7 +374,8 @@ void ColorShader::RenderShader(
     ID3D11SamplerState* clampSampler,
     ID3D11SamplerState* wrapSampler,
     ID3D11ShaderResourceView* sceneColorSRV,
-    ID3D11ShaderResourceView* sceneDepthSRV)
+    ID3D11ShaderResourceView* sceneDepthSRV,
+    ID3D11ShaderResourceView* foamSRV)
 {
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     if (SUCCEEDED(deviceContext->Map(perFrameCB_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
@@ -434,6 +439,9 @@ void ColorShader::RenderShader(
         data->rampDeep = linear(water.rampDeep, 0.0f);
         data->rampParams = DirectX::XMFLOAT4(water.rampMidDepth, water.rampDeepDepth,
             static_cast<float>(water.rampByPath), static_cast<float>(water.waterColorMode));
+        data->foamParams = DirectX::XMFLOAT4(water.foamWidth, water.foamSoftness, water.foamNoiseSize, water.foamStrength);
+        data->foamParams2 = DirectX::XMFLOAT4(water.foamSlopeFilter, water.foamSteepStart, water.foamSteepFull, water.foamFlow);
+        data->foamColor = linear(water.foamColor, 0.0f);
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
@@ -452,8 +460,8 @@ void ColorShader::RenderShader(
     deviceContext->PSSetShaderResources(0, 3, srvs);
     if (sceneInputs)
     {
-        ID3D11ShaderResourceView* sceneSrvs[2] = {sceneColorSRV, sceneDepthSRV};
-        deviceContext->PSSetShaderResources(3, 2, sceneSrvs);
+        ID3D11ShaderResourceView* sceneSrvs[3] = {sceneColorSRV, sceneDepthSRV, foamSRV};
+        deviceContext->PSSetShaderResources(3, 3, sceneSrvs);
     }
     deviceContext->PSSetSamplers(0, 2, samplers);
     deviceContext->DrawIndexed(indexCount, 0, 0);

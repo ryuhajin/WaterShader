@@ -62,6 +62,17 @@ public:
         float rampMidDepth  = 1.0f;  // m: shallow reaches mid here
         float rampDeepDepth = 4.0f;  // m: mid reaches deep here
         int rampByPath = 0;          // 0 = ramp by water depth (same bed, same color), 1 = by view path
+        // Contact foam (contact-foam, test scenes): a white band where a surface comes up through the water.
+        // Presets without the keys load these defaults (on). Strength 0 = off.
+        float foamStrength    = 1.0f;
+        float foamWidth       = 0.25f;  // m of water depth the band reaches down
+        float foamSoftness    = 0.08f;  // edge: small = hard stylized edge, large = soft fade
+        float foamNoiseSize   = 1.5f;   // m: one repeat of the foam texture on the water
+        float foamFlow        = 0.05f;  // m/s the noise drifts
+        float foamSlopeFilter = 1.0f;   // 0 = water depth alone (classic, flat shallows foam too), 1 = steep surfaces only
+        float foamSteepStart  = 0.35f;  // steepness (1 - |normal.y|) where foam starts ...
+        float foamSteepFull   = 0.70f;  // ... and where it is full
+        DirectX::XMFLOAT3 foamColor = {0.95f, 0.97f, 1.0f}; // sRGB picker value
         // Set every frame from the selected normal maps (NormalMapEntry::slopeVariance), not saved in presets.
         float rippleSlopeVarianceA = 0.0f;
         float rippleSlopeVarianceB = 0.0f;
@@ -112,7 +123,8 @@ public:
         // The scene without the water (t3 color, t4 depth). Given = the SCENE_INPUTS program; the caller
         // unbinds them after the draw.
         ID3D11ShaderResourceView* sceneColorSRV = nullptr,
-        ID3D11ShaderResourceView* sceneDepthSRV = nullptr);
+        ID3D11ShaderResourceView* sceneDepthSRV = nullptr,
+        ID3D11ShaderResourceView* foamSRV = nullptr); // contact foam noise (t5), SCENE_INPUTS only
 
     const std::string& GetLastError() const { return lastError_; }
     const std::string& GetLastReloadStamp() const { return lastReloadStamp_; }
@@ -139,7 +151,8 @@ private:
         ID3D11SamplerState* clampSampler,
         ID3D11SamplerState* wrapSampler,
         ID3D11ShaderResourceView* sceneColorSRV,
-        ID3D11ShaderResourceView* sceneDepthSRV);
+        ID3D11ShaderResourceView* sceneDepthSRV,
+        ID3D11ShaderResourceView* foamSRV);
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader_;

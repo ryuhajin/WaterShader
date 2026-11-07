@@ -35,7 +35,7 @@ Gerstner 파도, 두 겹의 노멀맵 잔물결, HDR 하늘 반사로 잔잔한 
 | ![프리셋 비교](docs/readme-images/presets.jpg) | ![2026-05 vs 2026-10](docs/readme-images/before-after.jpg) |
 | **프리셋**: Basic / Sunset / Tropical (오션 그리드) | **업데이트 전후**: 2026-05 기존 버전 vs 2026-10 |
 | ![디버그 뷰](docs/readme-images/debug-views.jpg) | ![설정 창 3개](docs/readme-images/ui-panels.jpg) |
-| **디버그 뷰**: 최종 / 노멀맵 / 월드 법선 / 조명 항 | **설정 창**: View [1] · Light [2] · Water [3] |
+| **디버그 뷰**: 최종 / 노멀맵 / 월드 법선 / 조명 항 | **설정 창**: View [1] · Light [2] · Water [3] · Surface [4] (사진은 Surface 창 분리 전) |
 
 ## 빌드와 실행
 
@@ -64,7 +64,7 @@ cmake --build --preset vs2022-debug       # Release는 vs2022-release
 | `←` `→` / `↑` `↓` | 카메라 좌우 / 상하 회전 |
 | 마우스 왼쪽 드래그 | 벤치 평면 회전 (오션 그리드에서는 시점 회전) |
 | 마우스 오른쪽 드래그 | 시점 회전 |
-| `1` / `2` / `3` | View / Light / Water 설정 창 열기·닫기 |
+| `1` / `2` / `3` / `4` | View / Light / Water / Surface 설정 창 열기·닫기 |
 | `X` | 테스트 장면에서 Scene Debug ↔ Debug Mode 화면 맞바꾸기 (정답지 ↔ 복원 비교) |
 | `Esc` | 종료 |
 
@@ -72,7 +72,8 @@ cmake --build --preset vs2022-debug       # Release는 vs2022-release
 |---|---|
 | **View Settings [1]** | Presets(Apply / Save Current), Camera, Camera Presets(고정 샷 7개 + 슬롯 4개), Scene(Water version Old/New, 장면 선택, Skybox), Capture, Debug View |
 | **Light Settings [2]** | Sky / Environment(하늘 선택, Calibrate From Sky), Sun(방향·색·세기), Sun Glint(날카로움·세기·먼 바다 확산 Far spread), Ambient, Tonemapping(커브·노출) |
-| **Water Settings [3]** | 지금 물 버전(View 창 Scene의 Water version: Old 불투명 / New 물속 계산)의 색 설정, Reflection, Normal Map(레이어 A/B: 텍스처·바람 정렬·크기·흐름), Ocean Detail(먼 파도 마루·원경 리플 글리터·돌풍 패치·수평선 연무), Waves(Simple: 바람 방향·퍼짐·크기·높이·거칠기·속도로 파도 4개 생성 / Advanced: 파도 4개 개별 조정 / Far waves 토글) |
+| **Water Settings [3]** | 물의 색·빛: 지금 물 버전(View 창 Scene의 Water version: Old 불투명 / New 물속 계산)의 색 설정(New: 물속 투과·감쇠·물색·접촉 거품), Reflection |
+| **Surface Settings [4]** | 수면의 모양·움직임: Normal Map(레이어 A/B: 텍스처·바람 정렬·크기·흐름), Ocean Detail(먼 파도 마루·원경 리플 글리터·돌풍 패치·수평선 연무), Waves(Simple: 바람 방향·퍼짐·크기·높이·거칠기·속도로 파도 4개 생성 / Advanced: 파도 4개 개별 조정 / Far waves 토글) |
 
 좌측 상단 Stats에는 FPS, CPU/GPU 시간, VSync 토글, 단축키 안내가 표시됩니다.
 
