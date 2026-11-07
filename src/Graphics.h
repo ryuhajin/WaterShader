@@ -54,6 +54,8 @@ private:
 
     // Before/after capture: renders preset x fixed camera shots at a fixed time and saves JPEGs.
     void StartCaptureSet(const std::wstring& label, bool quitWhenDone, bool allowOverwrite = true);
+    void FinishCaptureSet();
+    void EndBenchFrame();
     std::filesystem::path CapturesRoot() const; // <capture root>/<feature>/captures
     bool BeginCaptureFrame();
     void EndCaptureFrame();
@@ -179,6 +181,7 @@ private:
     int environmentIndex_ = 0;
     // Water normal maps (kNormalMaps, plus the --normal-map file if given). Each layer picks its own.
     std::vector<std::unique_ptr<Texture>> normalMaps_;
+    std::unique_ptr<Texture> foamMap_; // contact foam noise (wave_foam.dds)
     std::vector<std::string> normalMapNames_;
     int normalMapA_ = 0;
     int normalMapB_ = 0;
@@ -202,6 +205,8 @@ private:
     int rampByOverride_ = -1;               // --ramp-by depth|path: 0 / 1
     bool hasScatterOverride_ = false;       // --scatter r,g,b,strength (sRGB color)
     DirectX::XMFLOAT4 scatterOverride_ = {0.0f, 0.0f, 0.0f, 0.0f};
+    float foamStrengthOverride_ = -1.0f;    // --foam <strength> (contact-foam), negative = presets decide
+    float foamSlopeOverride_ = -1.0f;       // --foam-slope <0..1>: slope filter
     float exposureOverrideEv_ = 0.0f;
     TonemapShader::Operator tonemapOperator_ = TonemapShader::AcesHuePreserving;
 
@@ -259,6 +264,17 @@ private:
     bool quitAfterCapture_ = false;
     bool captureFinishedQuit_ = false;
     int captureDebugMode_ = 0;
+    // --bench (contact-foam): the capture queue, timed instead of saved.
+    static constexpr int kBenchWarmupFrames = 60;
+    bool benchMode_ = false;
+    bool benchJobActive_ = false;
+    bool benchRestoreVsync_ = true;
+    int benchFrame_ = 0;
+    int benchSampleCount_ = 300;
+    unsigned long long benchLastResolved_ = 0;
+    std::string benchJobName_;
+    std::vector<std::array<float, 5>> benchSamples_; // gpu frame, opaque, water, post, cpu (ms)
+    std::string benchCsv_;
     std::wstring captureFeature_ = L"water-polish";
     std::filesystem::path captureRootOverride_; // --capture-root
     std::filesystem::path presetFileOverride_; // --preset-file

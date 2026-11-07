@@ -148,6 +148,13 @@ float4 PSMain(PSInput input) : SV_TARGET
         return float4(SrgbToLinear(float3(0.0, 0.0, kMarkerAboveWater)), 1.0);
     }
 
+    // 4 = world normal as color (normal x 0.5 + 0.5): the answer key for the normal the water reconstructs from
+    // the depth buffer (contact-foam; water debug 22 uses the same colors).
+    if (debugMode == 4)
+    {
+        return float4(SrgbToLinear(n * 0.5 + 0.5), 1.0);
+    }
+
     // 2 = water depth as numbers (EncodeMeters): the answer key the depth-buffer reconstruction is compared to.
     if (debugMode == 2)
     {

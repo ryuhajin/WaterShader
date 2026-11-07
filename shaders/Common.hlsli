@@ -47,6 +47,10 @@ cbuffer PerFrameCB : register(b0)
     float4 g_RampMid;
     float4 g_RampDeep;
     float4 g_RampParams;       // x = mid depth (m), y = deep depth (m), z = by view path (0/1), w = color mode (0 physical, 1 ramp)
+    float4 g_FoamParams;       // test scenes (contact-foam): x = width (m), y = edge softness, z = noise size (m), w = strength
+    float4 g_FoamParams2;      // x = slope filter (0 = water depth alone, 1 = walls only), y / z = steepness where foam starts / is full,
+                               // w = noise flow speed (m/s)
+    float4 g_FoamColor;        // rgb = foam color (linear)
 };
 
 struct VSInput

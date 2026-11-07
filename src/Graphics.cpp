@@ -131,6 +131,9 @@ constexpr CaptureShot kCaptureShots[] = {
     { "lab_pillar",    {  5.50f,  1.20f,  -6.50f }, { 23.5f, 320.0f, 0.0f }, 55.0f, true, 1 },
     // Target scene graybox: standing on the flooded track, looking down the line.
     { "front_rails",   {  0.00f,  1.70f,  -9.00f }, { 10.0f,   0.0f, 0.0f }, 60.0f, true, 2 },
+    // contact-foam: close to the pillar looking down, where Fresnel alone shows no waterline (surface-reflection
+    // NOTES). The view ray through the frame center meets the water right in front of the pillar.
+    { "lab_pillar_near", { 3.00f,  2.20f,  -6.30f }, { 35.0f,   0.0f, 0.0f }, 60.0f, true, 1 },
 };
 constexpr int kFirstLabShotIndex = 7; // UI: the lab shots start a new button row
 
@@ -216,6 +219,17 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("rampMidDepth", preset.water.rampMidDepth);
     fn("rampDeepDepth", preset.water.rampDeepDepth);
     fn("rampByPath", preset.water.rampByPath);
+    fn("foamStrength", preset.water.foamStrength);
+    fn("foamWidth", preset.water.foamWidth);
+    fn("foamSoftness", preset.water.foamSoftness);
+    fn("foamNoiseSize", preset.water.foamNoiseSize);
+    fn("foamFlow", preset.water.foamFlow);
+    fn("foamSlopeFilter", preset.water.foamSlopeFilter);
+    fn("foamSteepStart", preset.water.foamSteepStart);
+    fn("foamSteepFull", preset.water.foamSteepFull);
+    fn("foamR", preset.water.foamColor.x);
+    fn("foamG", preset.water.foamColor.y);
+    fn("foamB", preset.water.foamColor.z);
 }
 
 // Tangent-space water normal maps (RGBA8 UNORM + mips, converted with texconv --ignore-srgb so the
@@ -342,6 +356,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
 
     // Command line:
     //   --capture <label>      save every preset x shot, then quit
+    //   --bench <label>        time every preset x shot instead (VSync off, GPU ms per pass) -> <label>/timings.csv
+    //   --bench-frames <n>     timed frames per shot (default 300, after 60 warm-up frames)
     //   --debug <mode>         debug view used for the capture set
     //   --normal-map <path>    extra normal map (relative to assets/), used for both layers
     //   --normal-a / --normal-b <index>  normal map per layer (kNormalMaps), overrides the presets
@@ -361,6 +377,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --water-type <clear|green|lagoon>  underwater loss + color together, overrides every preset (water-scatter)
     //   --scatter <r,g,b,s>    water color (sRGB) and strength, overrides every preset (after --water-type)
     //   --ramp-by <depth|path> what the ramp color follows, overrides every preset (after --water-type)
+    //   --foam <strength>      contact foam strength, overrides every preset (0 = off)
+    //   --foam-slope <0..1>    contact foam slope filter (0 = water depth alone, 1 = steep surfaces only)
     //   --resize-cycle         recreate the size-dependent targets once before rendering (resize test)
     //   --d3d-selftest         cause one known debug layer hazard (checks that d3d_messages.txt catches it)
     //   --align-ripples <on|off>  "Align to wind" for both normal map layers, overrides the presets
@@ -387,6 +405,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 const bool hasValue = i + 1 < argc;
                 if (arg == L"--no-vsync")                    { vsyncArg = false; }
                 else if (arg == L"--capture" && hasValue)    { captureLabelArg = argv[++i]; }
+                else if (arg == L"--bench" && hasValue)      { captureLabelArg = argv[++i]; benchMode_ = true; }
+                else if (arg == L"--bench-frames" && hasValue) { benchSampleCount_ = std::max<int>(_wtoi(argv[++i]), 10); }
                 else if (arg == L"--debug" && hasValue)      { captureDebugMode_ = _wtoi(argv[++i]); }
                 else if (arg == L"--normal-map" && hasValue) { normalMapArg = argv[++i]; }
                 else if (arg == L"--normal-a" && hasValue)   { normalOverrideA_ = _wtoi(argv[++i]); }
@@ -437,6 +457,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                     }
                 }
                 else if (arg == L"--ramp-by" && hasValue) { rampByOverride_ = std::wstring(argv[++i]) == L"path" ? 1 : 0; }
+                else if (arg == L"--foam" && hasValue)       { foamStrengthOverride_ = static_cast<float>(_wtof(argv[++i])); }
+                else if (arg == L"--foam-slope" && hasValue) { foamSlopeOverride_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--scatter" && hasValue)
                 {
                     DirectX::XMFLOAT4 s{};
@@ -526,6 +548,18 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         }
         normalMapStatus_ = statusLog; // empty = every map loaded
         OutputDebugStringA(("[NormalMap]\n" + statusLog).c_str());
+    }
+
+    // Contact foam noise (contact-foam): the cloud texture made for the old foam-mask branch, R channel.
+    foamMap_ = std::make_unique<Texture>();
+    {
+        std::wstring err;
+        if (!foamMap_->Initialize(d3d_->GetDevice(), GetAssetPath(L"textures/wave_foam.dds").c_str(), &err))
+        {
+            // Mid gray: the band still shows, with straight edges.
+            foamMap_->InitializeFlat(d3d_->GetDevice(), 128, 128, 128, 255);
+            OutputDebugStringW((L"[FoamMap] FAIL -> flat gray: " + err + L"\n").c_str());
+        }
     }
 
     model_ = std::make_unique<Model>();
@@ -691,6 +725,14 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
         water_.scatterColor = {scatterOverride_.x, scatterOverride_.y, scatterOverride_.z};
         water_.scatterStrength = scatterOverride_.w;
     }
+    if (foamStrengthOverride_ >= 0.0f)
+    {
+        water_.foamStrength = foamStrengthOverride_;
+    }
+    if (foamSlopeOverride_ >= 0.0f)
+    {
+        water_.foamSlopeFilter = foamSlopeOverride_;
+    }
     waveMacro_ = preset.waveMacro;
 }
 
@@ -780,11 +822,41 @@ void Graphics::StartCaptureSet(const std::wstring& label, bool quitWhenDone, boo
 
     captureRestore_ = {MakePresetFromCurrent(), MakeViewFromCurrent(), elapsedTime_};
     quitAfterCapture_ = quitWhenDone;
+    if (benchMode_)
+    {
+        // Uncapped frames: with VSync on every frame would take the display interval.
+        benchRestoreVsync_ = d3d_->GetVSync();
+        d3d_->SetVSync(false);
+        benchJobActive_ = false;
+        benchLastResolved_ = gpuTimer_.GetResolvedCount();
+        std::string adapterName = "unknown";
+        Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+        Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+        DXGI_ADAPTER_DESC adapterDesc = {};
+        if (SUCCEEDED(d3d_->GetDevice()->QueryInterface(IID_PPV_ARGS(&dxgiDevice))) &&
+            SUCCEEDED(dxgiDevice->GetAdapter(&adapter)) && SUCCEEDED(adapter->GetDesc(&adapterDesc)))
+        {
+            adapterName = WideToUtf8(adapterDesc.Description);
+        }
+        benchCsv_ = "# GPU: " + adapterName + ", " + std::to_string(screenWidth_) + "x" + std::to_string(screenHeight_)
+#if defined(_DEBUG)
+            + ", Debug build (not for timing)"
+#endif
+            + ", warm-up " + std::to_string(kBenchWarmupFrames) + " frames, ms per frame\n"
+            "# sections: opaque = clear + sky + test scene objects, water = scene color copy + water draw, post = tonemap + UI\n"
+            "preset,shot,samples,gpu_median,gpu_mean,gpu_min,opaque_median,water_median,water_mean,post_median,cpu_median\n";
+    }
     captureStatus_ = "Capturing -> " + WideToUtf8(captureDir_.wstring());
 }
 
 bool Graphics::BeginCaptureFrame()
 {
+    // --bench: a job keeps its preset and shot for all its frames; only the clock is held.
+    if (benchMode_ && benchJobActive_)
+    {
+        elapsedTime_ = kCaptureTime;
+        return true;
+    }
     if (captureQueue_.empty())
     {
         return false;
@@ -815,11 +887,81 @@ bool Graphics::BeginCaptureFrame()
 
     const std::string fileName = std::string(kPresetFileNames[job.preset]) + "_" + shotName + (capturePng_ ? ".png" : ".jpg");
     pendingCapturePath_ = captureDir_ / fileName;
+    if (benchMode_)
+    {
+        benchJobActive_ = true;
+        benchFrame_ = 0;
+        benchSamples_.clear();
+        benchJobName_ = std::string(kPresetFileNames[job.preset]) + "," + shotName;
+    }
     return true;
+}
+
+// --bench: one capture job = kBenchWarmupFrames untimed frames, then benchSampleCount_ resolved GPU timings
+// (VSync off, fixed clock, UI hidden). One CSV row per job: median / mean / min of the frame and of each section.
+void Graphics::EndBenchFrame()
+{
+    ++benchFrame_;
+    const unsigned long long resolved = gpuTimer_.GetResolvedCount();
+    if (benchFrame_ > kBenchWarmupFrames && resolved != benchLastResolved_)
+    {
+        const auto& sections = gpuTimer_.GetLastSectionsMs();
+        // cpuFrameMs_ still holds the previous frame here (it is measured after this call).
+        benchSamples_.push_back({gpuTimer_.GetLastMs(), sections[0], sections[1], sections[2], cpuFrameMs_});
+    }
+    benchLastResolved_ = resolved;
+    if (static_cast<int>(benchSamples_.size()) < benchSampleCount_)
+    {
+        return;
+    }
+
+    const auto column = [this](int index, float* median, float* mean, float* minimum)
+    {
+        std::vector<float> values;
+        for (const auto& sample : benchSamples_)
+        {
+            values.push_back(sample[index]);
+        }
+        std::sort(values.begin(), values.end());
+        *median = values[values.size() / 2];
+        *minimum = values.front();
+        double sum = 0.0;
+        for (float value : values)
+        {
+            sum += value;
+        }
+        *mean = static_cast<float>(sum / values.size());
+    };
+    char row[256];
+    float median[5], mean[5], minimum[5];
+    for (int i = 0; i < 5; ++i)
+    {
+        column(i, &median[i], &mean[i], &minimum[i]);
+    }
+    std::snprintf(row, sizeof(row), "%s,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
+        benchJobName_.c_str(), static_cast<int>(benchSamples_.size()),
+        median[0], mean[0], minimum[0], median[1], median[2], mean[2], median[3], median[4]);
+    benchCsv_ += row;
+    benchJobActive_ = false;
+
+    if (!captureQueue_.empty())
+    {
+        return;
+    }
+    std::ofstream file(captureDir_ / L"timings.csv");
+    file << benchCsv_;
+    d3d_->SetVSync(benchRestoreVsync_);
+    FinishCaptureSet();
 }
 
 void Graphics::EndCaptureFrame()
 {
+    if (benchMode_)
+    {
+        EndBenchFrame();
+        return;
+    }
+
     // Delete first, then write a new file. Overwriting a batch of existing JPEGs in place from a
     // freshly built exe gets the whole process tree frozen mid-write (ransomware-style heuristic,
     // see docs/features/bench-tools/TROUBLESHOOTING.md); delete + create does not.
@@ -861,7 +1003,11 @@ void Graphics::EndCaptureFrame()
     {
         return;
     }
+    FinishCaptureSet();
+}
 
+void Graphics::FinishCaptureSet()
+{
     ApplyPresetValues(captureRestore_.preset);
     ApplyView(captureRestore_.view);
     presetOceanMesh_ = oceanMode_; // the restored values (unsaved tweaks included) belong to the restored mesh
@@ -1655,6 +1801,7 @@ bool Graphics::Render(float deltaTime)
 
     // The depth debug view is for looking under the water, so it leaves the (still opaque) water out.
     const bool drawWater = scene_ == NoScene || (showWater_ && sceneDebug_ == 0);
+    gpuTimer_.Mark(d3d_->GetDeviceContext()); // end of the opaque section (clear, sky, test scene objects)
     if (drawWater)
     {
         d3d_->SetRasterizerWaterSurface();
@@ -1719,16 +1866,18 @@ bool Graphics::Render(float deltaTime)
             d3d_->GetSampler(),
             d3d_->GetWrapSampler(),
             sceneInputs ? d3d_->GetSceneColorSRV() : nullptr,
-            sceneInputs ? d3d_->GetSceneDepthSRV() : nullptr);
+            sceneInputs ? d3d_->GetSceneDepthSRV() : nullptr,
+            sceneInputs ? foamMap_->GetSRV() : nullptr);
         d3d_->SetRasterizerDefault();
         if (sceneInputs)
         {
             // Unbind before the next frame binds the depth writable again (and the copy as a copy target).
-            ID3D11ShaderResourceView* nullSrvs[2] = {};
-            d3d_->GetDeviceContext()->PSSetShaderResources(3, 2, nullSrvs);
+            ID3D11ShaderResourceView* nullSrvs[3] = {};
+            d3d_->GetDeviceContext()->PSSetShaderResources(3, 3, nullSrvs);
             d3d_->SetDepthDefault();
         }
     }
+    gpuTimer_.Mark(d3d_->GetDeviceContext()); // end of the water section
 
     // HDR scene -> sRGB back buffer. Debug views carry data, not light, so they skip exposure and the
     // tone curve (their values were pre-decoded in the pixel shader and come back out unchanged).
@@ -2088,7 +2237,8 @@ void Graphics::DrawViewWindow()
         ImGui::Checkbox("Lab Waves", &labWaves_);
         // Water depth = 0 - world position y (the water is at y = 0): the answer key the depth buffer is
         // checked against later, not the depth buffer itself.
-        const char* sceneDebugLabels[] = { "Render", "Water depth (WP, m) - water hidden", "Water depth numeric (WP) - compare tool" };
+        const char* sceneDebugLabels[] = { "Render", "Water depth (WP, m) - water hidden", "Water depth numeric (WP) - compare tool",
+            "Not measured marker (numeric views)", "World normal (answer key) - water hidden" };
         if (ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels)))
         {
             SwapDebugViews(sceneDebug_, parkedSceneDebug_, water_.debugMode, parkedWaterDebug_);
@@ -2166,7 +2316,8 @@ void Graphics::DrawViewWindow()
         "Scene depth, water only (test scenes)", "Water coverage (test scenes)",
         "Water depth (from depth buffer)", "Underwater view path", "Water depth numeric (compare tool)", "View path numeric (compare tool)",
         "Transmittance (RGB, compare tool)", "Water color part only (scattering)", "Ramp color (as picked)",
-        "Reflection amount (Fresnel x strength)", "Reflection part only", "Underwater part only" };
+        "Reflection amount (Fresnel x strength)", "Reflection part only", "Underwater part only",
+        "Contact foam amount", "Steepness behind the water (depth normal)", "Normal from depth (world, color)" };
     if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
     {
         SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
@@ -2455,6 +2606,21 @@ void Graphics::DrawNewWaterSettings()
         ImGui::TextDisabled(byPath ? "Lower view = deeper color, like the physical mode."
                                    : "Same bed keeps its color from any angle.");
     }
+
+    // contact-foam: a white band where a surface comes up through the water (not in Pass-through).
+    ImGui::SeparatorText("New: Contact Foam");
+    ImGui::TextDisabled("Band down to Width of water depth on the surface behind.");
+    LabeledSlider("Strength (0 = off)", &water_.foamStrength, 0.0f, 1.0f, "%.2f");
+    LabeledSlider("Width (water depth)", &water_.foamWidth, 0.02f, 1.0f, "%.2f m");
+    LabeledSlider("Edge softness (small = hard edge)", &water_.foamSoftness, 0.01f, 0.5f, "%.2f");
+    LabeledSlider("Noise size", &water_.foamNoiseSize, 0.2f, 8.0f, "%.2f m");
+    LabeledSlider("Noise drift (downwind)", &water_.foamFlow, 0.0f, 0.5f, "%.2f m/s");
+    LabeledSlider("Slope filter (0 = depth alone, 1 = walls only)", &water_.foamSlopeFilter, 0.0f, 1.0f, "%.2f");
+    ImGui::TextDisabled(water_.foamSlopeFilter < 0.5f ? "Flat shallows (rail heads, a 0.2 m pad) foam too."
+                                                      : "Steep surfaces only (normal from the depth buffer).");
+    LabeledSlider("Steepness: foam starts", &water_.foamSteepStart, 0.0f, 1.0f, "%.2f");
+    LabeledSlider("Steepness: foam full", &water_.foamSteepFull, 0.0f, 1.0f, "%.2f");
+    LabeledColor("Foam color (lit by the sun and sky)", &water_.foamColor.x);
 }
 
 // Surface settings both water versions use: ripples, ocean detail, waves.
