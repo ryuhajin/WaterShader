@@ -2041,6 +2041,28 @@ void Graphics::DrawViewWindow()
         cameraPosition_.x, cameraPosition_.y, cameraPosition_.z, cameraRotation_.x, cameraRotation_.y);
 
     ImGui::SeparatorText("Scene");
+    // Two water versions: Old = the painted opaque water (open water, bench, and the test scenes on request),
+    // New = the water below computed from the scene (test scenes only, transmissionMode_ 1-3). The Light and
+    // Water windows show the picked version's settings. The camera is not touched (shared by both).
+    const bool testScene = scene_ != NoScene;
+    const bool newWater = IsNewWater();
+    ImGui::TextUnformatted("Water version");
+    ImGui::BeginDisabled(!testScene);
+    if (ImGui::RadioButton("Old (opaque, painted)", !newWater) && newWater)
+    {
+        lastNewTransmission_ = transmissionMode_;
+        transmissionMode_ = 0;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("New (underwater)", newWater) && !newWater)
+    {
+        transmissionMode_ = lastNewTransmission_;
+    }
+    ImGui::EndDisabled();
+    if (!testScene)
+    {
+        ImGui::TextDisabled("New needs a test scene (Water Lab / Waterfront).");
+    }
     const char* sceneLabels[] = { "Bench plane", "Ocean grid (open water)", "Water Lab (test depths)", "Waterfront (graybox)" };
     int sceneChoice = scene_ != NoScene ? 1 + scene_ : (oceanMode_ ? 1 : 0);
     if (ImGui::Combo("Scene", &sceneChoice, sceneLabels, IM_ARRAYSIZE(sceneLabels)))
@@ -2048,9 +2070,14 @@ void Graphics::DrawViewWindow()
         oceanMode_ = sceneChoice != 0;
         scene_ = sceneChoice >= 2 ? sceneChoice - 1 : NoScene;
         // Entering a test scene from anywhere else would leave the camera far off: start from its overview shot.
+        // Picking a test scene here also picks the New water, the version the test scenes are built for.
         if (scene_ != NoScene)
         {
             ApplyCameraShot(FindCaptureShot(scene_ == WaterLab ? "lab_stairs" : "front_rails"));
+            if (transmissionMode_ == 0)
+            {
+                transmissionMode_ = lastNewTransmission_;
+            }
         }
     }
     ImGui::Checkbox("Skybox Visible", &skyboxVisible_);
@@ -2086,7 +2113,7 @@ void Graphics::DrawViewWindow()
             }
             ImGui::TextDisabled("Dark lines every 1 m, red line = water surface (y = 0)");
         }
-        ImGui::TextDisabled("Water version and its settings: Water window (3).");
+        ImGui::TextDisabled("The water version's settings: Water window (3).");
         ImGui::TextDisabled("1 unit = 1 m, water at y = 0, ocean presets.");
         ImGui::TextDisabled("Waves stay flat unless Lab Waves is on.");
     }
@@ -2236,37 +2263,46 @@ void Graphics::DrawLightWindow()
     {
         ImGui::TextColored(kHighlightColor, "Not in use on the top shot: Top View Sun below\nlights it. These sliders are for every other view.");
     }
+    // Sun and ambient light both versions; what they light differs (the picked version: View window > Scene).
+    const bool newWater = IsNewWater();
+    ImGui::TextDisabled(newWater ? "New: lights the scene and the water's own color"
+                                 : "Old: lights the painted water color");
     ImGui::SliderFloat("Yaw (deg)", &sunYawDeg_, 0.0f, 360.0f, "%.1f");
     ImGui::SliderFloat("Elevation (deg)", &sunElevationDeg_, 0.0f, 90.0f, "%.1f");
     ImGui::ColorEdit3("Color", &lightColor_.x);
     ImGui::SliderFloat("Intensity", &lightIntensity_, 0.0f, 5.0f);
 
-    ImGui::SeparatorText("Top View Sun (top shot only)");
-    bool topSunEnabled = topSun_.enabled != 0;
-    if (ImGui::Checkbox("Own sun for the top shot", &topSunEnabled))
+    // The top shot is an open water shot, so its own sun never lights a test scene.
+    if (scene_ == NoScene)
     {
-        topSun_.enabled = topSunEnabled ? 1 : 0;
+        ImGui::SeparatorText("Top View Sun (top shot only)");
+        bool topSunEnabled = topSun_.enabled != 0;
+        if (ImGui::Checkbox("Own sun for the top shot", &topSunEnabled))
+        {
+            topSun_.enabled = topSunEnabled ? 1 : 0;
+        }
+        if (topSunActive)
+        {
+            ImGui::TextColored(kHighlightColor, "IN USE: the camera is on the top shot");
+        }
+        else if (topSunEnabled)
+        {
+            ImGui::TextDisabled("Waiting: used once the camera is on\nView > Camera Presets > top (any move leaves it)");
+        }
+        else
+        {
+            ImGui::TextDisabled("Off: the top shot uses the Sun above");
+        }
+        ImGui::BeginDisabled(!topSunEnabled);
+        ImGui::SliderFloat("Yaw (deg)##top", &topSun_.yawDeg, 0.0f, 360.0f, "%.1f");
+        ImGui::SliderFloat("Elevation (deg)##top", &topSun_.elevationDeg, 0.0f, 90.0f, "%.1f");
+        ImGui::SliderFloat("Intensity##top", &topSun_.intensity, 0.0f, 5.0f);
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("Elevation 90 = sun right above the plane,\nso its glint faces the top camera. Color = Sun color.");
     }
-    if (topSunActive)
-    {
-        ImGui::TextColored(kHighlightColor, "IN USE: the camera is on the top shot");
-    }
-    else if (topSunEnabled)
-    {
-        ImGui::TextDisabled("Waiting: used once the camera is on\nView > Camera Presets > top (any move leaves it)");
-    }
-    else
-    {
-        ImGui::TextDisabled("Off: the top shot uses the Sun above");
-    }
-    ImGui::BeginDisabled(!topSunEnabled);
-    ImGui::SliderFloat("Yaw (deg)##top", &topSun_.yawDeg, 0.0f, 360.0f, "%.1f");
-    ImGui::SliderFloat("Elevation (deg)##top", &topSun_.elevationDeg, 0.0f, 90.0f, "%.1f");
-    ImGui::SliderFloat("Intensity##top", &topSun_.intensity, 0.0f, 5.0f);
-    ImGui::EndDisabled();
-    ImGui::TextDisabled("Elevation 90 = sun right above the plane,\nso its glint faces the top camera. Color = Sun color.");
 
     ImGui::SeparatorText("Sun Glint (sun mirrored on the water)");
+    ImGui::TextDisabled(newWater ? "New: part of the reflection, x R" : "Old: added on top of the painted water, x R");
     ImGui::SliderFloat("Sharpness", &water_.sunGlintPower, 64.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
     ImGui::SliderFloat("Strength", &water_.sunGlintIntensity, 0.0f, 5.0f, "%.2f");
     ImGui::TextDisabled("Strength 1 = physically based");
@@ -2307,28 +2343,10 @@ void Graphics::DrawWaterWindow()
         return;
     }
 
-    // Two water versions: Old = the painted opaque water (open water, bench, and the test scenes on request),
-    // New = the water below computed from the scene (test scenes only, transmissionMode_ 1-3). Only the picked
-    // version's own settings are shown; the hidden values stay as they are. The camera is not touched.
-    ImGui::SeparatorText("Water version");
-    const bool testScene = scene_ != NoScene;
-    const bool newWater = testScene && transmissionMode_ != 0;
-    ImGui::BeginDisabled(!testScene);
-    if (ImGui::RadioButton("Old (opaque, painted)", !newWater) && newWater)
-    {
-        lastNewTransmission_ = transmissionMode_;
-        transmissionMode_ = 0;
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("New (underwater)", newWater) && !newWater)
-    {
-        transmissionMode_ = lastNewTransmission_;
-    }
-    ImGui::EndDisabled();
-    if (!testScene)
-    {
-        ImGui::TextDisabled("New needs a test scene (Water Lab / Waterfront).");
-    }
+    // Only the water version's own settings are shown (switch: View window, Scene); the hidden values stay as
+    // they are.
+    const bool newWater = IsNewWater();
+    ImGui::TextDisabled("Water version: %s (View window > Scene)", newWater ? "New (underwater)" : "Old (opaque, painted)");
 
     if (!newWater)
     {
@@ -2495,6 +2513,10 @@ void Graphics::DrawSurfaceSettings()
 
     // Gerstner waves move the mesh vertices. The presets order them big -> small.
     ImGui::SeparatorText("Waves (geometry)");
+    if (scene_ != NoScene && !labWaves_)
+    {
+        ImGui::TextColored(kHighlightColor, "Test scene: flat until View > Lab Waves is on.");
+    }
     ImGui::TextDisabled("Moving swells that shape the mesh. Arrow = travel\ndirection as seen from the camera (up = away).");
     ImGui::Checkbox("Far waves (lighting only past the mesh fade)", &farWaveNormals_);
 

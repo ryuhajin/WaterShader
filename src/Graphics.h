@@ -167,7 +167,9 @@ private:
     int parkedWaterDebug_ = 0; // water Debug Mode put aside while a Scene Debug view is on
     int transmissionMode_ = 3; // test scenes: 0 opaque water (as before), 1 pass-through (scene-color-depth),
                                // 2 attenuation (rgb-attenuation), 3 scattering (water-scatter)
-    int lastNewTransmission_ = 3; // the New water's mode to go back to after the Water window switch picked Old
+    int lastNewTransmission_ = 3; // the New water's mode to go back to after the version switch picked Old
+    // Water version on screen: New = the water below (test scenes, transmission 1-3), otherwise the Old opaque water.
+    bool IsNewWater() const { return scene_ != NoScene && transmissionMode_ != 0; }
     float maxUnderwaterDistance_ = 50.0f; // m: view path where no surface is behind the water (depth-reconstruct)
     bool surfaceReflection_ = true; // test scenes: sky and sun mirrored on top of the water below (surface-reflection)
     // Debug layer messages (Debug builds), counted per text; written next to a capture set.
