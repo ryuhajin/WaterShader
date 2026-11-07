@@ -63,7 +63,8 @@
 | View 창 Lab Waves | 기본 켬으로 바꿈 (끄면 6C 화면) |
 | Water occlusion | None / Single pass / Prepass |
 | Debug Mode 25 | Water surface height above the receiver (m) — ②의 값 |
-| CLI | `--lab-waves on\|off`, `--water-occlusion none\|single\|prepass`, 검증용 파도 세기 `--lab-wave-height` |
+| CLI | `--lab-waves on\|off`, `--water-occlusion none\|single\|prepass` |
+| 파도 값 | Surface 창(4) Waves의 크기·높이·방향을 그대로 쓴다 (바다 프리셋과 공유). 자동 캡처는 UI를 못 만지므로, 파도를 키운 검증 캡처는 높이만 바꾼 프리셋 파일을 `--preset-file`로 넘긴다 (6단계 칠한 물색 검사와 같은 방식) |
 
 ## 3. Acceptance Criteria
 
