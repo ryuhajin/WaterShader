@@ -25,6 +25,7 @@
 | `shaders/scene.hlsl` | Scene Debug 4: 진짜 월드 법선을 22와 같은 색 규칙으로 (정답지) |
 | `shaders/Common.hlsli`, `src/ColorShader.*` | `g_FoamParams`, `g_FoamParams2`, `g_FoamColor`, 거품 텍스처 t5 |
 | `src/Graphics.*` | 거품 텍스처 로드, 프리셋 키 11개(없으면 기본값 = 켬), Water 창 "New: Contact Foam", CLI `--foam`, `--foam-slope`, Debug Mode 20~22, Scene Debug 3·4 라벨, 고정 샷 `lab_pillar_near` |
+| `src/Graphics.*` | **설정 창 분리 (사용자 요청)**: Water 창(3) = 색·빛(버전별 색 섹션, Contact Foam, Reflection). 새 **Surface 창(4)** = 모양·움직임(Normal Map, Ocean Detail, Waves). `4` 키·숫자패드 4로 열고 닫음, `--ui surface`, Stats 키 안내에 `[4] Surface` |
 | `src/GpuTimer.*` | `Mark()`: 한 프레임을 구간으로 나눠 잰다 (불투명 / 물 / 후처리) |
 | `src/Graphics.*` | **`--bench <label>`**: 캡처 목록(프리셋 × 샷)을 돌며 샷마다 VSync 끄고 60프레임 예열, `--bench-frames`(기본 300) 프레임의 구간별 GPU 시간·CPU 기록 시간을 `<label>/timings.csv`에 (중앙값·평균·최솟값) |
 | `tools/compare_depth.ps1` | `-Mode foam`(거품 위치 vs 정답지 수심·법선), `-Mode normal`(복원 법선 vs 정답지 법선 각도, 오차 지도) |
@@ -129,6 +130,7 @@
 | 거품 텍스처를 2 × 2로 이어 보니 이음매가 보임 | `wave_foam`은 가장자리가 이어지도록 만든 텍스처가 아님 | 거울 반복으로 읽기(`1 − |frac(uv/2)·2 − 1|`) + 돌리고 크기를 바꾼 두 번째 읽기를 섞음. 클램프 샘플러 사용 |
 | `--bench-frames` 처리에서 빌드 오류 | Windows `max` 매크로 | `std::max<int>` |
 | 비교 도구가 선택 인자(-D, -MapDir)가 없을 때 경로 오류 | PowerShell이 `$null`을 빈 문자열로 넘김 | 빈 문자열도 "없음"으로 처리 |
+| Water 창(3)이 너무 길어 원하는 값을 찾기 어려움 (사용자 보고) | 버전별 색, 거품, 반사, 잔물결, 원경, 파도가 한 창에 쌓임 | 색·빛은 Water 창(3), 수면의 모양·움직임(Normal Map, Ocean Detail, Waves)은 새 Surface 창(4)으로 분리. 렌더링은 그대로: 수정 전후 빌드로 테스트 장면 5샷 × 3프리셋과 Sunset lab_low 단독을 찍어 16장 바이트 동일, 기존 바다 21장 동일, 디버그 레이어 경고 0 (첫 비교에서 Sunset lab_low 1장이 달랐으나 같은 조건으로 다시 찍자 동일 — 6단계 NOTES의 "긴 세트 뒤쪽 샷 1픽셀" 현상) |
 
 ### 관찰
 
@@ -138,7 +140,7 @@
 
 ## 4. 사용자 검증 안내
 
-**실행:** `.\build\vs2022\Debug\WaterShader.exe` → `1` 키 → Scene = **Water Lab** → `3` 키로 Water 창, 맨 아래 **"New: Contact Foam"** (기본 켬)
+**실행:** `.\build\vs2022\Debug\WaterShader.exe` → `1` 키 → Scene = **Water Lab** → `3` 키로 Water 창, Reflection 바로 위 **"New: Contact Foam"** (기본 켬). 잔물결·파도는 `4` 키 Surface 창
 
 | 순서 | 조작 | 정상 | 실패 징후 |
 |---|---|---|---|
@@ -151,6 +153,7 @@
 | 7 | 6번 Normal from depth에서 `X` 키 → Scene Debug **World normal (answer key)** | 두 화면이 거의 같고, 모서리·레일·기둥 표면에서만 다름 (6C에서 비교할 곳) | 전체가 다른 색 |
 | 8 | View 창 Presets **Sunset** | 거품도 어둡고 따뜻해짐 (관찰 참고) | 거품만 한낮처럼 하얌 |
 | 9 | 기둥 둘레를 한 바퀴 돌며 보기 | 띠는 보이는 면에만, 수면 위 바깥 고리는 없음 (화면 공간 한계) | — |
+| 10 | `4` 키 (숫자패드 4도) | Surface 창이 열리고 닫힘. Water 창에는 버전별 색·거품·Reflection만 남음. Surface 창의 Ripple strength나 파도 값을 바꾸면 화면이 바뀜 (테스트 장면 파도는 Lab Waves를 켜야 움직임) | Water 창에 잔물결·파도가 그대로 있음, 캡처 라벨 입력 중에 4를 쳤는데 창이 토글됨 |
 
 **확인 질문**
 

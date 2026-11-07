@@ -35,12 +35,13 @@ public:
 
 private:
     bool Render(float deltaTime);
-    // Settings windows, toggled with keys 1 / 2 / 3 (UpdateWindowToggles).
-    void DrawViewWindow();  // presets, camera, scene, capture, debug view
-    void DrawLightWindow(); // sky, sun, glint, ambient, tonemapping
-    void DrawWaterWindow(); // water version, its own settings, then the shared surface (reflection, ripples, waves)
-    void DrawNewWaterSettings(); // test scenes: transmission, underwater light loss and color
-    void DrawSurfaceSettings();  // both versions: normal maps, ocean detail, waves
+    // Settings windows, toggled with keys 1 / 2 / 3 / 4 (UpdateWindowToggles).
+    void DrawViewWindow();    // presets, camera, scene, capture, debug view
+    void DrawLightWindow();   // sky, sun, glint, ambient, tonemapping
+    void DrawWaterWindow();   // color and light: the water version's own settings, then the reflection
+    void DrawNewWaterSettings(); // test scenes: transmission, underwater light loss and color, contact foam
+    void DrawSurfaceWindow(); // shape and motion of the surface, both versions (DrawSurfaceSettings)
+    void DrawSurfaceSettings();  // normal maps, ocean detail, waves
     void DrawStatsOverlay();
     void UpdateFrameStats(float deltaTime);
     void UpdateCamera(float deltaTime, const Input& input);
@@ -289,7 +290,8 @@ private:
     bool showViewWindow_ = false;
     bool showLightWindow_ = false;
     bool showWaterWindow_ = false;
-    std::array<bool, 3> toggleKeyWasDown_ = {}; // edge detection for keys 1 / 2 / 3
+    bool showSurfaceWindow_ = false;
+    std::array<bool, 4> toggleKeyWasDown_ = {}; // edge detection for keys 1 / 2 / 3 / 4
     bool swapKeyWasDown_ = false; // edge detection for X (swap the two debug views)
     // Last flow direction per normal layer, so the direction slider keeps its value at speed 0.
     std::array<float, 2> flowDirectionDeg_ = {0.0f, 0.0f};

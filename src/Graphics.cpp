@@ -362,7 +362,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --normal-map <path>    extra normal map (relative to assets/), used for both layers
     //   --normal-a / --normal-b <index>  normal map per layer (kNormalMaps), overrides the presets
     //   --shot <name>          start from a fixed camera shot (e.g. ocean_aerial)
-    //   --ui <view|light|water|all>  open settings windows at start (screenshots; keys 1/2/3 otherwise)
+    //   --ui <view|light|water|surface|all>  open settings windows at start (screenshots; keys 1-4 otherwise)
     //   --no-vsync             start uncapped (for FPS / GPU ms measurement)
     //   --capture-feature <f>  captures go to <capture root>/<f>/captures (default water-polish)
     //   --capture-root <dir>   capture root instead of ../ws-capture next to the repository
@@ -418,6 +418,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                     showViewWindow_ = ui == L"view" || ui == L"all";
                     showLightWindow_ = ui == L"light" || ui == L"all";
                     showWaterWindow_ = ui == L"water" || ui == L"all";
+                    showSurfaceWindow_ = ui == L"surface" || ui == L"all";
                 }
                 else if (arg == L"--capture-feature" && hasValue) { captureFeature_ = argv[++i]; }
                 else if (arg == L"--capture-root" && hasValue) { captureRootOverride_ = argv[++i]; }
@@ -1432,8 +1433,8 @@ void Graphics::UpdateWindowToggles(const Input& input)
 {
     // Toggle on the press, not while held. Digits typed into a text field (capture label) are text.
     const bool typing = imguiInitialized_ && ImGui::GetIO().WantTextInput;
-    bool* windows[] = { &showViewWindow_, &showLightWindow_, &showWaterWindow_ };
-    for (int i = 0; i < 3; ++i)
+    bool* windows[] = { &showViewWindow_, &showLightWindow_, &showWaterWindow_, &showSurfaceWindow_ };
+    for (int i = 0; i < 4; ++i)
     {
         const bool down = input.IsKeyDown('1' + i) || input.IsKeyDown(VK_NUMPAD1 + i);
         if (down && !toggleKeyWasDown_[i] && !typing)
@@ -1900,6 +1901,7 @@ bool Graphics::Render(float deltaTime)
         DrawViewWindow();
         DrawLightWindow();
         DrawWaterWindow();
+        DrawSurfaceWindow();
     }
 
     ImGui::Render();
@@ -1977,7 +1979,7 @@ void Graphics::DrawStatsOverlay()
             ImGui::Text("Sun:  preset sun");
         }
         ImGui::Separator();
-        ImGui::TextDisabled("Keys: [1] View  [2] Light  [3] Water");
+        ImGui::TextDisabled("Keys: [1] View  [2] Light  [3] Water  [4] Surface");
     }
     ImGui::End();
 }
@@ -2511,17 +2513,37 @@ void Graphics::DrawWaterWindow()
         DrawNewWaterSettings();
     }
 
-    ImGui::SeparatorText("Surface (both versions)");
-    ImGui::TextDisabled("Reflection, ripples and waves of the water surface.");
-    ImGui::SeparatorText("Reflection");
+    ImGui::SeparatorText("Reflection (both versions)");
     ImGui::TextDisabled(newWater ? "New: final = water below x (1 - R) + sky x R"
                                  : "Old: final = painted color blended to the sky by R");
     LabeledSlider("Reflection strength", &water_.reflectionStrength, 0.0f, 1.0f, "%.2f");
     LabeledSlider("Reflectivity head-on (F0, real water = 0.02)", &water_.fresnelF0, 0.0f, 0.6f, "%.3f");
     LabeledSlider("Fresnel curve (5 = physical; higher = mirror only at low angles)", &water_.fresnelPower, 1.0f, 8.0f, "%.1f");
 
-    DrawSurfaceSettings();
+    ImGui::Separator();
+    ImGui::TextDisabled("Ripples, waves, far detail: Surface window (4).");
 
+    ImGui::End();
+}
+
+// Shape and motion of the water surface (both versions); the color and light are in the Water window.
+void Graphics::DrawSurfaceWindow()
+{
+    if (!showSurfaceWindow_)
+    {
+        return;
+    }
+    // Under the Light window, left of the Water window.
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 380.0f, io.DisplaySize.y * 0.45f), ImGuiCond_FirstUseEver, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(340.0f, io.DisplaySize.y * 0.55f - 10.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Surface Settings  [4]", &showSurfaceWindow_))
+    {
+        ImGui::End();
+        return;
+    }
+    ImGui::TextDisabled("Shape and motion of the water surface (both versions).");
+    DrawSurfaceSettings();
     ImGui::End();
 }
 
