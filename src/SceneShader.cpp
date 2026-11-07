@@ -113,7 +113,8 @@ void SceneShader::Begin(
     const DirectX::XMFLOAT4& lightDirection,
     const DirectX::XMFLOAT4& lightColor,
     const DirectX::XMFLOAT4& ambientColor,
-    int debugMode)
+    int debugMode,
+    bool writeNormal)
 {
     DirectX::XMStoreFloat4x4(&view_, view);
     DirectX::XMStoreFloat4x4(&projection_, projection);
@@ -124,7 +125,7 @@ void SceneShader::Begin(
 
     deviceContext->IASetInputLayout(layout_.Get());
     deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
-    deviceContext->PSSetShader(pixelShader_.Get(), nullptr, 0);
+    deviceContext->PSSetShader(writeNormal ? pixelShaderWithNormal_.Get() : pixelShader_.Get(), nullptr, 0);
     deviceContext->VSSetConstantBuffers(0, 1, perObjectCB_.GetAddressOf());
     deviceContext->PSSetConstantBuffers(0, 1, perObjectCB_.GetAddressOf());
 }
@@ -196,6 +197,13 @@ bool SceneShader::Reload(ID3D11Device* device)
         lastError_ = error;
         return false;
     }
+    // normal-gbuffer: the same shading plus the world normal to a second target, used while that target is bound.
+    Microsoft::WRL::ComPtr<ID3DBlob> psNormalBuffer;
+    if (!CompileShader(shaderPath_.c_str(), "PSMainWithNormal", "ps_5_0", &psNormalBuffer, &error))
+    {
+        lastError_ = "[PSMainWithNormal] " + error;
+        return false;
+    }
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> newVS;
     if (FAILED(device->CreateVertexShader(vsBuffer->GetBufferPointer(), vsBuffer->GetBufferSize(), nullptr, &newVS)))
@@ -208,6 +216,12 @@ bool SceneShader::Reload(ID3D11Device* device)
     if (FAILED(device->CreatePixelShader(psBuffer->GetBufferPointer(), psBuffer->GetBufferSize(), nullptr, &newPS)))
     {
         lastError_ = "CreatePixelShader failed.";
+        return false;
+    }
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> newNormalPS;
+    if (FAILED(device->CreatePixelShader(psNormalBuffer->GetBufferPointer(), psNormalBuffer->GetBufferSize(), nullptr, &newNormalPS)))
+    {
+        lastError_ = "CreatePixelShader (PSMainWithNormal) failed.";
         return false;
     }
 
@@ -232,6 +246,7 @@ bool SceneShader::Reload(ID3D11Device* device)
 
     vertexShader_ = newVS;
     pixelShader_ = newPS;
+    pixelShaderWithNormal_ = newNormalPS;
     layout_ = newLayout;
 
     lastError_.clear();
@@ -268,6 +283,7 @@ void SceneShader::ShutdownShader()
 {
     perObjectCB_.Reset();
     layout_.Reset();
+    pixelShaderWithNormal_.Reset();
     pixelShader_.Reset();
     vertexShader_.Reset();
 }

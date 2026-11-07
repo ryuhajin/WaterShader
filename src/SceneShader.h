@@ -32,7 +32,8 @@ public:
         const DirectX::XMFLOAT4& lightDirection, // xyz = direction light travels
         const DirectX::XMFLOAT4& lightColor,     // sRGB rgb, a = intensity
         const DirectX::XMFLOAT4& ambientColor,   // sRGB rgb, a = intensity
-        int debugMode);                          // 0 render, 1 depth below the water
+        int debugMode,                           // 0 render, 1 depth below the water
+        bool writeNormal = false);               // also write the world normal to render target 1 (normal-gbuffer)
     void Render(ID3D11DeviceContext* deviceContext, int indexCount, const DirectX::XMMATRIX& world, const Material& material);
 
     const std::string& GetLastError() const { return lastError_; }
@@ -45,6 +46,7 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader_;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShaderWithNormal_; // PSMainWithNormal: color + world normal (MRT)
     Microsoft::WRL::ComPtr<ID3D11InputLayout> layout_;
     Microsoft::WRL::ComPtr<ID3D11Buffer> perObjectCB_;
 

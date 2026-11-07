@@ -15,6 +15,7 @@ SamplerState g_NormalSampler : register(s1);
 Texture2D        g_SceneColor : register(t3); // HDR color copy
 Texture2D<float> g_SceneDepth : register(t4); // depth buffer, 0 (near) .. 1 (far), not linear in distance
 Texture2D        g_FoamMap    : register(t5); // contact foam noise (R), the cloud texture of the old foam-mask branch
+Texture2D        g_SceneNormal : register(t6); // world normal x 0.5 + 0.5 written by the opaque pass, a = 0: none
 #include "DepthBands.hlsli"
 #endif
 
@@ -56,6 +57,14 @@ float3 SceneNormalFromDepth(int2 pixel, float depth, float3 center, int2 size)
                              : center - SceneWorldPosition(up, depthUp, sizeF);
     float3 normal = normalize(cross(alongY, alongX));
     return dot(normal, g_CameraPositionWS.xyz - center) < 0.0 ? -normal : normal;
+}
+
+// The normal the opaque pass stored for this pixel (normal-gbuffer). Interpolated vertex normals: a rounded
+// pillar stays round, and edges and thin objects are as right as anywhere else. Zero where nothing wrote one.
+float3 SceneNormalStored(int2 pixel)
+{
+    float4 stored = g_SceneNormal.Load(int3(pixel, 0));
+    return stored.a > 0.5 ? normalize(stored.xyz * 2.0 - 1.0) : float3(0.0, 0.0, 0.0);
 }
 
 // Foam noise, 0..1. The texture does not tile (its edges do not match), so it is read mirrored: every other
@@ -305,16 +314,28 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // depth buffer. Not in pass-through, which has to stay the frame without the water.
     float foamWidth = max(g_FoamParams.x, 1e-3);
     bool foamCandidate = transmissionMode >= 2 && g_FoamParams.w > 0.0 && hasReceiver && waterDepth < foamWidth;
+    // Normal source (normal-gbuffer): estimated from the depth buffer, or the one the opaque pass stored next to the
+    // color (one read instead of four depth reads, four reconstructions and a cross product).
+    bool storedNormal = g_SceneParams.w > 0.5;
     float3 receiverNormal = float3(0.0, 0.0, 0.0);
     float steepness = 0.0;
-    [branch] if (hasReceiver && (foamCandidate || sceneDebugMode == 21 || sceneDebugMode == 22))
+    [branch] if (hasReceiver && (foamCandidate || (sceneDebugMode >= 21 && sceneDebugMode <= 24)))
     {
-        receiverNormal = SceneNormalFromDepth(scenePixel.xy, sceneDepth, receiverWS, int2(sceneWidth, sceneHeight));
+        receiverNormal = (storedNormal && sceneDebugMode != 22) || sceneDebugMode == 23 || sceneDebugMode == 24
+            ? SceneNormalStored(scenePixel.xy)
+            : SceneNormalFromDepth(scenePixel.xy, sceneDepth, receiverWS, int2(sceneWidth, sceneHeight));
         steepness = 1.0 - abs(receiverNormal.y);
     }
-    // 21 = steepness of the surface behind the water (black = flat, white = wall), 22 = that normal as color.
+    // 21 = steepness of the surface behind the water (black = flat, white = wall), 22 = the normal from depth and
+    // 23 = the stored normal as color, 24 = the angle between the two (black 0 -> white 30 degrees or more).
     if (sceneDebugMode == 21) { return DebugOut(steepness.xxx); }
-    if (sceneDebugMode == 22) { return DebugOut(hasReceiver ? receiverNormal * 0.5 + 0.5 : float3(0.0, 0.0, 0.0)); }
+    if (sceneDebugMode == 22 || sceneDebugMode == 23) { return DebugOut(hasReceiver ? receiverNormal * 0.5 + 0.5 : float3(0.0, 0.0, 0.0)); }
+    if (sceneDebugMode == 24)
+    {
+        float3 fromDepth = SceneNormalFromDepth(scenePixel.xy, sceneDepth, receiverWS, int2(sceneWidth, sceneHeight));
+        float angle = degrees(acos(clamp(dot(fromDepth, receiverNormal), -1.0, 1.0)));
+        return DebugOut(hasReceiver ? (angle / 30.0).xxx : float3(0.0, 0.0, 0.0));
+    }
     float foamAmount = 0.0;
     [branch] if (foamCandidate)
     {

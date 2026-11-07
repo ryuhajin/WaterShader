@@ -57,7 +57,7 @@ struct PerFrameCB
     // x = ripple roughness, y = gust strength, z = gust scale, w = haze strength
     DirectX::XMFLOAT4 detailParams;
     DirectX::XMFLOAT4 detailParams2; // x = far wave crests (1 = as before)
-    DirectX::XMFLOAT4 sceneParams;   // x = transmission mode, y = max optical distance, z = surface reflection (SCENE_INPUTS only)
+    DirectX::XMFLOAT4 sceneParams;   // x = transmission mode, y = max optical distance, z = surface reflection, w = normal source (SCENE_INPUTS only)
     DirectX::XMFLOAT4X4 invViewProjection; // test scenes: depth buffer -> world position
     DirectX::XMFLOAT4 extinction;          // rgb = extinction per meter (test scenes)
     DirectX::XMFLOAT4 scatterColor;        // rgb = linear scatter color, a = strength (test scenes)
@@ -170,9 +170,10 @@ bool ColorShader::Render(
     ID3D11SamplerState* wrapSampler,
     ID3D11ShaderResourceView* sceneColorSRV,
     ID3D11ShaderResourceView* sceneDepthSRV,
-    ID3D11ShaderResourceView* foamSRV)
+    ID3D11ShaderResourceView* foamSRV,
+    ID3D11ShaderResourceView* sceneNormalSRV)
 {
-    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, ambientColor, time, cameraPositionWS, water, cubemapSRV, normalSRVA, normalSRVB, clampSampler, wrapSampler, sceneColorSRV, sceneDepthSRV, foamSRV);
+    RenderShader(deviceContext, indexCount, world, view, projection, lightDirection, lightColor, ambientColor, time, cameraPositionWS, water, cubemapSRV, normalSRVA, normalSRVB, clampSampler, wrapSampler, sceneColorSRV, sceneDepthSRV, foamSRV, sceneNormalSRV);
     return true;
 }
 
@@ -375,7 +376,8 @@ void ColorShader::RenderShader(
     ID3D11SamplerState* wrapSampler,
     ID3D11ShaderResourceView* sceneColorSRV,
     ID3D11ShaderResourceView* sceneDepthSRV,
-    ID3D11ShaderResourceView* foamSRV)
+    ID3D11ShaderResourceView* foamSRV,
+    ID3D11ShaderResourceView* sceneNormalSRV)
 {
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     if (SUCCEEDED(deviceContext->Map(perFrameCB_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
@@ -429,7 +431,7 @@ void ColorShader::RenderShader(
             water.hazeStrength);
         data->detailParams2 = DirectX::XMFLOAT4(water.farWaveCrests, water.lodScale, std::log2(water.lodScale), 0.0f);
         data->sceneParams = DirectX::XMFLOAT4(static_cast<float>(water.transmissionMode), water.maxOpticalDistance,
-            water.surfaceReflection ? 1.0f : 0.0f, 0.0f);
+            water.surfaceReflection ? 1.0f : 0.0f, static_cast<float>(water.normalSource));
         data->invViewProjection = water.invViewProjection;
         data->extinction = DirectX::XMFLOAT4(water.extinction.x, water.extinction.y, water.extinction.z, 0.0f);
         const auto linear = [](const DirectX::XMFLOAT3& c, float w) { return SrgbToLinear(DirectX::XMFLOAT4(c.x, c.y, c.z, w)); };
@@ -460,8 +462,8 @@ void ColorShader::RenderShader(
     deviceContext->PSSetShaderResources(0, 3, srvs);
     if (sceneInputs)
     {
-        ID3D11ShaderResourceView* sceneSrvs[3] = {sceneColorSRV, sceneDepthSRV, foamSRV};
-        deviceContext->PSSetShaderResources(3, 3, sceneSrvs);
+        ID3D11ShaderResourceView* sceneSrvs[4] = {sceneColorSRV, sceneDepthSRV, foamSRV, sceneNormalSRV};
+        deviceContext->PSSetShaderResources(3, 4, sceneSrvs);
     }
     deviceContext->PSSetSamplers(0, 2, samplers);
     deviceContext->DrawIndexed(indexCount, 0, 0);

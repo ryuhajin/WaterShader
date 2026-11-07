@@ -189,3 +189,20 @@ float4 PSMain(PSInput input) : SV_TARGET
 
     return float4(albedo * lighting, 1.0);
 }
+
+// Two targets (normal-gbuffer): the color, and the world normal for the water pass to read instead of estimating it
+// from the depth buffer. Used only while the normal target is bound ("stored scene normal" source); otherwise
+// PSMain draws the color alone.
+struct PSOutput
+{
+    float4 color  : SV_Target0;
+    float4 normal : SV_Target1; // world normal x 0.5 + 0.5, a = 1: a surface wrote it (cleared to 0)
+};
+
+PSOutput PSMainWithNormal(PSInput input)
+{
+    PSOutput output;
+    output.color = PSMain(input);
+    output.normal = float4(normalize(input.normalWS) * 0.5 + 0.5, 1.0);
+    return output;
+}

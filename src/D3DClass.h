@@ -45,6 +45,12 @@ public:
     ID3D11ShaderResourceView* GetSceneColorSRV() const { return sceneColorSRV_.Get(); }
     ID3D11ShaderResourceView* GetSceneDepthSRV() const { return depthSRV_.Get(); }
 
+    // Scene normal buffer (normal-gbuffer): the opaque objects write their world normal next to the color (MRT).
+    void ClearSceneNormal();
+    void BindSceneTargetsWithNormal(); // HDR color + scene normal, writable depth
+    void BindHdrTarget();              // back to the HDR color alone, writable depth
+    ID3D11ShaderResourceView* GetSceneNormalSRV() const { return sceneNormalSRV_.Get(); }
+
     // Debug layer (Debug builds): warnings and errors since the last call. Empty without the layer.
     // allMessages (optional) counts every stored message, info included: proof the queue is live.
     std::vector<std::string> TakeDebugMessages(size_t* allMessages = nullptr);
@@ -80,6 +86,9 @@ private:
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> hdrSRV_;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> sceneColorTexture_; // copy of the HDR target before the water
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sceneColorSRV_;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> sceneNormalTexture_; // R10G10B10A2: world normal of the opaque objects
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> sceneNormalRTV_;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sceneNormalSRV_;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> depthTexture_;      // R24G8_TYPELESS: depth-stencil and readable
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView_;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilViewReadOnly_;

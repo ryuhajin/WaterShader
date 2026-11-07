@@ -56,6 +56,7 @@ private:
     // Before/after capture: renders preset x fixed camera shots at a fixed time and saves JPEGs.
     void StartCaptureSet(const std::wstring& label, bool quitWhenDone, bool allowOverwrite = true);
     void FinishCaptureSet();
+    bool UsesStoredNormal() const; // normal-gbuffer: the opaque pass writes the scene normal buffer this frame
     void EndBenchFrame();
     std::filesystem::path CapturesRoot() const; // <capture root>/<feature>/captures
     bool BeginCaptureFrame();
@@ -175,6 +176,7 @@ private:
     bool IsNewWater() const { return scene_ != NoScene && transmissionMode_ != 0; }
     float maxUnderwaterDistance_ = 50.0f; // m: view path where no surface is behind the water (depth-reconstruct)
     bool surfaceReflection_ = true; // test scenes: sky and sun mirrored on top of the water below (surface-reflection)
+    int normalSource_ = 0;          // test scenes: 0 normal from the depth buffer, 1 stored scene normal (normal-gbuffer)
     // Debug layer messages (Debug builds), counted per text; written next to a capture set.
     std::map<std::string, int> d3dMessages_;
     size_t d3dMessageTotal_ = 0;
