@@ -55,7 +55,7 @@ foam_bake.hlsl (cs_5_0, 8 × 8 스레드) → RWTexture2D (UAV) → PNG 저장 �
 | 종류 | 이름 | 비고 |
 |---|---|---|
 | Preset | `foamMap`, `foamBubbles`, `foamErosion` | 키가 없으면 3, 기본 세기 |
-| ImGui (Water 창 New: Contact Foam) | Foam texture 콤보, Bubbles, Erosion | 노멀맵 텍스처 콤보와 같은 모양 |
+| ImGui (Water 창 Contact Foam) | Foam texture 콤보, Bubbles, Erosion | 노멀맵 텍스처 콤보와 같은 모양 |
 | CLI | `--foam-map <index>`, `--bake-foam-masks <폴더>` | |
 
 ## 5. Acceptance Criteria

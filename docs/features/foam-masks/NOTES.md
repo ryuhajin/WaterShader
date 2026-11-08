@@ -25,7 +25,7 @@
 |---|---|
 | `shaders/foam_bake.hlsl` | `cs_5_0`, 8 × 8 스레드. 주기 보로노이(F1·F2·셀별 난수), 셀망, 기포, 주기 값 노이즈 fbm. 마스크 4종 |
 | `src/FoamBaker.h/.cpp` | 컴퓨트 셰이더 컴파일 → UAV 텍스처 → `Dispatch(64, 64, 1)` → UAV 해제 → `SaveWICTextureToFile` PNG |
-| `src/Graphics.*` | `--bake-foam-masks <폴더>` (굽고 종료, `bake_log.txt`에 결과·디버그 레이어 메시지). `kFoamMaps[]` 목록(파일, 이름, 이음매 없음, 기포, 침식), 모두 로드, 프리셋 키 `foamMap`·`foamBubbles`·`foamErosion`, CLI `--foam-map`, Water 창 New: Contact Foam에 **Foam texture** 콤보 + Bubbles·Erosion 슬라이더 (그 마스크에 없는 채널이면 회색 비활성) |
+| `src/Graphics.*` | `--bake-foam-masks <폴더>` (굽고 종료, `bake_log.txt`에 결과·디버그 레이어 메시지). `kFoamMaps[]` 목록(파일, 이름, 이음매 없음, 기포, 침식), 모두 로드, 프리셋 키 `foamMap`·`foamBubbles`·`foamErosion`, CLI `--foam-map`, Water 창 Contact Foam에 **Foam texture** 콤보 + Bubbles·Erosion 슬라이더 (그 마스크에 없는 채널이면 회색 비활성) |
 | `src/ColorShader.*`, `shaders/Common.hlsli` | `g_FoamMapParams` (이음매 없음, 기포 세기, 침식 세기). 매 프레임 고른 마스크에서 채움 |
 | `shaders/PixelShader.hlsl` | `FoamMask`(두 장 흐름, wrap), 거품 블록에 새 경로. Clouds는 이전 그대로 |
 | `tools/bake_foam_masks.ps1` | 굽기 → texconv(BC7, 밉, `--ignore-srgb`) → 이음매 검사 (+ `-PreviewDir` 2 × 2 확인 그림) |
@@ -75,10 +75,28 @@
 |---|---|---|
 | PNG 저장 실패 (0x80004005) | `SaveWICTextureToFile`에 출력 픽셀 형식을 `32bppRGBA`로 지정하면 PNG 인코더가 받지 않음 | 형식을 지정하지 않고 ScreenGrab이 고르게 함 (8비트 그대로, BGRA) |
 | 이음매 검사가 "끝 차이 19.4 vs 안쪽 평균 12.3"이라 이음매처럼 보임 | 얇은 셀 경계가 지나는 위치에 따라 열 쌍마다 차이가 0~29로 크게 달라, 평균 하나와 비교하면 오해 | 끝 쌍을 안쪽 쌍들의 분포에서 순위(중앙값·최댓값·몇 % 위)로 보고, 안쪽 최댓값을 넘을 때만 이음매 의심 |
+| Water 창이 세로로 너무 길고, 대분류 글씨가 슬라이더 글씨와 같은 크기라 구분이 안 됨 (사용자 지적) | 6B·6B+·7·8단계 설정이 Water 창 하나에 쌓였고, 대분류가 모두 `SeparatorText`(일반 글씨 크기) | 아래 "UI 정리" |
+
+### UI 정리 (사용자 요청, 렌더링 변화 없음)
+
+| 바뀐 것 | 내용 |
+|---|---|
+| 대분류 헤더 | `SectionHeader()` 하나로 통일: 글씨 1.3배(ImGui 1.92 `PushFont(nullptr, 크기)`), 파란 막대, 눌러서 접기·펴기(`CollapsingHeader`). 대분류 안의 작은 구분(Light loss, Water color, 노멀맵 레이어 A/B)은 그대로 작은 글씨 |
+| 처음 접힘 | Camera Presets, Capture, Top View Sun, Tonemapping, Ocean Detail (자주 안 쓰는 것). 접힌 상태는 실행 중에만 기억 |
+| 물속 빛 → Light 창 | 빛 감쇠(색별 소멸 계수, Zero / Pure water)와 물색(모드·세기·색·램프)을 Light 창 **Underwater Light (test scenes)** 로 옮김 (`DrawUnderwaterLightSettings`). Clear / Green / Lagoon 버튼이 둘을 함께 바꾸므로 맨 위에 둠. Old 물에서는 안내 한 줄만 |
+| Water 창에 남은 것 | Underwater (New water) (투과·반사 켬·가림·굴절·최대 거리), Contact Foam, Reflection. 끝에 "Light loss and water color: Light window (2)." |
+| 이름 줄임 | 큰 글씨에서 잘리는 헤더: Sun Glint, Ambient, Top View Sun (괄호 설명은 헤더 아래 회색 줄로) |
+
+| 검증 | 결과 |
+|---|---|
+| 빌드 | Debug·Release 경고 0 |
+| 렌더링 불변 | 수정 전 빌드와 비교: 기존 바다 21장 + 테스트 장면 6샷 × 3프리셋 18장 **바이트 동일** |
+| 디버그 레이어 | Debug 2샷 경고·오류 0건 |
+| 화면 | `--ui all` / `light` / `water`로 띄운 창 화면 확인: 대분류가 크고 파란 막대, 접힘 화살표, 기본 접힘 5개 |
 
 ## 4. 사용자 검증 안내
 
-**실행:** `.\build\vs2022\Debug\WaterShader.exe` → `1` 키 → Scene = **Water Lab** → `3` 키 Water 창 → **New: Contact Foam** 아래 **Foam texture**
+**실행:** `.\build\vs2022\Debug\WaterShader.exe` → `1` 키 → Scene = **Water Lab** → `3` 키 Water 창 → **Contact Foam** 아래 **Foam texture**
 
 | 순서 | 조작 | 정상 |
 |---|---|---|
@@ -89,6 +107,8 @@
 | 5 | 잠시 지켜보기 | 두 장이 다른 방향으로 흘러 거품 모양이 계속 변함 |
 | 6 | `tiled_previews` 그림 | 2 × 2로 이어도 이음매가 안 보임 |
 | 7 | (선택) `.\tools\bake_foam_masks.ps1` | 다시 구워도 결과가 같음 (git에서 PNG 변경 없음) |
+| 8 | 네 창의 대분류 (UI 정리) | 슬라이더보다 큰 글씨의 파란 막대. 누르면 접히고 펴짐. Camera Presets·Capture·Tonemapping·Ocean Detail은 처음에 접혀 있음 |
+| 9 | `2` 키 Light 창 → **Underwater Light (test scenes)** → Clear / Green / Lagoon | 빛 감쇠 값과 물색이 함께 바뀌고 화면 물색도 바뀜. Water 창에는 감쇠·물색이 없고 짧아짐 |
 
 기본 마스크로 띠가 너무 옅게 느껴지면 Width를 올리거나 Erosion을 낮추면 된다.
 
@@ -97,3 +117,4 @@
 - [ ] 기본 마스크(Cells + bubbles + breakup)가 Clouds보다 자연스럽고 청량하게 보인다
 - [ ] Water 창에서 마스크를 바꿔 가며 고를 수 있다
 - [ ] 2 × 2 확인 그림에서 이음매가 안 보인다
+- [ ] 대분류가 잘 보이고 접을 수 있으며, 감쇠·물색이 Light 창에 있다 (UI 정리)

@@ -37,9 +37,10 @@ private:
     bool Render(float deltaTime);
     // Settings windows, toggled with keys 1 / 2 / 3 / 4 (UpdateWindowToggles).
     void DrawViewWindow();    // presets, camera, scene, capture, debug view
-    void DrawLightWindow();   // sky, sun, glint, ambient, tonemapping
-    void DrawWaterWindow();   // color and light: the water version's own settings, then the reflection
-    void DrawNewWaterSettings(); // test scenes: transmission, underwater light loss and color, contact foam
+    void DrawLightWindow();   // sky, sun, glint, ambient, underwater light (New water), tonemapping
+    void DrawWaterWindow();   // the water version's own settings (underwater, foam), then the reflection
+    void DrawNewWaterSettings(); // test scenes: transmission, refraction, contact foam
+    void DrawUnderwaterLightSettings(); // test scenes: water type, light loss, water color (Light window)
     void DrawSurfaceWindow(); // shape and motion of the surface, both versions (DrawSurfaceSettings)
     void DrawSurfaceSettings();  // normal maps, ocean detail, waves
     void DrawStatsOverlay();
