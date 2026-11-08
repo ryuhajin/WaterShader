@@ -2182,7 +2182,11 @@ bool SectionHeader(const char* label, bool defaultOpen = true)
     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.18f, 0.34f, 0.56f, 0.90f));
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.24f, 0.44f, 0.70f, 0.95f));
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.28f, 0.52f, 0.80f, 1.00f));
+    // Own ID scope: a header named like a widget inside it (the View window's "Scene" header and "Scene" combo)
+    // would otherwise share its ID (ImGui: "2 visible items with conflicting ID").
+    ImGui::PushID("section");
     const bool open = ImGui::CollapsingHeader(label, defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
+    ImGui::PopID();
     ImGui::PopStyleColor(3);
     ImGui::PopFont();
     return open;

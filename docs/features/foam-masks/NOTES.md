@@ -86,6 +86,7 @@
 | 물속 빛 → Light 창 | 빛 감쇠(색별 소멸 계수, Zero / Pure water)와 물색(모드·세기·색·램프)을 Light 창 **Underwater Light (test scenes)** 로 옮김 (`DrawUnderwaterLightSettings`). Clear / Green / Lagoon 버튼이 둘을 함께 바꾸므로 맨 위에 둠. Old 물에서는 안내 한 줄만 |
 | Water 창에 남은 것 | Underwater (New water) (투과·반사 켬·가림·굴절·최대 거리), Contact Foam, Reflection. 끝에 "Light loss and water color: Light window (2)." |
 | 이름 줄임 | 큰 글씨에서 잘리는 헤더: Sun Glint, Ambient, Top View Sun (괄호 설명은 헤더 아래 회색 줄로) |
+| ID 충돌 고침 (사용자 발견) | View 창 Scene 목록을 고를 때 "2 visible items with conflicting ID" 오류. 대분류 헤더는 접히는 클릭 위젯이라 ImGui ID를 가지는데, 헤더 "Scene"과 그 안의 콤보 "Scene"이 같은 이름 → 같은 ID. `SectionHeader`가 헤더를 `PushID("section")` 범위 안에서 그려, 이름이 같은 위젯이 있어도 ID가 겹치지 않음. Debug 빌드에서 헤더·콤보에 마우스를 올려 오류가 안 뜨는 것 확인 |
 
 | 검증 | 결과 |
 |---|---|
