@@ -239,6 +239,7 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("refractionMode", preset.water.refractionMode);
     fn("refractionDistortion", preset.water.refractionDistortion);
     fn("refractionShoreFade", preset.water.refractionShoreFade);
+    fn("refractionWobbleDepth", preset.water.refractionWobbleDepth);
     fn("refractionStrength", preset.water.refractionStrength);
 }
 
@@ -2677,8 +2678,9 @@ void Graphics::DrawNewWaterSettings()
     ImGui::Combo("Refraction", &water_.refractionMode, refractionModes, IM_ARRAYSIZE(refractionModes));
     if (water_.refractionMode == 0)
     {
-        LabeledSlider("Distortion (0 = straight)", &water_.refractionDistortion, 0.0f, 3.0f, "%.2f");
+        LabeledSlider("Distortion (1 = Snell shift of the tilt)", &water_.refractionDistortion, 0.0f, 3.0f, "%.2f");
         LabeledSlider("Shore fade (water depth)", &water_.refractionShoreFade, 0.0f, 1.0f, "%.2f m");
+        LabeledSlider("Wobble depth (same everywhere)", &water_.refractionWobbleDepth, 0.1f, 8.0f, "%.1f m");
         ImGui::TextDisabled("Ripples and waves wobble the view; flat water stays put.");
     }
     else

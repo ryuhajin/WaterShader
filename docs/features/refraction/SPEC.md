@@ -55,9 +55,9 @@
 
 | 종류 | 이름 | 비고 |
 |---|---|---|
-| CBuffer | `g_RefractionParams`, `g_RefractionParams2` | x 모드별 세기(0 = 끔), y 굴절률(1.33), z 화면 끝 여유(64px), w 모드 (0 Normal offset, 1 Physical) / 물가 감쇠 수심(m) |
-| Preset | `refractionMode`, `refractionDistortion`, `refractionShoreFade`, `refractionStrength` | 키가 없으면 Normal offset, 1, 0.15m, 1 |
-| ImGui (Water 창 New: Underwater) | Refraction 콤보 + 모드별 슬라이더 | Normal offset: Distortion 0~3, Shore fade / Physical: strength 0~2 |
+| CBuffer | `g_RefractionParams`, `g_RefractionParams2` | x 모드별 세기(0 = 끔), y 굴절률(1.33), z 화면 끝 여유(32/64px), w 모드 (0 Normal offset, 1 Physical) / 물가 감쇠 수심(m), Wobble depth(m) |
+| Preset | `refractionMode`, `refractionDistortion`, `refractionShoreFade`, `refractionWobbleDepth`, `refractionStrength` | 키가 없으면 Normal offset, 1, 0.15m, 2m, 1 |
+| ImGui (Water 창 New: Underwater) | Refraction 콤보 + 모드별 슬라이더 | Normal offset: Distortion 0~3, Shore fade, Wobble depth / Physical: strength 0~2 |
 | CLI | `--refraction <strength>`, `--refraction-mode normal\|physical` | 캡처용 (세기는 두 모드 모두에 적용) |
 
 **의존하는 다른 feature:** `wave-occlusion` (파도 노멀·수면 높이), `scene-color-depth`, `depth-reconstruct`, `contact-foam`

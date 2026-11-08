@@ -358,10 +358,10 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float viewPath = hasReceiver ? (waterDepth > 0.0 ? length(receiverWS - input.worldPos) : 0.0) : maxOpticalDistance;
 
     // Refraction (refraction): the water below is looked up at another pixel than straight behind, two ways.
-    //  Normal offset (default; Unreal's "Pixel Normal Offset", recommended there for large water): the landing is
-    //   this pixel moved by how far the surface normal tilts away from flat water, seen on screen. Flat water does
-    //   not move at all, ripples and waves wobble the view, so the landing stays close and rarely needs what is
-    //   off screen. Tapered by water depth (nothing at the shore) and faded where the landing nears the frame edge.
+    //  Normal offset (default; like Unreal's "Pixel Normal Offset", recommended there for large water): the surface
+    //   behind is shifted sideways by how far the water surface tilts away from flat (in meters, then projected).
+    //   Flat water does not move at all, ripples and waves wobble the view, so the landing stays close and rarely
+    //   needs what is off screen. Tapered at the shore and faded where the landing nears the frame edge.
     //  Physical: the line of sight bent by Snell (water 1.33) and followed to the surface it reaches (projected
     //   to the screen and its length corrected REFRACTION_STEPS times). Flat water bends it too: deep floors look
     //   shallow and a pillar kinks at the waterline, but low views need the frame below the screen, so the bend
@@ -400,11 +400,20 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         }
         else
         {
-            // Tilt away from flat water (waves + ripples), as the camera sees it: view-space x right, y up -> screen.
-            // 64 px per unit of tilt at 720p, scaled with the frame height.
-            float3 tiltView = mul(surfaceNormal - float3(0.0, 1.0, 0.0), (float3x3)g_View);
-            float depthTaper = smoothstep(0.0, max(g_RefractionParams2.x, 1e-3), hasReceiver ? waterDepth : g_RefractionParams2.x);
-            normalOffset = float2(tiltView.x, -tiltView.y) * (64.0 * frameSize.y / 720.0) * depthTaper;
+            // The surface behind is shifted sideways in the world, then projected: (1 - 1/n) x tilt x depth for small
+            // tilts (Snell; flat water = 0), against the tilt like the bent ray. In meters, so near water moves more
+            // pixels than far water (a fixed pixel offset barely showed close to the camera, where one pebble is
+            // tens of pixels). Stylized: the depth is a constant "wobble depth" instead of the real one, so shallow
+            // water over rails wobbles as much as a deep basin (the real depth made it almost still). Only the shore
+            // fade (real water depth) brings it to 0 where a surface meets the water. No surface behind: no offset.
+            float shiftDepth = max(g_RefractionParams2.y, 0.0);
+            float depthTaper = smoothstep(0.0, max(g_RefractionParams2.x, 1e-3), waterDepth);
+            float3 shift = float3(-surfaceNormal.x, 0.0, -surfaceNormal.z)
+                         * (1.0 - 1.0 / max(g_RefractionParams.y, 1.0)) * shiftDepth * depthTaper;
+            float4 shiftedClip = mul(mul(float4(receiverWS + shift, 1.0), g_View), g_Projection);
+            normalOffset = hasReceiver && shiftedClip.w > 0.0
+                ? float2(shiftedClip.x / shiftedClip.w * 0.5 + 0.5, 0.5 - shiftedClip.y / shiftedClip.w * 0.5) * frameSize - pixelCenter
+                : float2(0.0, 0.0);
             // Edge fade on the landing (EEVEE / Godot style): the offset shrinks as its landing enters the margin.
             normalOffset *= saturate(FrameInside(pixelCenter + normalOffset * strength, frameSize) / edgeMargin);
         }

@@ -106,7 +106,8 @@ public:
         // the surface tilts from flat, flat water does not move), 1 = physical (the line of sight bent by Snell).
         // Presets without the keys load these defaults; 0 strength = straight.
         int refractionMode = 0;
-        float refractionDistortion = 1.0f;  // normal offset: 1 = 64 px per unit of tilt at 720p
+        float refractionDistortion = 1.0f;  // normal offset: 1 = the sideways shift Snell gives a tilted surface
+        float refractionWobbleDepth = 2.0f; // normal offset: the water depth the shift is computed for (m, stylized: the same everywhere)
         float refractionShoreFade = 0.15f;  // normal offset: m of water depth over which it fades in from the shore
         float refractionStrength = 1.0f;    // physical: 1 = Snell, more = exaggerated
         float refractionIndex = 1.33f;      // water
