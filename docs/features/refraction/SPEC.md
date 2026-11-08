@@ -1,24 +1,26 @@
 # Refraction — 8단계 굴절과 경계
 
-> Branch: `feature/refraction` · Status: draft · Updated: 2026-11-09
+> Branch: `feature/refraction` · Status: done · Updated: 2026-11-09
 > waterfront 업그레이드 8단계. 앞 단계: [../wave-occlusion/NOTES.md](../wave-occlusion/NOTES.md)
 
 ## 1. Goal / Visual Target
 
-- **한 문장 요약:** 물 아래 장면을 **굴절된 시선**으로 다시 찾아 그린다. 수면의 파도·잔물결에 따라 물속 무늬가 일렁이고, 물에 잠긴 기둥이 수면선에서 **꺾여 보인다** (물컵 속 빨대).
+- **한 문장 요약:** 물 아래 장면을 **굴절로 옮긴 위치**에서 다시 찾아 그린다. 수면의 파도·잔물결에 따라 물속 무늬가 일렁인다. (물에 잠긴 기둥이 수면선에서 꺾여 보이는 평평한 물의 굴절은 Physical 모드에서만: 2절 변경)
 - 물 밖에 있는 것(수면 위 계단, 기둥의 물 밖 부분)은 끌려와 물속에 비치지 않는다 (전경 누출 막기).
 - 화면 끝, 카메라 회전에서도 깨지지 않는다.
 - **스코프 가드 — 만들지 않을 것:** 물체 반사(8B), 물속 시점(카메라가 물 아래), 분산(색 갈라짐), 성능 측정(요청 시만).
 
 ## 2. 방법
 
-**① 굴절된 시선 따라가기 (화면 공간 근사)**
+> **변경 (사용자 검증 후 2026-11-09):** 아래 ①의 물리 굴절은 낮은 시점에서 화면 밖 정보가 필요해 화면 끝에 띠·몰림이 남았다. 실무 조사 후 기본 방식을 **Normal offset**(언리얼 Pixel Normal Offset과 같은 계열: 이동 = 수면 노멀이 평평한 물에서 기운 만큼, 평평한 물은 이동 0) + 화면 끝 페이드 + 물가 감쇠로 바꾸고, ①은 **Physical** 비교 모드로 남겼다. Water 창 Refraction 콤보, `--refraction-mode`. 경위와 수치: [NOTES 4절](NOTES.md).
+
+**① 굴절된 시선 따라가기 (화면 공간 근사) — Physical 모드**
 
 ```text
 지금:   물 픽셀 → 같은 픽셀의 장면 색·깊이 (시선이 수면에서 꺾이지 않는 물)
 바꿈:   굴절 방향 r = refract(시선, 수면 노멀, 1 / 1.33)      // 물의 굴절률 1.33 (스넬 법칙)
         P = 수면 점 + r × 거리                                 // 거리 = 지금의 물속 경로에서 시작
-        P를 화면에 투영 → 그 픽셀의 깊이로 물속 표면을 다시 찾음 → 거리 갱신 → 한 번 더 (2회)
+        P를 화면에 투영 → 그 픽셀의 깊이로 물속 표면을 다시 찾음 → 거리 갱신 → 되풀이 (구현: 4회, NOTES)
         그 픽셀의 장면 색 = 굴절된 물속 모습
 ```
 
@@ -46,17 +48,17 @@
 | 번호 | 이름 | 내용 |
 |---|---|---|
 | 26 | Refraction offset | 화면 이동량 (색 = 방향, 밝기 = 픽셀 수) |
-| 27 | Refraction fallback | 초록 = 굴절 성공, 빨강 = 전경 누출로 원래 픽셀, 파랑 = 화면 밖, 노랑 = 물 위 표면 |
+| 27 | Refraction result | 초록 = 굴절 성공, 청록 = 세기 ½·¼로 성공, 빨강 = 전경 누출로 원래 픽셀, 파랑 = 화면 밖으로 원래 픽셀 (구현에서 "물 위 표면"을 전경 누출 판정으로 합침: NOTES) |
 | 28 | Refracted ray miss | 찾은 표면이 굴절 시선에서 얼마나 떨어졌나 (흰색 = 10cm). 2회 갱신의 정확도 |
 
 ## 3. Inputs / Outputs
 
 | 종류 | 이름 | 비고 |
 |---|---|---|
-| CBuffer | `g_RefractionParams` | x 세기(0 = 끔), y 굴절률(1.33), z 화면 끝 감쇠 폭(픽셀) |
-| Preset | `refractionStrength` | 키가 없으면 1 |
-| ImGui (Water 창 New: Underwater) | Refraction strength | 0~2 |
-| CLI | `--refraction <strength>` | 캡처용 |
+| CBuffer | `g_RefractionParams`, `g_RefractionParams2` | x 모드별 세기(0 = 끔), y 굴절률(1.33), z 화면 끝 여유(32/64px), w 모드 (0 Normal offset, 1 Physical) / 물가 감쇠 수심(m), Wobble depth(m) |
+| Preset | `refractionMode`, `refractionDistortion`, `refractionShoreFade`, `refractionWobbleDepth`, `refractionStrength` | 키가 없으면 Normal offset, 1, 0.15m, 2m, 1 |
+| ImGui (Water 창 New: Underwater) | Refraction 콤보 + 모드별 슬라이더 | Normal offset: Distortion 0~3, Shore fade, Wobble depth / Physical: strength 0~2 |
+| CLI | `--refraction <strength>`, `--refraction-mode normal\|physical` | 캡처용 (세기는 두 모드 모두에 적용) |
 
 **의존하는 다른 feature:** `wave-occlusion` (파도 노멀·수면 높이), `scene-color-depth`, `depth-reconstruct`, `contact-foam`
 
@@ -64,18 +66,18 @@
 
 **에이전트 검증**
 
-- [ ] 빌드 경고 0, 디버그 레이어 경고 0, 기존 샷 21장 바이트 동일
-- [ ] 굴절 세기 0 → 7단계 화면과 같음 (코드 재배치로 생기는 1레벨 수준 차이는 기록)
-- [ ] 전경 누출 0: 굴절로 고른 모든 픽셀의 표면이 그 자리 수면 아래이거나 하늘 (디버그로 계수)
-- [ ] 2회 갱신 후 굴절 시선과 찾은 표면의 거리: 평평한 면에서 작음 (수치 기록), 큰 값은 물체 경계에만
-- [ ] 평평한 물에서 기둥이 수면선에서 꺾여 보인다 (lab_pillar_near 전후 캡처, 6단계 관찰 화면과 비교)
-- [ ] 화면 끝 픽셀의 이동이 서서히 0이 된다
+- [x] 빌드 경고 0, 디버그 레이어 경고 0, 기존 샷 21장 바이트 동일
+- [x] 굴절 세기 0 → 7단계 화면과 같음 (코드 재배치로 생기는 1레벨 수준 차이는 기록)
+- [x] 전경 누출 0: 굴절로 고른 모든 픽셀의 표면이 그 자리 수면 아래이거나 하늘 (디버그로 계수)
+- [x] 2회 갱신 (구현 4회) 후 굴절 시선과 찾은 표면의 거리: 평평한 면에서 작음 (수치 기록), 큰 값은 물체 경계에만
+- [x] 평평한 물에서 물체가 수면선에서 꺾여 보인다 — lab_stairs 계단 옆면에서 뚜렷, lab_pillar_near는 기둥 축을 따라 보는 각도라 약함 (NOTES)
+- [x] 화면 끝에서 깨지지 않는다 — 구현: 이동을 0으로 줄이는 대신 착지점이 화면 끝에 닿지 않게 바깥쪽 이동만 연속 압축 (NOTES)
 
 **사용자 검증**
 
-- [ ] 잔물결·파도에 따라 물속 체크무늬가 일렁인다
-- [ ] 수면 위 계단·기둥이 물속으로 끌려 들어가 비치지 않는다
-- [ ] 화면 공간 굴절의 한계(화면 밖, 다른 물체 뒤의 정보는 없음)를 설명할 수 있다
+- [x] 잔물결·파도에 따라 물속 체크무늬가 일렁인다
+- [x] 수면 위 계단·기둥이 물속으로 끌려 들어가 비치지 않는다
+- [x] 화면 공간 굴절의 한계(화면 밖, 다른 물체 뒤의 정보는 없음)와, 물리 굴절 대신 노멀 차이 방식을 기본으로 고른 이유를 설명할 수 있다
 
 ## 5. Notes
 

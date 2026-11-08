@@ -102,6 +102,15 @@ public:
         // out toward its edge (test scenes; set every frame, not saved).
         DirectX::XMFLOAT4 waterArea = {0.0f, 0.0f, 0.0f, 0.0f};
         bool depthOnly = false; // water depth prepass draw: vertex shader alone, no pixel shader
+        // refraction: where the water below is looked up. Mode 0 = normal offset (default; the view moves by how far
+        // the surface tilts from flat, flat water does not move), 1 = physical (the line of sight bent by Snell).
+        // Presets without the keys load these defaults; 0 strength = straight.
+        int refractionMode = 0;
+        float refractionDistortion = 1.0f;  // normal offset: 1 = the sideways shift Snell gives a tilted surface
+        float refractionWobbleDepth = 2.0f; // normal offset: the water depth the shift is computed for (m, stylized: the same everywhere)
+        float refractionShoreFade = 0.15f;  // normal offset: m of water depth over which it fades in from the shore
+        float refractionStrength = 1.0f;    // physical: 1 = Snell, more = exaggerated
+        float refractionIndex = 1.33f;      // water
         DirectX::XMFLOAT4X4 invViewProjection = {}; // inverse of view x projection: depth buffer -> world position
         // Normal map rotation on the water (world XZ), as cos/sin: xy = layer A, zw = layer B. (1, 0) = as authored.
         DirectX::XMFLOAT4 normalRotation = {1.0f, 0.0f, 1.0f, 0.0f};

@@ -67,6 +67,17 @@ float3 SceneNormalStored(int2 pixel)
     return stored.a > 0.5 ? normalize(stored.xyz * 2.0 - 1.0) : float3(0.0, 0.0, 0.0);
 }
 
+// How far a pixel lies inside the frame (pixels, negative outside).
+float FrameInside(float2 pixel, float2 frameSize)
+{
+    return min(min(pixel.x, frameSize.x - pixel.x), min(pixel.y, frameSize.y - pixel.y));
+}
+
+// Refraction: how many times the bent ray's length is corrected from the surface found on screen (refraction).
+#ifndef REFRACTION_STEPS
+#define REFRACTION_STEPS 4
+#endif
+
 // Foam noise, 0..1. The texture does not tile (its edges do not match), so it is read mirrored: every other
 // repeat is flipped, which hides the seam. A second read, turned and smaller, breaks the mirror symmetry.
 float FoamNoise(float2 uv)
@@ -229,148 +240,7 @@ float GustMask(float2 positionXZ, float time)
 // SV_IsFrontFace = rasterizer stage에서 결정되는 system value. 픽셀이 front face에 속하면 true.
 float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
-#if SCENE_INPUTS
-    int3 scenePixel = int3(input.position.xy, 0); // SV_POSITION.xy is the pixel center (x + 0.5)
-    float3 sceneColor = g_SceneColor.Load(scenePixel).rgb;
-    float sceneDepth = g_SceneDepth.Load(scenePixel);
-    int sceneDebugMode = (int)g_DebugParams.x;
-    // 8 = raw depth as gray: almost everything sits near 1 (white), the value is not proportional to distance.
-    if (sceneDebugMode == 8) { return DebugOut(sceneDepth.xxx); }
-    // 9 = where the water is drawn: the scene tinted blue (HDR, tonemapped like a normal frame).
-    if (sceneDebugMode == 9) { return float4(sceneColor * float3(0.35, 0.55, 1.0) + float3(0.0, 0.02, 0.08), 1.0); }
-
-    // Receiver = the surface this pixel sees through the water (depth-reconstruct). The pixel and its depth are
-    // where projection and view put the surface; the inverse matrix takes them back, and dividing by w undoes
-    // the perspective divide. Depth 1 is the sky (cleared, or the skybox drawn at z = w): no surface, nothing to
-    // reconstruct. The skybox's interpolated z / w can land a step or two below 1 in the 24-bit buffer, and those
-    // pixels then reconstruct onto the far plane (rows of far-plane normals in debug 22), so everything past
-    // ~900 m counts as sky (depth 0.99999; the test scenes reach ~50 m, the far plane is 1000 m).
-    uint sceneWidth, sceneHeight;
-    g_SceneDepth.GetDimensions(sceneWidth, sceneHeight);
-    float2 sceneUv = (float2(scenePixel.xy) + 0.5) / float2(sceneWidth, sceneHeight);
-    float4 receiverH = mul(float4(sceneUv.x * 2.0 - 1.0, 1.0 - sceneUv.y * 2.0, sceneDepth, 1.0), g_InvViewProjection);
-    float3 receiverWS = receiverH.xyz / receiverH.w;
-    bool hasReceiver = sceneDepth < 0.99999;
-    float maxOpticalDistance = g_SceneParams.y;
-    // Water depth: how far the surface lies below the water right above it (the answer key measures the same thing).
-    // With waves (wave-occlusion) that water height is not this pixel's: it is looked up above the surface, through
-    // the same wave function as the vertex shader. Without waves it is 0, the old flat water.
-    // View path: how much water the line of sight crosses, water surface -> surface (no air part). A surface above
-    // the water right over it (a step a trough has bared) is seen through air: no path.
-    float receiverSideError = 0.0;
-    float receiverWaterY = hasReceiver
-        ? WaterSurfaceHeightAt(g_Waves, receiverWS.xz, g_CameraPositionWS.xyz, g_WaterParams.x, g_WaterArea, receiverSideError)
-        : 0.0;
-    float waterDepth = hasReceiver ? receiverWaterY - receiverWS.y : maxOpticalDistance;
-    float viewPath = hasReceiver ? (waterDepth > 0.0 ? length(receiverWS - input.worldPos) : 0.0) : maxOpticalDistance;
-    // 25 = how far the height lookup's rest point still lands from the surface point (white = 1 mm).
-    if (sceneDebugMode == 25) { return DebugOut((receiverSideError / 0.001).xxx); }
-    // 10 / 11 = water depth / view path in the answer key's bands, 1 m contours, magenta = no surface.
-    if (sceneDebugMode == 10 || sceneDebugMode == 11)
-    {
-        float meters = sceneDebugMode == 10 ? waterDepth : viewPath;
-        float3 color = hasReceiver ? DepthBandColor(meters) : kNoSurfaceColor;
-        color = lerp(color, float3(0.05, 0.05, 0.05), MeterContour(meters) * 0.8);
-        return DebugOut(color);
-    }
-    // 12 / 13 = the same as numbers, for tools/compare_depth.ps1.
-    if (sceneDebugMode == 12 || sceneDebugMode == 13)
-    {
-        float meters = sceneDebugMode == 12 ? waterDepth : viewPath;
-        // A surface above the water right over it gets the answer key's "above water" marker.
-        return DebugOut(!hasReceiver ? float3(0.0, 0.0, kMarkerNoSurface)
-                        : sceneDebugMode == 12 && waterDepth <= 0.0 ? float3(0.0, 0.0, kMarkerAboveWater)
-                        : EncodeMeters(meters, kMarkerMeasured));
-    }
-    // Transmittance: the share of the light left after the view path through the water, per channel
-    // (rgb-attenuation). Each meter keeps the same fraction, so 2 m keeps the square of what 1 m keeps:
-    // exp(-extinction x path). Extinction 0 gives exactly 1.
-    float3 transmittance = exp(-g_Extinction.rgb * viewPath);
-    // 14 = transmittance as color (white = all light gets through, black = none); compare tool input.
-    if (sceneDebugMode == 14) { return DebugOut(transmittance); }
-
-    // The water's own color (water-scatter): sunlight and skylight scattered back toward the eye by the water,
-    // filling in what the extinction took: + color x incoming light x strength x (1 - T). Same form as aerial
-    // perspective. Lit by the scene's lights, so a sunset preset darkens and warms the water too.
-    float sunHeight = saturate(-g_LightDirection.y); // g_LightDirection is the direction light travels
-    float3 incomingLight = g_AmbientColor.rgb * g_AmbientColor.a + g_LightColor.rgb * g_LightColor.a * sunHeight;
-    // Ramp (art mode): shallow -> mid -> deep picked by water depth (the same bed keeps its color from any
-    // angle) or by view path (deeper looking at a low angle, like the physical mode).
-    float rampDistance = g_RampParams.z > 0.5 ? viewPath : waterDepth;
-    float rampMidDepth = max(g_RampParams.x, 1e-3);
-    float rampDeepDepth = max(g_RampParams.y, rampMidDepth + 1e-3);
-    float3 rampColor = lerp(g_RampShallow.rgb, g_RampMid.rgb, smoothstep(0.0, rampMidDepth, rampDistance));
-    rampColor = lerp(rampColor, g_RampDeep.rgb, smoothstep(rampMidDepth, rampDeepDepth, rampDistance));
-    float3 waterColor = g_RampParams.w > 0.5 ? rampColor : g_ScatterColor.rgb;
-    float3 inscatter = waterColor * incomingLight * g_ScatterColor.a * (1.0 - transmittance);
-    // 15 = the water color part alone (HDR, tonemapped like a normal frame: attenuation + this = scattering).
-    if (sceneDebugMode == 15) { return float4(inscatter, 1.0); }
-    // 16 = the ramp color as picked (no light, no transmittance).
-    if (sceneDebugMode == 16) { return DebugOut(LinearToSrgb(rampColor)); }
-
-    int transmissionMode = (int)(g_SceneParams.x + 0.5);
-    // What comes up from under the water, per Transmission mode (0 = the old opaque water, below).
-    // Pass-through: no water effect at all. Must match the frame with the water switched off.
-    // Attenuation: the scene without the water, dimmed by what the water took on the way. Nothing is added
-    // back (that is the water's own color), so very long paths and no surface go black.
-    // Scattering: what the extinction took is filled with the water's own color (bed part + water part).
-    float3 underwaterColor = transmissionMode == 1 ? sceneColor
-                           : transmissionMode == 2 ? sceneColor * transmittance
-                           : sceneColor * transmittance + inscatter;
-
-    // Contact foam (contact-foam): a white band where a surface comes up through the water, so a pillar reads as
-    // standing in the water even from above, where the reflection is only a few percent. The band follows the
-    // water depth of the surface behind the pixel (1 right under the water, 0 at the band width, in meters, so
-    // the width does not change with the camera). Water depth alone also catches flat shallows (rail heads,
-    // a 0.2 m pad), so the slope filter keeps the band on steep surfaces, with the normal estimated from the
-    // depth buffer. Not in pass-through, which has to stay the frame without the water. Surfaces more than 1 cm above
-    // the water right over them (bared by a trough) get none; the waterline itself (depth ~0, either sign) keeps it.
-    float foamWidth = max(g_FoamParams.x, 1e-3);
-    bool foamCandidate = transmissionMode >= 2 && g_FoamParams.w > 0.0 && hasReceiver && waterDepth > -0.01 && waterDepth < foamWidth;
-    // Normal source (normal-gbuffer): estimated from the depth buffer, or the one the opaque pass stored next to the
-    // color (one read instead of four depth reads, four reconstructions and a cross product).
-    bool storedNormal = g_SceneParams.w > 0.5;
-    float3 receiverNormal = float3(0.0, 0.0, 0.0);
-    float steepness = 0.0;
-    [branch] if (hasReceiver && (foamCandidate || (sceneDebugMode >= 21 && sceneDebugMode <= 24)))
-    {
-        receiverNormal = (storedNormal && sceneDebugMode != 22) || sceneDebugMode == 23 || sceneDebugMode == 24
-            ? SceneNormalStored(scenePixel.xy)
-            : SceneNormalFromDepth(scenePixel.xy, sceneDepth, receiverWS, int2(sceneWidth, sceneHeight));
-        steepness = 1.0 - abs(receiverNormal.y);
-    }
-    // 21 = steepness of the surface behind the water (black = flat, white = wall), 22 = the normal from depth and
-    // 23 = the stored normal as color, 24 = the angle between the two (black 0 -> white 30 degrees or more).
-    if (sceneDebugMode == 21) { return DebugOut(steepness.xxx); }
-    if (sceneDebugMode == 22 || sceneDebugMode == 23) { return DebugOut(hasReceiver ? receiverNormal * 0.5 + 0.5 : float3(0.0, 0.0, 0.0)); }
-    if (sceneDebugMode == 24)
-    {
-        float3 fromDepth = SceneNormalFromDepth(scenePixel.xy, sceneDepth, receiverWS, int2(sceneWidth, sceneHeight));
-        float angle = degrees(acos(clamp(dot(fromDepth, receiverNormal), -1.0, 1.0)));
-        return DebugOut(hasReceiver ? (angle / 30.0).xxx : float3(0.0, 0.0, 0.0));
-    }
-    float foamAmount = 0.0;
-    [branch] if (foamCandidate)
-    {
-        float closeness = 1.0 - saturate(waterDepth / foamWidth);
-        float slopeMask = lerp(1.0, smoothstep(g_FoamParams2.y, g_FoamParams2.z, steepness), g_FoamParams2.x);
-        // The noise drifts downwind on the water surface; its threshold sits inside [softness, 1 - softness],
-        // so closeness 0 never shows foam and closeness 1 always does, whatever the noise.
-        float2 drift = g_Waves[0].direction * (g_WaterParams.x * g_FoamParams2.w);
-        float noise = FoamNoise((input.worldPos.xz - drift) / max(g_FoamParams.z, 1e-3));
-        float softness = clamp(g_FoamParams.y, 1e-3, 0.5);
-        float threshold = lerp(softness, 1.0 - softness, noise);
-        foamAmount = saturate(smoothstep(threshold - softness, threshold + softness, closeness * slopeMask) * g_FoamParams.w);
-    }
-    // 20 = foam amount (white = foam).
-    if (sceneDebugMode == 20) { return DebugOut(foamAmount.xxx); }
-    // Foam floats on the surface: it covers the reflection and the water below alike, lit like the water color.
-    float3 foamColor = g_FoamColor.rgb * incomingLight;
-
-    // Surface reflection off: the water below alone, as if the surface reflected nothing (foam still on top).
-    bool surfaceReflection = g_SceneParams.z > 0.5;
-    if (transmissionMode != 0 && !surfaceReflection) { return float4(lerp(underwaterColor, foamColor, foamAmount), 1.0); }
-#endif
+    // The surface normal comes first: the test scenes bend their view of the water below with it (refraction).
     // Two scrolling normal map samples blended in tangent space.
     float time = g_WaterParams.x;
     float reflectionStrength = g_WaterParams.y;
@@ -451,6 +321,272 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float3 tangentWS  = normalize(mul(float3(1, 0, 0), (float3x3)g_World));
     float3 bitangentWS  = normalize(mul(float3(0, 0, 1), (float3x3)g_World));
     float3 finalNormalWS  = normalize(blendedNormalTS.x * tangentWS + blendedNormalTS.y * bitangentWS + blendedNormalTS.z * baseNormalWS);
+#if SCENE_INPUTS
+    int3 scenePixel = int3(input.position.xy, 0); // SV_POSITION.xy is the pixel center (x + 0.5)
+    float3 sceneColor = g_SceneColor.Load(scenePixel).rgb;
+    float sceneDepth = g_SceneDepth.Load(scenePixel);
+    int sceneDebugMode = (int)g_DebugParams.x;
+    int transmissionMode = (int)(g_SceneParams.x + 0.5);
+    // 8 = raw depth as gray: almost everything sits near 1 (white), the value is not proportional to distance.
+    if (sceneDebugMode == 8) { return DebugOut(sceneDepth.xxx); }
+    // 9 = where the water is drawn: the scene tinted blue (HDR, tonemapped like a normal frame).
+    if (sceneDebugMode == 9) { return float4(sceneColor * float3(0.35, 0.55, 1.0) + float3(0.0, 0.02, 0.08), 1.0); }
+
+    // Receiver = the surface this pixel sees through the water (depth-reconstruct). The pixel and its depth are
+    // where projection and view put the surface; the inverse matrix takes them back, and dividing by w undoes
+    // the perspective divide. Depth 1 is the sky (cleared, or the skybox drawn at z = w): no surface, nothing to
+    // reconstruct. The skybox's interpolated z / w can land a step or two below 1 in the 24-bit buffer, and those
+    // pixels then reconstruct onto the far plane (rows of far-plane normals in debug 22), so everything past
+    // ~900 m counts as sky (depth 0.99999; the test scenes reach ~50 m, the far plane is 1000 m).
+    uint sceneWidth, sceneHeight;
+    g_SceneDepth.GetDimensions(sceneWidth, sceneHeight);
+    float2 sceneUv = (float2(scenePixel.xy) + 0.5) / float2(sceneWidth, sceneHeight);
+    float4 receiverH = mul(float4(sceneUv.x * 2.0 - 1.0, 1.0 - sceneUv.y * 2.0, sceneDepth, 1.0), g_InvViewProjection);
+    float3 receiverWS = receiverH.xyz / receiverH.w;
+    bool hasReceiver = sceneDepth < 0.99999;
+    float maxOpticalDistance = g_SceneParams.y;
+    // Water depth: how far the surface lies below the water right above it (the answer key measures the same thing).
+    // With waves (wave-occlusion) that water height is not this pixel's: it is looked up above the surface, through
+    // the same wave function as the vertex shader. Without waves it is 0, the old flat water.
+    // View path: how much water the line of sight crosses, water surface -> surface (no air part). A surface above
+    // the water right over it (a step a trough has bared) is seen through air: no path.
+    float receiverSideError = 0.0;
+    float receiverWaterY = hasReceiver
+        ? WaterSurfaceHeightAt(g_Waves, receiverWS.xz, g_CameraPositionWS.xyz, g_WaterParams.x, g_WaterArea, receiverSideError)
+        : 0.0;
+    float waterDepth = hasReceiver ? receiverWaterY - receiverWS.y : maxOpticalDistance;
+    float viewPath = hasReceiver ? (waterDepth > 0.0 ? length(receiverWS - input.worldPos) : 0.0) : maxOpticalDistance;
+
+    // Refraction (refraction): the water below is looked up at another pixel than straight behind, two ways.
+    //  Normal offset (default; like Unreal's "Pixel Normal Offset", recommended there for large water): the surface
+    //   behind is shifted sideways by how far the water surface tilts away from flat (in meters, then projected).
+    //   Flat water does not move at all, ripples and waves wobble the view, so the landing stays close and rarely
+    //   needs what is off screen. Tapered at the shore and faded where the landing nears the frame edge.
+    //  Physical: the line of sight bent by Snell (water 1.33) and followed to the surface it reaches (projected
+    //   to the screen and its length corrected REFRACTION_STEPS times). Flat water bends it too: deep floors look
+    //   shallow and a pillar kinks at the waterline, but low views need the frame below the screen, so the bend
+    //   is squeezed near the edge (kept as the comparison mode, see the refraction NOTES).
+    // Either way only the frame drawn before the water is known: a landing on a surface above the water (a step or
+    // pillar standing out of it: foreground leak), or off screen, is tried again at half and a quarter, then the
+    // straight view is kept. Strength 0 = straight as before.
+    bool physicalRefraction = g_RefractionParams.w > 0.5;
+    float refractionStrength = g_RefractionParams.x;
+    int refractionResult = 0;          // 0 straight, 1 refracted, 2 foreground leak, 3 off screen, 4 refracted at 1/2 or 1/4
+    float2 refractionOffset = 0.0;     // pixels
+    float refractionMiss = 0.0;        // m: how far the surface found lies from the bent ray (physical mode)
+    [branch] if (refractionStrength > 0.0 && transmissionMode >= 2) // pass-through stays the frame without the water
+    {
+        float2 frameSize = float2(sceneWidth, sceneHeight);
+        float2 pixelCenter = input.position.xy;
+        float edgeMargin = max(g_RefractionParams.z, 1.0);
+        float3 incident = normalize(input.worldPos - g_CameraPositionWS.xyz);
+        float3 surfaceNormal = dot(finalNormalWS, incident) > 0.0 ? -finalNormalWS : finalNormalWS; // wave back faces
+        float strength = refractionStrength;
+        float2 normalOffset = 0.0;     // normal offset mode: the full offset in pixels
+        float3 bent = incident;        // physical mode
+        if (physicalRefraction)
+        {
+            bent = refract(incident, surfaceNormal, 1.0 / max(g_RefractionParams.y, 1.0));
+            // Frame edge: a first guess of the landing (full bend, the straight path's length) and its distance to
+            // the edge d1 (negative = outside). Inside the margin m (or the pixel's own distance d0, if smaller) the
+            // landing distance is compressed as m * exp((d1 - m) / m): never reaching the edge, still ordered.
+            float d0 = FrameInside(pixelCenter, frameSize);
+            float4 guessClip = mul(mul(float4(input.worldPos + normalize(lerp(incident, bent, strength)) * viewPath, 1.0), g_View), g_Projection);
+            float d1 = guessClip.w > 0.0 ? FrameInside(float2(guessClip.x / guessClip.w * 0.5 + 0.5, 0.5 - guessClip.y / guessClip.w * 0.5) * frameSize, frameSize)
+                                         : -frameSize.x;
+            float roomMargin = min(edgeMargin, d0);
+            float softD1 = roomMargin * exp((d1 - roomMargin) / max(roomMargin, 1.0));
+            strength *= d1 >= roomMargin ? 1.0 : saturate((d0 - softD1) / max(d0 - d1, 1e-3));
+        }
+        else
+        {
+            // The surface behind is shifted sideways in the world, then projected: (1 - 1/n) x tilt x depth for small
+            // tilts (Snell; flat water = 0), against the tilt like the bent ray. In meters, so near water moves more
+            // pixels than far water (a fixed pixel offset barely showed close to the camera, where one pebble is
+            // tens of pixels). Stylized: the depth is a constant "wobble depth" instead of the real one, so shallow
+            // water over rails wobbles as much as a deep basin (the real depth made it almost still). Only the shore
+            // fade (real water depth) brings it to 0 where a surface meets the water. No surface behind: no offset.
+            float shiftDepth = max(g_RefractionParams2.y, 0.0);
+            float depthTaper = smoothstep(0.0, max(g_RefractionParams2.x, 1e-3), waterDepth);
+            float3 shift = float3(-surfaceNormal.x, 0.0, -surfaceNormal.z)
+                         * (1.0 - 1.0 / max(g_RefractionParams.y, 1.0)) * shiftDepth * depthTaper;
+            float4 shiftedClip = mul(mul(float4(receiverWS + shift, 1.0), g_View), g_Projection);
+            normalOffset = hasReceiver && shiftedClip.w > 0.0
+                ? float2(shiftedClip.x / shiftedClip.w * 0.5 + 0.5, 0.5 - shiftedClip.y / shiftedClip.w * 0.5) * frameSize - pixelCenter
+                : float2(0.0, 0.0);
+            // Edge fade on the landing (EEVEE / Godot style): the offset shrinks as its landing enters the margin.
+            normalOffset *= saturate(FrameInside(pixelCenter + normalOffset * strength, frameSize) / edgeMargin);
+        }
+        [loop]
+        for (int attempt = 0; attempt < 3 && refractionResult != 1 && refractionResult != 4; ++attempt)
+        {
+            float scale = strength * exp2(-attempt);
+            float3 rayDir = normalize(lerp(incident, bent, scale));
+            float2 landedPixel = pixelCenter + normalOffset * scale;
+            float landedDepth = sceneDepth;
+            float3 landedWS = receiverWS;
+            bool onScreen = all(landedPixel >= 0.0) && all(landedPixel < frameSize);
+            if (physicalRefraction)
+            {
+                float rayLength = viewPath;
+                [unroll]
+                for (int step = 0; step < REFRACTION_STEPS; ++step)
+                {
+                    float4 clip = mul(mul(float4(input.worldPos + rayDir * rayLength, 1.0), g_View), g_Projection);
+                    float2 ndc = clip.xy / clip.w;
+                    landedPixel = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5) * frameSize;
+                    onScreen = clip.w > 0.0 && all(landedPixel >= 0.0) && all(landedPixel < frameSize);
+                    if (!onScreen) { break; }
+                    landedDepth = g_SceneDepth.Load(int3(landedPixel, 0));
+                    landedWS = SceneWorldPosition(int2(landedPixel), landedDepth, frameSize);
+                    rayLength = landedDepth < 0.99999 ? length(landedWS - input.worldPos) : maxOpticalDistance;
+                }
+            }
+            else if (onScreen)
+            {
+                landedDepth = g_SceneDepth.Load(int3(landedPixel, 0));
+                landedWS = SceneWorldPosition(int2(landedPixel), landedDepth, frameSize);
+            }
+            bool landedSky = landedDepth >= 0.99999;
+            float landedSideError = 0.0;
+            float landedWaterY = onScreen && !landedSky
+                ? WaterSurfaceHeightAt(g_Waves, landedWS.xz, g_CameraPositionWS.xyz, g_WaterParams.x, g_WaterArea, landedSideError)
+                : 0.0;
+            refractionResult = !onScreen ? 3 : !landedSky && landedWS.y >= landedWaterY ? 2 : attempt == 0 ? 1 : 4;
+            if (refractionResult == 1 || refractionResult == 4)
+            {
+                refractionOffset = landedPixel - pixelCenter;
+                refractionMiss = physicalRefraction && !landedSky ? length(cross(landedWS - input.worldPos, rayDir)) : 0.0;
+                scenePixel = int3(landedPixel, 0);
+                sceneColor = g_SceneColor.Load(scenePixel).rgb;
+                sceneDepth = landedDepth;
+                receiverWS = landedWS;
+                hasReceiver = !landedSky;
+                receiverWaterY = landedWaterY;
+                receiverSideError = landedSideError;
+                waterDepth = hasReceiver ? receiverWaterY - receiverWS.y : maxOpticalDistance;
+                viewPath = hasReceiver ? length(receiverWS - input.worldPos) : maxOpticalDistance;
+            }
+        }
+    }
+    // 26 = refraction offset (hue = direction, brightness = pixels, 32 px = full), 27 = refraction result (green =
+    // refracted, cyan = refracted at 1/2 or 1/4, red = foreground leak, blue = off screen, black = straight),
+    // 28 = how far the surface found lies from the bent ray (white = 10 cm).
+    if (sceneDebugMode == 26) { return DebugOut(float3(refractionOffset / 64.0 + 0.5, length(refractionOffset) / 32.0)); }
+    if (sceneDebugMode == 27)
+    {
+        float3 resultColors[5] = { float3(0.0, 0.0, 0.0), float3(0.1, 0.8, 0.2), float3(0.9, 0.1, 0.1),
+                                   float3(0.1, 0.3, 0.9), float3(0.1, 0.8, 0.8) };
+        return DebugOut(resultColors[refractionResult]);
+    }
+    if (sceneDebugMode == 28) { return DebugOut((refractionMiss / 0.1).xxx); }
+    // 25 = how far the height lookup's rest point still lands from the surface point (white = 1 mm).
+    if (sceneDebugMode == 25) { return DebugOut((receiverSideError / 0.001).xxx); }
+    // 10 / 11 = water depth / view path in the answer key's bands, 1 m contours, magenta = no surface.
+    if (sceneDebugMode == 10 || sceneDebugMode == 11)
+    {
+        float meters = sceneDebugMode == 10 ? waterDepth : viewPath;
+        float3 color = hasReceiver ? DepthBandColor(meters) : kNoSurfaceColor;
+        color = lerp(color, float3(0.05, 0.05, 0.05), MeterContour(meters) * 0.8);
+        return DebugOut(color);
+    }
+    // 12 / 13 = the same as numbers, for tools/compare_depth.ps1.
+    if (sceneDebugMode == 12 || sceneDebugMode == 13)
+    {
+        float meters = sceneDebugMode == 12 ? waterDepth : viewPath;
+        // A surface above the water right over it gets the answer key's "above water" marker.
+        return DebugOut(!hasReceiver ? float3(0.0, 0.0, kMarkerNoSurface)
+                        : sceneDebugMode == 12 && waterDepth <= 0.0 ? float3(0.0, 0.0, kMarkerAboveWater)
+                        : EncodeMeters(meters, kMarkerMeasured));
+    }
+    // Transmittance: the share of the light left after the view path through the water, per channel
+    // (rgb-attenuation). Each meter keeps the same fraction, so 2 m keeps the square of what 1 m keeps:
+    // exp(-extinction x path). Extinction 0 gives exactly 1.
+    float3 transmittance = exp(-g_Extinction.rgb * viewPath);
+    // 14 = transmittance as color (white = all light gets through, black = none); compare tool input.
+    if (sceneDebugMode == 14) { return DebugOut(transmittance); }
+
+    // The water's own color (water-scatter): sunlight and skylight scattered back toward the eye by the water,
+    // filling in what the extinction took: + color x incoming light x strength x (1 - T). Same form as aerial
+    // perspective. Lit by the scene's lights, so a sunset preset darkens and warms the water too.
+    float sunHeight = saturate(-g_LightDirection.y); // g_LightDirection is the direction light travels
+    float3 incomingLight = g_AmbientColor.rgb * g_AmbientColor.a + g_LightColor.rgb * g_LightColor.a * sunHeight;
+    // Ramp (art mode): shallow -> mid -> deep picked by water depth (the same bed keeps its color from any
+    // angle) or by view path (deeper looking at a low angle, like the physical mode).
+    float rampDistance = g_RampParams.z > 0.5 ? viewPath : waterDepth;
+    float rampMidDepth = max(g_RampParams.x, 1e-3);
+    float rampDeepDepth = max(g_RampParams.y, rampMidDepth + 1e-3);
+    float3 rampColor = lerp(g_RampShallow.rgb, g_RampMid.rgb, smoothstep(0.0, rampMidDepth, rampDistance));
+    rampColor = lerp(rampColor, g_RampDeep.rgb, smoothstep(rampMidDepth, rampDeepDepth, rampDistance));
+    float3 waterColor = g_RampParams.w > 0.5 ? rampColor : g_ScatterColor.rgb;
+    float3 inscatter = waterColor * incomingLight * g_ScatterColor.a * (1.0 - transmittance);
+    // 15 = the water color part alone (HDR, tonemapped like a normal frame: attenuation + this = scattering).
+    if (sceneDebugMode == 15) { return float4(inscatter, 1.0); }
+    // 16 = the ramp color as picked (no light, no transmittance).
+    if (sceneDebugMode == 16) { return DebugOut(LinearToSrgb(rampColor)); }
+
+    // What comes up from under the water, per Transmission mode (0 = the old opaque water, below).
+    // Pass-through: no water effect at all. Must match the frame with the water switched off.
+    // Attenuation: the scene without the water, dimmed by what the water took on the way. Nothing is added
+    // back (that is the water's own color), so very long paths and no surface go black.
+    // Scattering: what the extinction took is filled with the water's own color (bed part + water part).
+    float3 underwaterColor = transmissionMode == 1 ? sceneColor
+                           : transmissionMode == 2 ? sceneColor * transmittance
+                           : sceneColor * transmittance + inscatter;
+
+    // Contact foam (contact-foam): a white band where a surface comes up through the water, so a pillar reads as
+    // standing in the water even from above, where the reflection is only a few percent. The band follows the
+    // water depth of the surface behind the pixel (1 right under the water, 0 at the band width, in meters, so
+    // the width does not change with the camera). Water depth alone also catches flat shallows (rail heads,
+    // a 0.2 m pad), so the slope filter keeps the band on steep surfaces, with the normal estimated from the
+    // depth buffer. Not in pass-through, which has to stay the frame without the water. Surfaces more than 1 cm above
+    // the water right over them (bared by a trough) get none; the waterline itself (depth ~0, either sign) keeps it.
+    float foamWidth = max(g_FoamParams.x, 1e-3);
+    bool foamCandidate = transmissionMode >= 2 && g_FoamParams.w > 0.0 && hasReceiver && waterDepth > -0.01 && waterDepth < foamWidth;
+    // Normal source (normal-gbuffer): estimated from the depth buffer, or the one the opaque pass stored next to the
+    // color (one read instead of four depth reads, four reconstructions and a cross product).
+    bool storedNormal = g_SceneParams.w > 0.5;
+    float3 receiverNormal = float3(0.0, 0.0, 0.0);
+    float steepness = 0.0;
+    [branch] if (hasReceiver && (foamCandidate || (sceneDebugMode >= 21 && sceneDebugMode <= 24)))
+    {
+        receiverNormal = (storedNormal && sceneDebugMode != 22) || sceneDebugMode == 23 || sceneDebugMode == 24
+            ? SceneNormalStored(scenePixel.xy)
+            : SceneNormalFromDepth(scenePixel.xy, sceneDepth, receiverWS, int2(sceneWidth, sceneHeight));
+        steepness = 1.0 - abs(receiverNormal.y);
+    }
+    // 21 = steepness of the surface behind the water (black = flat, white = wall), 22 = the normal from depth and
+    // 23 = the stored normal as color, 24 = the angle between the two (black 0 -> white 30 degrees or more).
+    if (sceneDebugMode == 21) { return DebugOut(steepness.xxx); }
+    if (sceneDebugMode == 22 || sceneDebugMode == 23) { return DebugOut(hasReceiver ? receiverNormal * 0.5 + 0.5 : float3(0.0, 0.0, 0.0)); }
+    if (sceneDebugMode == 24)
+    {
+        float3 fromDepth = SceneNormalFromDepth(scenePixel.xy, sceneDepth, receiverWS, int2(sceneWidth, sceneHeight));
+        float angle = degrees(acos(clamp(dot(fromDepth, receiverNormal), -1.0, 1.0)));
+        return DebugOut(hasReceiver ? (angle / 30.0).xxx : float3(0.0, 0.0, 0.0));
+    }
+    float foamAmount = 0.0;
+    [branch] if (foamCandidate)
+    {
+        float closeness = 1.0 - saturate(waterDepth / foamWidth);
+        float slopeMask = lerp(1.0, smoothstep(g_FoamParams2.y, g_FoamParams2.z, steepness), g_FoamParams2.x);
+        // The noise drifts downwind on the water surface; its threshold sits inside [softness, 1 - softness],
+        // so closeness 0 never shows foam and closeness 1 always does, whatever the noise.
+        float2 drift = g_Waves[0].direction * (g_WaterParams.x * g_FoamParams2.w);
+        float noise = FoamNoise((input.worldPos.xz - drift) / max(g_FoamParams.z, 1e-3));
+        float softness = clamp(g_FoamParams.y, 1e-3, 0.5);
+        float threshold = lerp(softness, 1.0 - softness, noise);
+        foamAmount = saturate(smoothstep(threshold - softness, threshold + softness, closeness * slopeMask) * g_FoamParams.w);
+    }
+    // 20 = foam amount (white = foam).
+    if (sceneDebugMode == 20) { return DebugOut(foamAmount.xxx); }
+    // Foam floats on the surface: it covers the reflection and the water below alike, lit like the water color.
+    float3 foamColor = g_FoamColor.rgb * incomingLight;
+
+    // Surface reflection off: the water below alone, as if the surface reflected nothing (foam still on top).
+    bool surfaceReflection = g_SceneParams.z > 0.5;
+    if (transmissionMode != 0 && !surfaceReflection) { return float4(lerp(underwaterColor, foamColor, foamAmount), 1.0); }
+#endif
 
     // Debug visualizations (g_DebugParams.x)
     // 0 = final render

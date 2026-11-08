@@ -69,6 +69,8 @@ struct PerFrameCB
     DirectX::XMFLOAT4 foamParams2;         // x = slope filter, y / z = steepness start / full, w = flow speed (m/s)
     DirectX::XMFLOAT4 foamColor;           // rgb = linear foam color
     DirectX::XMFLOAT4 waterArea;           // x = water patch half size (m, 0 = none), y = wave edge fade width (m)
+    DirectX::XMFLOAT4 refractionParams;    // x = strength of the mode (0 = straight), y = index of refraction, z = frame-edge margin (px), w = mode
+    DirectX::XMFLOAT4 refractionParams2;   // normal offset: x = shore fade depth (m), y = wobble depth (m)
 };
 static_assert(sizeof(WaveParams) == 32, "WaveParams must match the 2-register HLSL layout");
 static_assert(sizeof(PerFrameCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
@@ -462,6 +464,10 @@ void ColorShader::RenderShader(
         data->foamParams2 = DirectX::XMFLOAT4(water.foamSlopeFilter, water.foamSteepStart, water.foamSteepFull, water.foamFlow);
         data->foamColor = linear(water.foamColor, 0.0f);
         data->waterArea = water.waterArea;
+        const bool physicalRefraction = water.refractionMode == 1;
+        data->refractionParams = DirectX::XMFLOAT4(physicalRefraction ? water.refractionStrength : water.refractionDistortion,
+            water.refractionIndex, physicalRefraction ? 64.0f : 32.0f, physicalRefraction ? 1.0f : 0.0f);
+        data->refractionParams2 = DirectX::XMFLOAT4(water.refractionShoreFade, water.refractionWobbleDepth, 0.0f, 0.0f);
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
