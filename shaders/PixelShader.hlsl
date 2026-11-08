@@ -67,6 +67,12 @@ float3 SceneNormalStored(int2 pixel)
     return stored.a > 0.5 ? normalize(stored.xyz * 2.0 - 1.0) : float3(0.0, 0.0, 0.0);
 }
 
+// How far a pixel lies inside the frame (pixels, negative outside).
+float FrameInside(float2 pixel, float2 frameSize)
+{
+    return min(min(pixel.x, frameSize.x - pixel.x), min(pixel.y, frameSize.y - pixel.y));
+}
+
 // Refraction: how many times the bent ray's length is corrected from the surface found on screen (refraction).
 #ifndef REFRACTION_STEPS
 #define REFRACTION_STEPS 4
@@ -354,10 +360,11 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // Refraction (refraction): the line of sight bends where it enters the water (Snell, water 1.33), so the water
     // below is looked up where the bent ray lands instead of straight behind the pixel. The bent ray is followed
     // as far as the straight one went, projected to the screen, and its distance corrected from the surface found
-    // there (twice). Only the frame drawn before the water is known, so a landing off screen or on a surface above
-    // the water (a step or pillar standing out of it: foreground leak) is not used. Then the bend is tried again at
-    // half and a quarter, so the edge of such a region fades instead of jumping back to the straight view.
-    // Strength 0 = straight as before, 1 = physical, more = exaggerated. Fades out near the frame edge.
+    // there (REFRACTION_STEPS times). Only the frame drawn before the water is known. Near the frame edge the bend is
+    // scaled down smoothly by how close its landing would come to the edge (below), so neighbors keep their order
+    // instead of piling up on the edge. A landing still off screen, or on a surface above the water (a step or pillar
+    // standing out of it: foreground leak), is not used; the bend is tried again at half and a quarter first.
+    // Strength 0 = straight as before, 1 = physical, more = exaggerated.
     float refractionStrength = g_RefractionParams.x;
     int refractionResult = 0;          // 0 straight, 1 refracted, 2 foreground leak, 3 off screen, 4 refracted at 1/2 or 1/4
     float2 refractionOffset = 0.0;     // pixels
@@ -366,11 +373,22 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     {
         float2 frameSize = float2(sceneWidth, sceneHeight);
         float2 pixelCenter = input.position.xy;
-        float edgeDistance = min(min(pixelCenter.x, frameSize.x - pixelCenter.x), min(pixelCenter.y, frameSize.y - pixelCenter.y));
-        float strength = refractionStrength * saturate(edgeDistance / max(g_RefractionParams.z, 1.0));
         float3 incident = normalize(input.worldPos - g_CameraPositionWS.xyz);
         float3 surfaceNormal = dot(finalNormalWS, incident) > 0.0 ? -finalNormalWS : finalNormalWS; // wave back faces
         float3 bent = refract(incident, surfaceNormal, 1.0 / max(g_RefractionParams.y, 1.0));
+        // Frame edge: a first guess of the landing (full bend, the straight path's length) and its distance to the
+        // edge d1 (negative = outside). Inside the margin m (or the pixel's own distance d0, if smaller) the landing
+        // distance is compressed as m * exp((d1 - m) / m): never reaching the edge, and still ordered, so neighbors do
+        // not collapse onto one row. The bend is scaled by how much of the way to the first guess that leaves.
+        float edgeMargin = max(g_RefractionParams.z, 1.0);
+        float d0 = FrameInside(pixelCenter, frameSize);
+        float4 guessClip = mul(mul(float4(input.worldPos + normalize(lerp(incident, bent, refractionStrength)) * viewPath, 1.0), g_View), g_Projection);
+        float d1 = guessClip.w > 0.0 ? FrameInside(float2(guessClip.x / guessClip.w * 0.5 + 0.5, 0.5 - guessClip.y / guessClip.w * 0.5) * frameSize, frameSize)
+                                     : -frameSize.x;
+        float roomMargin = min(edgeMargin, d0);
+        float softD1 = roomMargin * exp((d1 - roomMargin) / max(roomMargin, 1.0));
+        float edgeScale = d1 >= roomMargin ? 1.0 : saturate((d0 - softD1) / max(d0 - d1, 1e-3));
+        float strength = refractionStrength * edgeScale;
         [loop]
         for (int attempt = 0; attempt < 3 && refractionResult != 1 && refractionResult != 4; ++attempt)
         {
