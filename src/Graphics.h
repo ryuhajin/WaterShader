@@ -186,11 +186,12 @@ private:
     int environmentIndex_ = 0;
     // Water normal maps (kNormalMaps, plus the --normal-map file if given). Each layer picks its own.
     std::vector<std::unique_ptr<Texture>> normalMaps_;
-    std::unique_ptr<Texture> foamMap_; // contact foam noise (wave_foam.dds)
+    std::vector<std::unique_ptr<Texture>> foamMaps_; // contact foam masks, one per kFoamMaps entry (foam-masks)
     std::vector<std::string> normalMapNames_;
     int normalMapA_ = 0;
     int normalMapB_ = 0;
     int normalOverrideA_ = -1; // --normal-a / --normal-b / --normal-map: win over the preset
+    int foamMapOverride_ = -1; // --foam-map <index>: wins over the preset (foam-masks)
     int normalOverrideB_ = -1;
     std::vector<float> normalMapAxisDeg_; // per normal map: ripple travel axis (NormalMapEntry::rippleAxisDeg)
     std::vector<float> normalMapSlopeVariance_; // per normal map: NormalMapEntry::slopeVariance

@@ -68,6 +68,7 @@ struct PerFrameCB
     DirectX::XMFLOAT4 foamParams;          // x = width (m), y = softness, z = noise size (m), w = strength (test scenes)
     DirectX::XMFLOAT4 foamParams2;         // x = slope filter, y / z = steepness start / full, w = flow speed (m/s)
     DirectX::XMFLOAT4 foamColor;           // rgb = linear foam color
+    DirectX::XMFLOAT4 foamMapParams;       // x = seamless mask (0 = old mirrored clouds), y = bubbles, z = breakup (foam-masks)
     DirectX::XMFLOAT4 waterArea;           // x = water patch half size (m, 0 = none), y = wave edge fade width (m)
     DirectX::XMFLOAT4 refractionParams;    // x = strength of the mode (0 = straight), y = index of refraction, z = frame-edge margin (px), w = mode
     DirectX::XMFLOAT4 refractionParams2;   // normal offset: x = shore fade depth (m), y = wobble depth (m)
@@ -463,6 +464,8 @@ void ColorShader::RenderShader(
         data->foamParams = DirectX::XMFLOAT4(water.foamWidth, water.foamSoftness, water.foamNoiseSize, water.foamStrength);
         data->foamParams2 = DirectX::XMFLOAT4(water.foamSlopeFilter, water.foamSteepStart, water.foamSteepFull, water.foamFlow);
         data->foamColor = linear(water.foamColor, 0.0f);
+        data->foamMapParams = DirectX::XMFLOAT4(water.foamMapFlags.x, water.foamMapFlags.y * water.foamBubbles,
+            water.foamMapFlags.z * water.foamErosion, 0.0f);
         data->waterArea = water.waterArea;
         const bool physicalRefraction = water.refractionMode == 1;
         data->refractionParams = DirectX::XMFLOAT4(physicalRefraction ? water.refractionStrength : water.refractionDistortion,

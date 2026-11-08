@@ -1,6 +1,7 @@
 ﻿#include "Graphics.h"
 
 #include "ColorSpace.h"
+#include "FoamBaker.h"
 #include "Input.h"
 #include "SystemConfig.h"
 
@@ -236,6 +237,9 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("foamR", preset.water.foamColor.x);
     fn("foamG", preset.water.foamColor.y);
     fn("foamB", preset.water.foamColor.z);
+    fn("foamMap", preset.water.foamMap);
+    fn("foamBubbles", preset.water.foamBubbles);
+    fn("foamErosion", preset.water.foamErosion);
     fn("refractionMode", preset.water.refractionMode);
     fn("refractionDistortion", preset.water.refractionDistortion);
     fn("refractionShoreFade", preset.water.refractionShoreFade);
@@ -263,6 +267,26 @@ constexpr NormalMapEntry kNormalMaps[] = {
     { L"textures/water_normal3.dds", "3 Long streaks (water_normal3)",     89.0f, 0.0229f },
     { L"textures/water_normal4.dds", "4 Fine chop (water_normal4)",        67.0f, 0.0619f },
 };
+
+// Contact foam masks (foam-masks). The new ones are baked by a compute shader (tools/bake_foam_masks.ps1) and repeat
+// without a seam; R = foam (1 = forms first), G = bubbles, B = breakup (0.5 = neutral). Presets store the index,
+// so only append.
+struct FoamMapEntry
+{
+    const wchar_t* file;
+    const char* name;
+    bool tileable;   // false: the old cloud texture, read mirrored and used as before (contact-foam)
+    bool bubbles;    // G holds bubbles
+    bool breakup;    // B holds breakup noise
+};
+constexpr FoamMapEntry kFoamMaps[] = {
+    { L"textures/wave_foam.dds",    "0 Clouds (old, wave_foam)",            false, false, false },
+    { L"textures/foam_cells.dds",   "1 Cells (foam network)",               true,  false, false },
+    { L"textures/foam_bubbles.dds", "2 Bubbles",                            true,  true,  false },
+    { L"textures/foam_packed.dds",  "3 Cells + bubbles + breakup",          true,  true,  true  },
+    { L"textures/foam_streaks.dds", "4 Streaks (stretched cells)",          true,  true,  true  },
+};
+constexpr int kFoamMapCount = static_cast<int>(std::size(kFoamMaps));
 
 // Water types (water-scatter): light loss and water color set together. A starting point to tune from, not a
 // measurement. Colors are sRGB picker values.
@@ -368,10 +392,12 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     // Command line:
     //   --capture <label>      save every preset x shot, then quit
     //   --bench <label>        time every preset x shot instead (VSync off, GPU ms per pass) -> <label>/timings.csv
+    //   --bake-foam-masks <dir>  bake the contact foam masks (compute shader) as PNG into <dir>, then quit
     //   --bench-frames <n>     timed frames per shot (default 300, after 60 warm-up frames)
     //   --debug <mode>         debug view used for the capture set
     //   --normal-map <path>    extra normal map (relative to assets/), used for both layers
     //   --normal-a / --normal-b <index>  normal map per layer (kNormalMaps), overrides the presets
+    //   --foam-map <index>     contact foam mask (kFoamMaps), overrides the presets
     //   --shot <name>          start from a fixed camera shot (e.g. ocean_aerial)
     //   --ui <view|light|water|surface|all>  open settings windows at start (screenshots; keys 1-4 otherwise)
     //   --no-vsync             start uncapped (for FPS / GPU ms measurement)
@@ -406,6 +432,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --capture-format <jpg|png>  png = lossless (final images, exact comparisons)
     //   --render-size <WxH>    back buffer size independent of the window (high-resolution captures)
     std::wstring captureLabelArg;
+    std::wstring bakeFoamDir; // --bake-foam-masks
     std::wstring normalMapArg;
     std::wstring shotArg;
     bool vsyncArg = VSYNC_ENABLED;
@@ -421,11 +448,13 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 const bool hasValue = i + 1 < argc;
                 if (arg == L"--no-vsync")                    { vsyncArg = false; }
                 else if (arg == L"--capture" && hasValue)    { captureLabelArg = argv[++i]; }
+                else if (arg == L"--bake-foam-masks" && hasValue) { bakeFoamDir = argv[++i]; }
                 else if (arg == L"--bench" && hasValue)      { captureLabelArg = argv[++i]; benchMode_ = true; }
                 else if (arg == L"--bench-frames" && hasValue) { benchSampleCount_ = std::max<int>(_wtoi(argv[++i]), 10); }
                 else if (arg == L"--debug" && hasValue)      { captureDebugMode_ = _wtoi(argv[++i]); }
                 else if (arg == L"--normal-map" && hasValue) { normalMapArg = argv[++i]; }
                 else if (arg == L"--normal-a" && hasValue)   { normalOverrideA_ = _wtoi(argv[++i]); }
+                else if (arg == L"--foam-map" && hasValue)   { foamMapOverride_ = _wtoi(argv[++i]); }
                 else if (arg == L"--normal-b" && hasValue)   { normalOverrideB_ = _wtoi(argv[++i]); }
                 else if (arg == L"--shot" && hasValue)       { shotArg = argv[++i]; }
                 else if (arg == L"--ui" && hasValue)
@@ -526,6 +555,23 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         return false;
     }
 
+    // --bake-foam-masks: compute the foam masks into PNGs and quit (tools/bake_foam_masks.ps1 makes the DDS files).
+    if (!bakeFoamDir.empty())
+    {
+        std::string bakeError;
+        const bool baked = FoamBaker::BakeAll(d3d_->GetDevice(), d3d_->GetDeviceContext(), bakeFoamDir, &bakeError);
+        std::ofstream log(std::filesystem::path(bakeFoamDir) / L"bake_log.txt");
+        log << (baked ? "baked" : "FAILED: " + bakeError) << '\n';
+        DrainD3dMessages();
+        log << "D3D11 debug layer: " << (d3d_->HasDebugLayer() ? "on" : "off") << ", warnings and errors: "
+            << d3dMessages_.size() << " different\n";
+        for (const auto& [message, count] : d3dMessages_)
+        {
+            log << count << "x  " << message << '\n';
+        }
+        captureFinishedQuit_ = true; // the first Render returns false: the app closes
+    }
+
     camera_ = std::make_unique<Camera>();
     int startShot = kDefaultShotIndex;
     for (int i = 0; i < static_cast<int>(std::size(kCaptureShots)); ++i)
@@ -576,16 +622,18 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
         OutputDebugStringA(("[NormalMap]\n" + statusLog).c_str());
     }
 
-    // Contact foam noise (contact-foam): the cloud texture made for the old foam-mask branch, R channel.
-    foamMap_ = std::make_unique<Texture>();
+    // Contact foam masks (foam-masks): loaded like the normal maps, picked in the Water window.
+    for (const FoamMapEntry& entry : kFoamMaps)
     {
+        auto texture = std::make_unique<Texture>();
         std::wstring err;
-        if (!foamMap_->Initialize(d3d_->GetDevice(), GetAssetPath(L"textures/wave_foam.dds").c_str(), &err))
+        if (!texture->Initialize(d3d_->GetDevice(), GetAssetPath(entry.file).c_str(), &err))
         {
-            // Mid gray: the band still shows, with straight edges.
-            foamMap_->InitializeFlat(d3d_->GetDevice(), 128, 128, 128, 255);
+            // Mid gray foam, neutral breakup: the band still shows, with straight edges.
+            texture->InitializeFlat(d3d_->GetDevice(), 128, 0, 128, 255);
             OutputDebugStringW((L"[FoamMap] FAIL -> flat gray: " + err + L"\n").c_str());
         }
+        foamMaps_.push_back(std::move(texture));
     }
 
     model_ = std::make_unique<Model>();
@@ -754,6 +802,10 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     if (foamStrengthOverride_ >= 0.0f)
     {
         water_.foamStrength = foamStrengthOverride_;
+    }
+    if (foamMapOverride_ >= 0)
+    {
+        water_.foamMap = foamMapOverride_;
     }
     if (foamSlopeOverride_ >= 0.0f)
     {
@@ -1890,6 +1942,11 @@ bool Graphics::Render(float deltaTime)
             water_.normalRotation = { a.x, a.y, b.x, b.y };
         }
         water_.rippleSlopeVarianceA = normalMapSlopeVariance_[normalMapA_];
+        // foam-masks: what the picked mask holds (the shader reads its channels accordingly).
+        water_.foamMap = std::clamp(water_.foamMap, 0, kFoamMapCount - 1);
+        const FoamMapEntry& foamEntry = kFoamMaps[water_.foamMap];
+        water_.foamMapFlags = DirectX::XMFLOAT3(foamEntry.tileable ? 1.0f : 0.0f, foamEntry.bubbles ? 1.0f : 0.0f,
+                                                foamEntry.breakup ? 1.0f : 0.0f);
         water_.rippleSlopeVarianceB = normalMapSlopeVariance_[normalMapB_];
         // A --render-size frame keeps the look of the 720p window it was set up in (ocean-hero NOTES).
         water_.lodScale = fixedRenderSize_ ? static_cast<float>(screenHeight_) / static_cast<float>(SCREEN_HEIGHT) : 1.0f;
@@ -1973,7 +2030,7 @@ bool Graphics::Render(float deltaTime)
             d3d_->GetWrapSampler(),
             sceneInputs ? d3d_->GetSceneColorSRV() : nullptr,
             sceneInputs ? d3d_->GetSceneDepthSRV() : nullptr,
-            sceneInputs ? foamMap_->GetSRV() : nullptr,
+            sceneInputs ? foamMaps_[std::clamp(water_.foamMap, 0, kFoamMapCount - 1)]->GetSRV() : nullptr,
             sceneInputs && UsesStoredNormal() ? d3d_->GetSceneNormalSRV() : nullptr);
         d3d_->SetRasterizerDefault();
         if (sceneInputs)
@@ -2773,6 +2830,28 @@ void Graphics::DrawNewWaterSettings()
     ImGui::Combo("Normal source", &normalSource_, normalSources, IM_ARRAYSIZE(normalSources));
     LabeledSlider("Steepness: foam starts", &water_.foamSteepStart, 0.0f, 1.0f, "%.2f");
     LabeledSlider("Steepness: foam full", &water_.foamSteepFull, 0.0f, 1.0f, "%.2f");
+    // foam-masks: the mask that breaks up the band, picked like the normal map textures.
+    ImGui::TextUnformatted("Foam texture");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    water_.foamMap = std::clamp(water_.foamMap, 0, kFoamMapCount - 1);
+    if (ImGui::BeginCombo("##foamTexture", kFoamMaps[water_.foamMap].name))
+    {
+        for (int i = 0; i < kFoamMapCount; ++i)
+        {
+            if (ImGui::Selectable(kFoamMaps[i].name, i == water_.foamMap))
+            {
+                water_.foamMap = i;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    const FoamMapEntry& foamEntry = kFoamMaps[water_.foamMap];
+    ImGui::BeginDisabled(!foamEntry.bubbles);
+    LabeledSlider("Bubbles (G: loose bubbles at the band's edge)", &water_.foamBubbles, 0.0f, 1.0f, "%.2f");
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(!foamEntry.breakup);
+    LabeledSlider("Erosion (B: breaks the band into islands)", &water_.foamErosion, 0.0f, 1.0f, "%.2f");
+    ImGui::EndDisabled();
     LabeledColor("Foam color (lit by the sun and sky)", &water_.foamColor.x);
 }
 

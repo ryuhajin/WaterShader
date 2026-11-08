@@ -17,6 +17,8 @@ add_executable(WaterShader WIN32
     src/D3DClass.h
     src/GpuTimer.cpp
     src/GpuTimer.h
+    src/FoamBaker.cpp
+    src/FoamBaker.h
     src/Graphics.cpp
     src/Graphics.h
     src/Input.cpp
@@ -115,6 +117,9 @@ add_custom_command(TARGET WaterShader POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${SHADER_SOURCE_DIR}/DepthBands.hlsli"
         "${SHADER_OUTPUT_DIR}/DepthBands.hlsli"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_SOURCE_DIR}/foam_bake.hlsl"
+        "${SHADER_OUTPUT_DIR}/foam_bake.hlsl"
 )
 
 set(ASSETS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")
