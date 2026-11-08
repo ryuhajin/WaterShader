@@ -357,58 +357,86 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float waterDepth = hasReceiver ? receiverWaterY - receiverWS.y : maxOpticalDistance;
     float viewPath = hasReceiver ? (waterDepth > 0.0 ? length(receiverWS - input.worldPos) : 0.0) : maxOpticalDistance;
 
-    // Refraction (refraction): the line of sight bends where it enters the water (Snell, water 1.33), so the water
-    // below is looked up where the bent ray lands instead of straight behind the pixel. The bent ray is followed
-    // as far as the straight one went, projected to the screen, and its distance corrected from the surface found
-    // there (REFRACTION_STEPS times). Only the frame drawn before the water is known. Near the frame edge the bend is
-    // scaled down smoothly by how close its landing would come to the edge (below), so neighbors keep their order
-    // instead of piling up on the edge. A landing still off screen, or on a surface above the water (a step or pillar
-    // standing out of it: foreground leak), is not used; the bend is tried again at half and a quarter first.
-    // Strength 0 = straight as before, 1 = physical, more = exaggerated.
+    // Refraction (refraction): the water below is looked up at another pixel than straight behind, two ways.
+    //  Normal offset (default; Unreal's "Pixel Normal Offset", recommended there for large water): the landing is
+    //   this pixel moved by how far the surface normal tilts away from flat water, seen on screen. Flat water does
+    //   not move at all, ripples and waves wobble the view, so the landing stays close and rarely needs what is
+    //   off screen. Tapered by water depth (nothing at the shore) and faded where the landing nears the frame edge.
+    //  Physical: the line of sight bent by Snell (water 1.33) and followed to the surface it reaches (projected
+    //   to the screen and its length corrected REFRACTION_STEPS times). Flat water bends it too: deep floors look
+    //   shallow and a pillar kinks at the waterline, but low views need the frame below the screen, so the bend
+    //   is squeezed near the edge (kept as the comparison mode, see the refraction NOTES).
+    // Either way only the frame drawn before the water is known: a landing on a surface above the water (a step or
+    // pillar standing out of it: foreground leak), or off screen, is tried again at half and a quarter, then the
+    // straight view is kept. Strength 0 = straight as before.
+    bool physicalRefraction = g_RefractionParams.w > 0.5;
     float refractionStrength = g_RefractionParams.x;
     int refractionResult = 0;          // 0 straight, 1 refracted, 2 foreground leak, 3 off screen, 4 refracted at 1/2 or 1/4
     float2 refractionOffset = 0.0;     // pixels
-    float refractionMiss = 0.0;        // m: how far the surface found lies from the bent ray
+    float refractionMiss = 0.0;        // m: how far the surface found lies from the bent ray (physical mode)
     [branch] if (refractionStrength > 0.0 && transmissionMode >= 2) // pass-through stays the frame without the water
     {
         float2 frameSize = float2(sceneWidth, sceneHeight);
         float2 pixelCenter = input.position.xy;
+        float edgeMargin = max(g_RefractionParams.z, 1.0);
         float3 incident = normalize(input.worldPos - g_CameraPositionWS.xyz);
         float3 surfaceNormal = dot(finalNormalWS, incident) > 0.0 ? -finalNormalWS : finalNormalWS; // wave back faces
-        float3 bent = refract(incident, surfaceNormal, 1.0 / max(g_RefractionParams.y, 1.0));
-        // Frame edge: a first guess of the landing (full bend, the straight path's length) and its distance to the
-        // edge d1 (negative = outside). Inside the margin m (or the pixel's own distance d0, if smaller) the landing
-        // distance is compressed as m * exp((d1 - m) / m): never reaching the edge, and still ordered, so neighbors do
-        // not collapse onto one row. The bend is scaled by how much of the way to the first guess that leaves.
-        float edgeMargin = max(g_RefractionParams.z, 1.0);
-        float d0 = FrameInside(pixelCenter, frameSize);
-        float4 guessClip = mul(mul(float4(input.worldPos + normalize(lerp(incident, bent, refractionStrength)) * viewPath, 1.0), g_View), g_Projection);
-        float d1 = guessClip.w > 0.0 ? FrameInside(float2(guessClip.x / guessClip.w * 0.5 + 0.5, 0.5 - guessClip.y / guessClip.w * 0.5) * frameSize, frameSize)
-                                     : -frameSize.x;
-        float roomMargin = min(edgeMargin, d0);
-        float softD1 = roomMargin * exp((d1 - roomMargin) / max(roomMargin, 1.0));
-        float edgeScale = d1 >= roomMargin ? 1.0 : saturate((d0 - softD1) / max(d0 - d1, 1e-3));
-        float strength = refractionStrength * edgeScale;
+        float strength = refractionStrength;
+        float2 normalOffset = 0.0;     // normal offset mode: the full offset in pixels
+        float3 bent = incident;        // physical mode
+        if (physicalRefraction)
+        {
+            bent = refract(incident, surfaceNormal, 1.0 / max(g_RefractionParams.y, 1.0));
+            // Frame edge: a first guess of the landing (full bend, the straight path's length) and its distance to
+            // the edge d1 (negative = outside). Inside the margin m (or the pixel's own distance d0, if smaller) the
+            // landing distance is compressed as m * exp((d1 - m) / m): never reaching the edge, still ordered.
+            float d0 = FrameInside(pixelCenter, frameSize);
+            float4 guessClip = mul(mul(float4(input.worldPos + normalize(lerp(incident, bent, strength)) * viewPath, 1.0), g_View), g_Projection);
+            float d1 = guessClip.w > 0.0 ? FrameInside(float2(guessClip.x / guessClip.w * 0.5 + 0.5, 0.5 - guessClip.y / guessClip.w * 0.5) * frameSize, frameSize)
+                                         : -frameSize.x;
+            float roomMargin = min(edgeMargin, d0);
+            float softD1 = roomMargin * exp((d1 - roomMargin) / max(roomMargin, 1.0));
+            strength *= d1 >= roomMargin ? 1.0 : saturate((d0 - softD1) / max(d0 - d1, 1e-3));
+        }
+        else
+        {
+            // Tilt away from flat water (waves + ripples), as the camera sees it: view-space x right, y up -> screen.
+            // 64 px per unit of tilt at 720p, scaled with the frame height.
+            float3 tiltView = mul(surfaceNormal - float3(0.0, 1.0, 0.0), (float3x3)g_View);
+            float depthTaper = smoothstep(0.0, max(g_RefractionParams2.x, 1e-3), hasReceiver ? waterDepth : g_RefractionParams2.x);
+            normalOffset = float2(tiltView.x, -tiltView.y) * (64.0 * frameSize.y / 720.0) * depthTaper;
+            // Edge fade on the landing (EEVEE / Godot style): the offset shrinks as its landing enters the margin.
+            normalOffset *= saturate(FrameInside(pixelCenter + normalOffset * strength, frameSize) / edgeMargin);
+        }
         [loop]
         for (int attempt = 0; attempt < 3 && refractionResult != 1 && refractionResult != 4; ++attempt)
         {
-            float3 rayDir = normalize(lerp(incident, bent, strength * exp2(-attempt)));
-            float rayLength = viewPath;
-            float2 landedPixel = pixelCenter;
+            float scale = strength * exp2(-attempt);
+            float3 rayDir = normalize(lerp(incident, bent, scale));
+            float2 landedPixel = pixelCenter + normalOffset * scale;
             float landedDepth = sceneDepth;
             float3 landedWS = receiverWS;
-            bool onScreen = true;
-            [unroll]
-            for (int step = 0; step < REFRACTION_STEPS; ++step)
+            bool onScreen = all(landedPixel >= 0.0) && all(landedPixel < frameSize);
+            if (physicalRefraction)
             {
-                float4 clip = mul(mul(float4(input.worldPos + rayDir * rayLength, 1.0), g_View), g_Projection);
-                float2 ndc = clip.xy / clip.w;
-                landedPixel = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5) * frameSize;
-                onScreen = clip.w > 0.0 && all(landedPixel >= 0.0) && all(landedPixel < frameSize);
-                if (!onScreen) { break; }
+                float rayLength = viewPath;
+                [unroll]
+                for (int step = 0; step < REFRACTION_STEPS; ++step)
+                {
+                    float4 clip = mul(mul(float4(input.worldPos + rayDir * rayLength, 1.0), g_View), g_Projection);
+                    float2 ndc = clip.xy / clip.w;
+                    landedPixel = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5) * frameSize;
+                    onScreen = clip.w > 0.0 && all(landedPixel >= 0.0) && all(landedPixel < frameSize);
+                    if (!onScreen) { break; }
+                    landedDepth = g_SceneDepth.Load(int3(landedPixel, 0));
+                    landedWS = SceneWorldPosition(int2(landedPixel), landedDepth, frameSize);
+                    rayLength = landedDepth < 0.99999 ? length(landedWS - input.worldPos) : maxOpticalDistance;
+                }
+            }
+            else if (onScreen)
+            {
                 landedDepth = g_SceneDepth.Load(int3(landedPixel, 0));
                 landedWS = SceneWorldPosition(int2(landedPixel), landedDepth, frameSize);
-                rayLength = landedDepth < 0.99999 ? length(landedWS - input.worldPos) : maxOpticalDistance;
             }
             bool landedSky = landedDepth >= 0.99999;
             float landedSideError = 0.0;
@@ -419,7 +447,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
             if (refractionResult == 1 || refractionResult == 4)
             {
                 refractionOffset = landedPixel - pixelCenter;
-                refractionMiss = landedSky ? 0.0 : length(cross(landedWS - input.worldPos, rayDir));
+                refractionMiss = physicalRefraction && !landedSky ? length(cross(landedWS - input.worldPos, rayDir)) : 0.0;
                 scenePixel = int3(landedPixel, 0);
                 sceneColor = g_SceneColor.Load(scenePixel).rgb;
                 sceneDepth = landedDepth;

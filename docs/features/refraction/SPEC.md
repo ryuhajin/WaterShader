@@ -5,14 +5,16 @@
 
 ## 1. Goal / Visual Target
 
-- **한 문장 요약:** 물 아래 장면을 **굴절된 시선**으로 다시 찾아 그린다. 수면의 파도·잔물결에 따라 물속 무늬가 일렁이고, 물에 잠긴 기둥이 수면선에서 **꺾여 보인다** (물컵 속 빨대).
+- **한 문장 요약:** 물 아래 장면을 **굴절로 옮긴 위치**에서 다시 찾아 그린다. 수면의 파도·잔물결에 따라 물속 무늬가 일렁인다. (물에 잠긴 기둥이 수면선에서 꺾여 보이는 평평한 물의 굴절은 Physical 모드에서만: 2절 변경)
 - 물 밖에 있는 것(수면 위 계단, 기둥의 물 밖 부분)은 끌려와 물속에 비치지 않는다 (전경 누출 막기).
 - 화면 끝, 카메라 회전에서도 깨지지 않는다.
 - **스코프 가드 — 만들지 않을 것:** 물체 반사(8B), 물속 시점(카메라가 물 아래), 분산(색 갈라짐), 성능 측정(요청 시만).
 
 ## 2. 방법
 
-**① 굴절된 시선 따라가기 (화면 공간 근사)**
+> **변경 (사용자 검증 후 2026-11-09):** 아래 ①의 물리 굴절은 낮은 시점에서 화면 밖 정보가 필요해 화면 끝에 띠·몰림이 남았다. 실무 조사 후 기본 방식을 **Normal offset**(언리얼 Pixel Normal Offset과 같은 계열: 이동 = 수면 노멀이 평평한 물에서 기운 만큼, 평평한 물은 이동 0) + 화면 끝 페이드 + 물가 감쇠로 바꾸고, ①은 **Physical** 비교 모드로 남겼다. Water 창 Refraction 콤보, `--refraction-mode`. 경위와 수치: [NOTES 4절](NOTES.md).
+
+**① 굴절된 시선 따라가기 (화면 공간 근사) — Physical 모드**
 
 ```text
 지금:   물 픽셀 → 같은 픽셀의 장면 색·깊이 (시선이 수면에서 꺾이지 않는 물)
@@ -53,10 +55,10 @@
 
 | 종류 | 이름 | 비고 |
 |---|---|---|
-| CBuffer | `g_RefractionParams` | x 세기(0 = 끔), y 굴절률(1.33), z 화면 끝 감쇠 폭(픽셀) |
-| Preset | `refractionStrength` | 키가 없으면 1 |
-| ImGui (Water 창 New: Underwater) | Refraction strength | 0~2 |
-| CLI | `--refraction <strength>` | 캡처용 |
+| CBuffer | `g_RefractionParams`, `g_RefractionParams2` | x 모드별 세기(0 = 끔), y 굴절률(1.33), z 화면 끝 여유(64px), w 모드 (0 Normal offset, 1 Physical) / 물가 감쇠 수심(m) |
+| Preset | `refractionMode`, `refractionDistortion`, `refractionShoreFade`, `refractionStrength` | 키가 없으면 Normal offset, 1, 0.15m, 1 |
+| ImGui (Water 창 New: Underwater) | Refraction 콤보 + 모드별 슬라이더 | Normal offset: Distortion 0~3, Shore fade / Physical: strength 0~2 |
+| CLI | `--refraction <strength>`, `--refraction-mode normal\|physical` | 캡처용 (세기는 두 모드 모두에 적용) |
 
 **의존하는 다른 feature:** `wave-occlusion` (파도 노멀·수면 높이), `scene-color-depth`, `depth-reconstruct`, `contact-foam`
 
@@ -75,7 +77,7 @@
 
 - [ ] 잔물결·파도에 따라 물속 체크무늬가 일렁인다
 - [ ] 수면 위 계단·기둥이 물속으로 끌려 들어가 비치지 않는다
-- [ ] 화면 공간 굴절의 한계(화면 밖, 다른 물체 뒤의 정보는 없음)를 설명할 수 있다
+- [ ] 화면 공간 굴절의 한계(화면 밖, 다른 물체 뒤의 정보는 없음)와, 물리 굴절 대신 노멀 차이 방식을 기본으로 고른 이유를 설명할 수 있다
 
 ## 5. Notes
 
