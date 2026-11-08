@@ -39,7 +39,7 @@ private:
     void DrawViewWindow();    // presets, camera, scene, capture, debug view
     void DrawLightWindow();   // sky, sun, glint, ambient, underwater light (New water), tonemapping
     void DrawWaterWindow();   // the water version's own settings (underwater, foam), then the reflection
-    void DrawNewWaterSettings(); // test scenes: transmission, refraction, contact foam
+    void DrawNewWaterSettings(); // test scenes: underwater, refraction, contact foam
     void DrawUnderwaterLightSettings(); // test scenes: water type, light loss, water color (Light window)
     void DrawSurfaceWindow(); // shape and motion of the surface, both versions (DrawSurfaceSettings)
     void DrawSurfaceSettings();  // normal maps, ocean detail, waves

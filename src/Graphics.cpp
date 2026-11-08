@@ -2799,10 +2799,16 @@ void Graphics::DrawNewWaterSettings()
         // wave-occlusion: where waves overlap on screen, which water fragment wins.
         const char* occlusionModes[] = { "None (last drawn wins)", "Single pass (writes water depth)", "Depth prepass (nearest, shaded once)" };
         ImGui::Combo("Water occlusion", &waterOcclusion_, occlusionModes, IM_ARRAYSIZE(occlusionModes));
-        // refraction: where the water below is looked up. Normal offset = Unreal's Pixel Normal Offset (flat water does
-        // not move); Physical = the Snell-bent line of sight, kept to compare (needs the frame below the screen).
+        LabeledSlider("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
+        ImGui::TextDisabled("View path where no surface is behind the water (sky).");
+    }
+
+    // refraction: where the water below is looked up. Normal offset = Unreal's Pixel Normal Offset (flat water does
+    // not move); Physical = the Snell-bent line of sight, kept to compare (needs the frame below the screen).
+    if (SectionHeader("Refraction"))
+    {
         const char* refractionModes[] = { "Normal offset (tilt from flat)", "Physical (Snell, compare)" };
-        ImGui::Combo("Refraction", &water_.refractionMode, refractionModes, IM_ARRAYSIZE(refractionModes));
+        ImGui::Combo("Mode", &water_.refractionMode, refractionModes, IM_ARRAYSIZE(refractionModes));
         if (water_.refractionMode == 0)
         {
             LabeledSlider("Distortion (1 = Snell shift of the tilt)", &water_.refractionDistortion, 0.0f, 3.0f, "%.2f");
@@ -2815,8 +2821,6 @@ void Graphics::DrawNewWaterSettings()
             LabeledSlider("Refraction strength (1 = Snell)", &water_.refractionStrength, 0.0f, 2.0f, "%.2f");
             ImGui::TextDisabled("Deep beds look shallow; low views reach below the frame edge.");
         }
-        LabeledSlider("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
-        ImGui::TextDisabled("View path where no surface is behind the water (sky).");
     }
 
     // contact-foam: a white band where a surface comes up through the water (not in Pass-through).
