@@ -102,6 +102,10 @@ public:
         // out toward its edge (test scenes; set every frame, not saved).
         DirectX::XMFLOAT4 waterArea = {0.0f, 0.0f, 0.0f, 0.0f};
         bool depthOnly = false; // water depth prepass draw: vertex shader alone, no pixel shader
+        // refraction: how much the view of the water below bends at the surface (0 = straight, 1 = physical).
+        // Presets without the key load 1.
+        float refractionStrength = 1.0f;
+        float refractionIndex = 1.33f; // water
         DirectX::XMFLOAT4X4 invViewProjection = {}; // inverse of view x projection: depth buffer -> world position
         // Normal map rotation on the water (world XZ), as cos/sin: xy = layer A, zw = layer B. (1, 0) = as authored.
         DirectX::XMFLOAT4 normalRotation = {1.0f, 0.0f, 1.0f, 0.0f};

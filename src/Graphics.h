@@ -212,6 +212,7 @@ private:
     DirectX::XMFLOAT4 scatterOverride_ = {0.0f, 0.0f, 0.0f, 0.0f};
     float foamStrengthOverride_ = -1.0f;    // --foam <strength> (contact-foam), negative = presets decide
     float foamSlopeOverride_ = -1.0f;       // --foam-slope <0..1>: slope filter
+    float refractionOverride_ = -1.0f;      // --refraction <strength> (refraction), negative = presets decide
     float exposureOverrideEv_ = 0.0f;
     TonemapShader::Operator tonemapOperator_ = TonemapShader::AcesHuePreserving;
 

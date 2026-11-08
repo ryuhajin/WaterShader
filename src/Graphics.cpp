@@ -236,6 +236,7 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("foamR", preset.water.foamColor.x);
     fn("foamG", preset.water.foamColor.y);
     fn("foamB", preset.water.foamColor.z);
+    fn("refractionStrength", preset.water.refractionStrength);
 }
 
 // Tangent-space water normal maps (RGBA8 UNORM + mips, converted with texconv --ignore-srgb so the
@@ -387,6 +388,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --ramp-by <depth|path> what the ramp color follows, overrides every preset (after --water-type)
     //   --foam <strength>      contact foam strength, overrides every preset (0 = off)
     //   --foam-slope <0..1>    contact foam slope filter (0 = water depth alone, 1 = steep surfaces only)
+    //   --refraction <strength>  test scene refraction, overrides every preset (0 = straight, 1 = physical)
     //   --normal-source <depth|stored>  where the water gets the normal behind it: depth buffer (default) or normal buffer
     //   --resize-cycle         recreate the size-dependent targets once before rendering (resize test)
     //   --d3d-selftest         cause one known debug layer hazard (checks that d3d_messages.txt catches it)
@@ -475,6 +477,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--ramp-by" && hasValue) { rampByOverride_ = std::wstring(argv[++i]) == L"path" ? 1 : 0; }
                 else if (arg == L"--foam" && hasValue)       { foamStrengthOverride_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--foam-slope" && hasValue) { foamSlopeOverride_ = static_cast<float>(_wtof(argv[++i])); }
+                else if (arg == L"--refraction" && hasValue) { refractionOverride_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--normal-source" && hasValue) { normalSource_ = std::wstring(argv[++i]) == L"stored" ? 1 : 0; }
                 else if (arg == L"--scatter" && hasValue)
                 {
@@ -749,6 +752,10 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     if (foamSlopeOverride_ >= 0.0f)
     {
         water_.foamSlopeFilter = foamSlopeOverride_;
+    }
+    if (refractionOverride_ >= 0.0f)
+    {
+        water_.refractionStrength = refractionOverride_;
     }
     waveMacro_ = preset.waveMacro;
 }
@@ -2409,7 +2416,8 @@ void Graphics::DrawViewWindow()
         "Reflection amount (Fresnel x strength)", "Reflection part only", "Underwater part only",
         "Contact foam amount", "Steepness behind the water (active normal)", "Normal from depth (world, color)",
         "Stored scene normal (G-buffer, color)", "Normal difference: depth vs stored (0-30 deg)",
-        "Wave height lookup error (white = 1 mm)" };
+        "Wave height lookup error (white = 1 mm)", "Refraction offset (pixels)",
+        "Refraction result (green ok, cyan reduced, red foreground leak, blue off screen)", "Refracted ray miss (white = 10 cm)" };
     if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
     {
         SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
@@ -2653,6 +2661,8 @@ void Graphics::DrawNewWaterSettings()
     // wave-occlusion: where waves overlap on screen, which water fragment wins.
     const char* occlusionModes[] = { "None (last drawn wins)", "Single pass (writes water depth)", "Depth prepass (nearest, shaded once)" };
     ImGui::Combo("Water occlusion", &waterOcclusion_, occlusionModes, IM_ARRAYSIZE(occlusionModes));
+    // refraction: the view of the water below bends at the surface (Snell); 0 = straight.
+    LabeledSlider("Refraction strength (1 = physical)", &water_.refractionStrength, 0.0f, 2.0f, "%.2f");
     LabeledSlider("Max underwater distance", &maxUnderwaterDistance_, 5.0f, 200.0f, "%.0f m");
     ImGui::TextDisabled("View path where no surface is behind the water (sky).");
 

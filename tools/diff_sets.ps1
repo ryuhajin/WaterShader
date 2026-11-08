@@ -41,7 +41,7 @@ public static class SetDiff
         int w, h, wb, hb, wm, hm;
         byte[] a = Load(pathA, out w, out h), b = Load(pathB, out wb, out hb);
         if (w != wb || h != hb) return "different size";
-        byte[] m = pathMask != null ? Load(pathMask, out wm, out hm) : null;
+        byte[] m = !string.IsNullOrEmpty(pathMask) ? Load(pathMask, out wm, out hm) : null;
         long count = 0, onWater = 0, overOne = 0;
         int maxLevel = 0;
         var sample = new StringBuilder();
