@@ -57,6 +57,7 @@ private:
     void StartCaptureSet(const std::wstring& label, bool quitWhenDone, bool allowOverwrite = true);
     void FinishCaptureSet();
     bool UsesStoredNormal() const; // normal-gbuffer: the opaque pass writes the scene normal buffer this frame
+    DirectX::XMFLOAT4 SceneWaterArea() const; // wave-occlusion: x = water patch half size, y = wave edge fade width
     void EndBenchFrame();
     std::filesystem::path CapturesRoot() const; // <capture root>/<feature>/captures
     bool BeginCaptureFrame();
@@ -165,7 +166,7 @@ private:
     std::vector<SceneObject> frontObjects_;
     int scene_ = NoScene;
     bool showWater_ = true;
-    bool labWaves_ = false;
+    bool labWaves_ = true; // test scenes: Gerstner waves from the Surface window (wave-occlusion: on by default)
     int sceneDebug_ = 0; // 0 render, 1 depth below the water (the water is not drawn)
     int parkedSceneDebug_ = 0; // Scene Debug view put aside while a water Debug Mode is on (SwapDebugViews)
     int parkedWaterDebug_ = 0; // water Debug Mode put aside while a Scene Debug view is on
@@ -177,6 +178,7 @@ private:
     float maxUnderwaterDistance_ = 50.0f; // m: view path where no surface is behind the water (depth-reconstruct)
     bool surfaceReflection_ = true; // test scenes: sky and sun mirrored on top of the water below (surface-reflection)
     int normalSource_ = 0;          // test scenes: 0 normal from the depth buffer, 1 stored scene normal (normal-gbuffer)
+    int waterOcclusion_ = 2;        // test scenes: 0 none (step 6), 1 single pass writes the water depth, 2 depth prepass + EQUAL
     // Debug layer messages (Debug builds), counted per text; written next to a capture set.
     std::map<std::string, int> d3dMessages_;
     size_t d3dMessageTotal_ = 0;

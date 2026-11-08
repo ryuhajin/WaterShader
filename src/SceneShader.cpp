@@ -26,6 +26,9 @@ struct SceneCB
     DirectX::XMFLOAT4 ambientColor;   // linear rgb, a = intensity
     DirectX::XMFLOAT4 baseColor;      // linear albedo
     DirectX::XMFLOAT4 params;         // x = pattern, y = debug mode
+    DirectX::XMFLOAT4 waves[8];       // the water surface (wave-occlusion): same layout as the HLSL WaveParams x 4
+    DirectX::XMFLOAT4 waterCamera;    // xyz = camera position
+    DirectX::XMFLOAT4 waterTimeArea;  // x = time, y = water patch half size, z = wave edge fade width
 };
 
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
@@ -145,6 +148,12 @@ void SceneShader::Render(ID3D11DeviceContext* deviceContext, int indexCount, con
         data->ambientColor = ambientColor_;
         data->baseColor = SrgbToLinear(DirectX::XMFLOAT4(material.baseColor.x, material.baseColor.y, material.baseColor.z, 1.0f));
         data->params = DirectX::XMFLOAT4(static_cast<float>(material.pattern), static_cast<float>(debugMode_), 0.0f, 0.0f);
+        for (int i = 0; i < 8; ++i)
+        {
+            data->waves[i] = waterSurface_.waves[i];
+        }
+        data->waterCamera = waterSurface_.camera;
+        data->waterTimeArea = waterSurface_.timeArea;
         deviceContext->Unmap(perObjectCB_.Get(), 0);
     }
 

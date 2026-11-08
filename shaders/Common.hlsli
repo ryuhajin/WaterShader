@@ -1,15 +1,7 @@
 #ifndef WS_COMMON_HLSLI
 #define WS_COMMON_HLSLI
 
-struct WaveParams
-{
-    float2 direction;
-    float  amplitude;
-    float  wavelength;
-    float  speed;
-    float  steepness;  // Gerstner Q (0 = plain sine)
-    float2 padding;
-};
+#include "Waves.hlsli" // WaveParams and the shared wave math
 
 cbuffer PerFrameCB : register(b0)
 {
@@ -51,6 +43,7 @@ cbuffer PerFrameCB : register(b0)
     float4 g_FoamParams2;      // x = slope filter (0 = water depth alone, 1 = walls only), y / z = steepness where foam starts / is full,
                                // w = noise flow speed (m/s)
     float4 g_FoamColor;        // rgb = foam color (linear)
+    float4 g_WaterArea;        // test scenes (wave-occlusion): x = water patch half size (m, 0 = none), y = wave edge fade width (m)
 };
 
 struct VSInput

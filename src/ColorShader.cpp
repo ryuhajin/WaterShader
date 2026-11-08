@@ -68,6 +68,7 @@ struct PerFrameCB
     DirectX::XMFLOAT4 foamParams;          // x = width (m), y = softness, z = noise size (m), w = strength (test scenes)
     DirectX::XMFLOAT4 foamParams2;         // x = slope filter, y / z = steepness start / full, w = flow speed (m/s)
     DirectX::XMFLOAT4 foamColor;           // rgb = linear foam color
+    DirectX::XMFLOAT4 waterArea;           // x = water patch half size (m, 0 = none), y = wave edge fade width (m)
 };
 static_assert(sizeof(WaveParams) == 32, "WaveParams must match the 2-register HLSL layout");
 static_assert(sizeof(PerFrameCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
@@ -233,6 +234,14 @@ bool ColorShader::Reload(ID3D11Device* device)
         lastError_ = error;
         return false;
     }
+    // Test scene vertex shader (wave-occlusion): the waves fade out at the edge of the finite water patch.
+    Microsoft::WRL::ComPtr<ID3DBlob> vsSceneBuffer;
+    const D3D_SHADER_MACRO vsSceneDefines[] = { {"SCENE_INPUTS", "1"}, {nullptr, nullptr} };
+    if (!CompileShader(vsPath_.c_str(), "VSMain", "vs_5_0", &vsSceneBuffer, &error, vsSceneDefines))
+    {
+        lastError_ = "[VS SCENE_INPUTS] " + error;
+        return false;
+    }
     if (!CompileShader(psPath_.c_str(), "PSMain", "ps_5_0", &psBuffer, &error))
     {
         lastError_ = error;
@@ -262,6 +271,12 @@ bool ColorShader::Reload(ID3D11Device* device)
     if (FAILED(device->CreateVertexShader(vsBuffer->GetBufferPointer(), vsBuffer->GetBufferSize(), nullptr, &newVS)))
     {
         lastError_ = "CreateVertexShader failed.";
+        return false;
+    }
+    Microsoft::WRL::ComPtr<ID3D11VertexShader> newSceneVS;
+    if (FAILED(device->CreateVertexShader(vsSceneBuffer->GetBufferPointer(), vsSceneBuffer->GetBufferSize(), nullptr, &newSceneVS)))
+    {
+        lastError_ = "CreateVertexShader (SCENE_INPUTS) failed.";
         return false;
     }
 
@@ -305,6 +320,7 @@ bool ColorShader::Reload(ID3D11Device* device)
     }
 
     vertexShader_ = newVS;
+    vertexShaderScene_ = newSceneVS;
     pixelShader_ = newPS;
     pixelShaderDetail_ = newDetailPS;
     pixelShaderScene_ = newScenePS;
@@ -354,6 +370,7 @@ void ColorShader::ShutdownShader()
     pixelShaderScene_.Reset();
     pixelShaderDetail_.Reset();
     pixelShader_.Reset();
+    vertexShaderScene_.Reset();
     vertexShader_.Reset();
 }
 
@@ -444,6 +461,7 @@ void ColorShader::RenderShader(
         data->foamParams = DirectX::XMFLOAT4(water.foamWidth, water.foamSoftness, water.foamNoiseSize, water.foamStrength);
         data->foamParams2 = DirectX::XMFLOAT4(water.foamSlopeFilter, water.foamSteepStart, water.foamSteepFull, water.foamFlow);
         data->foamColor = linear(water.foamColor, 0.0f);
+        data->waterArea = water.waterArea;
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
@@ -451,13 +469,21 @@ void ColorShader::RenderShader(
     ID3D11SamplerState* samplers[2] = {clampSampler, wrapSampler};
 
     deviceContext->IASetInputLayout(layout_.Get());
-    deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
+    const bool sceneInputs = sceneColorSRV != nullptr && sceneDepthSRV != nullptr;
+    // The depth prepass and the color pass must run the same vertex shader, or EQUAL would miss.
+    deviceContext->VSSetShader(sceneInputs || water.depthOnly ? vertexShaderScene_.Get() : vertexShader_.Get(), nullptr, 0);
+    deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
+    if (water.depthOnly)
+    {
+        // Water depth prepass (wave-occlusion): no pixel shader, the rasterizer writes the depth alone.
+        deviceContext->PSSetShader(nullptr, nullptr, 0);
+        deviceContext->DrawIndexed(indexCount, 0, 0);
+        return;
+    }
     const bool oceanDetail = water.rippleRoughness > 0.0f || water.gustStrength > 0.0f ||
         water.hazeStrength > 0.0f || water.farWaveCrests < 1.0f || water.lodScale != 1.0f || water.debugMode == 7;
-    const bool sceneInputs = sceneColorSRV != nullptr && sceneDepthSRV != nullptr;
     deviceContext->PSSetShader(sceneInputs ? pixelShaderScene_.Get()
                              : oceanDetail ? pixelShaderDetail_.Get() : pixelShader_.Get(), nullptr, 0);
-    deviceContext->VSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->PSSetConstantBuffers(0, 1, perFrameCB_.GetAddressOf());
     deviceContext->PSSetShaderResources(0, 3, srvs);
     if (sceneInputs)

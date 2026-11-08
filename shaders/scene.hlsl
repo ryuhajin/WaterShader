@@ -1,5 +1,6 @@
 #include "Color.hlsli"
 #include "DepthBands.hlsli"
+#include "Waves.hlsli"
 
 // Opaque objects of the test scenes (water-lab). Patterns follow world position (1 unit = 1 m), so a
 // scaled box keeps 1 m checker cells and the ruler bands read as heights.
@@ -15,7 +16,19 @@ cbuffer SceneCB : register(b0)
     float4 g_AmbientColor;   // linear rgb, a = intensity
     float4 g_BaseColor;      // linear albedo
     float4 g_MaterialParams; // x = pattern (0 solid, 1 checker, 2 ruler, 3 pebbles), y = debug mode (0 render, 1 water depth bands, 2 water depth numeric, 3 "not measured" under the water numeric views)
+    WaveParams g_WaterWaves[WAVE_COUNT]; // the water surface (wave-occlusion), for the answer key
+    float4 g_WaterCamera;    // xyz = camera position (the waves fade with distance)
+    float4 g_WaterTimeArea;  // x = time, y = water patch half size, z = wave edge fade width
 };
+
+// Water depth of a surface point: the wave surface right above it minus its height (y = 0 when the waves are off).
+float WaterDepthBelowSurface(float3 p)
+{
+    float sideError;
+    float surfaceY = WaterSurfaceHeightAt(g_WaterWaves, p.xz, g_WaterCamera.xyz, g_WaterTimeArea.x,
+                                          float4(g_WaterTimeArea.yz, 0.0, 0.0), sideError);
+    return surfaceY - p.y;
+}
 
 struct VSInput
 {
@@ -158,7 +171,7 @@ float4 PSMain(PSInput input) : SV_TARGET
     // 2 = water depth as numbers (EncodeMeters): the answer key the depth-buffer reconstruction is compared to.
     if (debugMode == 2)
     {
-        float depth = -p.y;
+        float depth = WaterDepthBelowSurface(p);
         float3 encoded = depth > 0.0 ? EncodeMeters(depth, kMarkerMeasured) : float3(0.0, 0.0, kMarkerAboveWater);
         return float4(SrgbToLinear(encoded), 1.0);
     }
@@ -167,7 +180,7 @@ float4 PSMain(PSInput input) : SV_TARGET
     {
         // Depth below the water surface (y = 0). Values are display colors (the tonemap pass is skipped
         // for debug views), so they go out through SrgbToLinear like the water debug views.
-        float depth = -p.y;
+        float depth = WaterDepthBelowSurface(p);
         float shade = 0.55 + 0.45 * diffuse; // keep the shapes readable
         float luminance = dot(albedo, float3(0.2126, 0.7152, 0.0722));
         float3 color = depth > 0.0
@@ -181,8 +194,8 @@ float4 PSMain(PSInput input) : SV_TARGET
             float contour = 1.0 - saturate(abs(frac(depth + 0.5) - 0.5) / depthWidth);
             color = lerp(color, float3(0.05, 0.05, 0.05), contour * 0.8);
         }
-        // Water line at y = 0, ~2 px wide.
-        float waterLine = 1.0 - saturate(abs(p.y) / max(depthWidth * 1.5, 1e-5));
+        // Water line (the wave surface; y = 0 without waves), ~2 px wide.
+        float waterLine = 1.0 - saturate(abs(depth) / max(depthWidth * 1.5, 1e-5));
         color = lerp(color, float3(1.0, 0.1, 0.1), waterLine);
         return float4(SrgbToLinear(saturate(color)), 1.0);
     }

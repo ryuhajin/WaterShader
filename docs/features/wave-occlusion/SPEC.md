@@ -1,6 +1,6 @@
 # Wave Occlusion — 7단계 파도와 수면 가림
 
-> Branch: `feature/wave-occlusion` · Status: draft · Updated: 2026-11-07
+> Branch: `feature/wave-occlusion` · Status: done · Updated: 2026-11-09
 > waterfront 업그레이드 7단계. 앞 단계: [../normal-gbuffer/NOTES.md](../normal-gbuffer/NOTES.md)
 
 ## 1. Goal / Visual Target
@@ -45,7 +45,7 @@
 ```
 
 - 거품 띠가 기둥에 붙은 채로 파도를 따라 오르내리고, 램프 수심 기준도 실제 수면을 따른다.
-- Gerstner는 수면을 옆으로도 민다 (`x = x₀ + 옆 이동(x₀)`). "이 XZ 위의 수면 높이"를 구하려면 거꾸로 x₀을 찾아야 해서, `x₀ ← x − 옆 이동(x₀)`를 3번 되풀이한다 (고정점 반복). 정점 셰이더와 같은 파도 함수를 `Waves.hlsli`로 옮겨 함께 쓴다 (PLAN "공유된 변위 계산").
+- Gerstner는 수면을 옆으로도 민다 (`x = x₀ + 옆 이동(x₀)`). "이 XZ 위의 수면 높이"를 구하려면 거꾸로 x₀을 찾아야 해서, `x₀ ← x − 옆 이동(x₀)`를 되풀이한다 (고정점 반복, 구현에서 3번 → 5번: NOTES). 정점 셰이더와 같은 파도 함수를 `Waves.hlsli`로 옮겨 함께 쓴다 (PLAN "공유된 변위 계산").
 - 물 너머 표면이 그 자리 수면보다 위에 있으면(파도 골 위로 드러난 계단) 물 밖으로 본다.
 
 **③ 정답지도 파도를 따른다**
@@ -62,7 +62,7 @@
 |---|---|
 | View 창 Lab Waves | 기본 켬으로 바꿈 (끄면 6C 화면) |
 | Water occlusion | None / Single pass / Prepass |
-| Debug Mode 25 | Water surface height above the receiver (m) — ②의 값 |
+| Debug Mode 25 | Wave height lookup error — ②의 높이 역산 옆 오차 (흰색 = 1mm) |
 | CLI | `--lab-waves on\|off`, `--water-occlusion none\|single\|prepass` |
 | 파도 값 | Surface 창(4) Waves의 크기·높이·방향을 그대로 쓴다 (바다 프리셋과 공유). 자동 캡처는 UI를 못 만지므로, 파도를 키운 검증 캡처는 높이만 바꾼 프리셋 파일을 `--preset-file`로 넘긴다 (6단계 칠한 물색 검사와 같은 방식) |
 
@@ -70,19 +70,19 @@
 
 **에이전트 검증**
 
-- [ ] 빌드 경고 0, 디버그 레이어 경고 0, 기존 샷 21장 바이트 동일
-- [ ] Lab Waves 끔 → 6C 화면과 바이트 동일
-- [ ] 가림: Prepass 화면 = Single pass 화면 (바이트 또는 1레벨 이내), None과는 겹친 곳에서 다름. 낮은 시점 전후 캡처
-- [ ] 높이 역산: 3번 반복 후 남는 옆 오차가 1mm 이하 (디버그로 측정)
-- [ ] 파도가 있을 때 복원 수심(12) vs 정답지(Scene Debug 2): 3단계와 같은 허용치 안
-- [ ] 거품: 거품 픽셀의 정답지 수심(파도 기준) ≤ 폭
-- [ ] 가장자리 틈 없음 (물 영역 경계 캡처)
+- [x] 빌드 경고 0, 디버그 레이어 경고 0, 기존 샷 21장 바이트 동일
+- [ ] Lab Waves 끔 → 6C 화면과 바이트 동일 — 11장 동일, 7장 1~4픽셀 (수면선 픽셀의 새 판정). NOTES 3절
+- [x] 가림: Prepass 화면 = Single pass 화면 (바이트 또는 1레벨 이내), None과는 겹친 곳에서 다름. 낮은 시점 전후 캡처
+- [x] 높이 역산: 반복 후 남는 옆 오차가 1mm 이하 (디버그로 측정) — 5번 반복, 최대 0.20mm
+- [x] 파도가 있을 때 복원 수심(12) vs 정답지(Scene Debug 2): 3단계와 같은 허용치 안
+- [x] 거품: 거품 픽셀의 정답지 수심(파도 기준) ≤ 폭
+- [x] 가장자리 틈 없음 (물 영역 경계 캡처)
 
 **사용자 검증**
 
-- [ ] 낮은 시점에서 먼 파도가 가까운 파도를 덮지 않는다 (None ↔ Prepass 비교)
-- [ ] 기둥의 거품 띠가 파도를 따라 오르내린다
-- [ ] 물 깊이 프리패스가 왜 필요한지(같은 깊이를 읽고 쓰지 못함, 셰이딩 한 번) 설명할 수 있다
+- [x] 낮은 시점에서 먼 파도가 가까운 파도를 덮지 않는다 (None ↔ Prepass 비교)
+- [x] 기둥의 거품 띠가 파도를 따라 오르내린다
+- [x] 물 깊이 프리패스가 왜 필요한지(같은 깊이를 읽고 쓰지 못함, 셰이딩 한 번) 설명할 수 있다
 
 ## 4. Notes
 

@@ -252,10 +252,19 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float3 receiverWS = receiverH.xyz / receiverH.w;
     bool hasReceiver = sceneDepth < 0.99999;
     float maxOpticalDistance = g_SceneParams.y;
-    // Water depth: how far the surface lies below the water (the answer key measures the same thing).
-    // View path: how much water the line of sight crosses, water surface -> surface (no air part).
-    float waterDepth = hasReceiver ? input.worldPos.y - receiverWS.y : maxOpticalDistance;
-    float viewPath = hasReceiver ? length(receiverWS - input.worldPos) : maxOpticalDistance;
+    // Water depth: how far the surface lies below the water right above it (the answer key measures the same thing).
+    // With waves (wave-occlusion) that water height is not this pixel's: it is looked up above the surface, through
+    // the same wave function as the vertex shader. Without waves it is 0, the old flat water.
+    // View path: how much water the line of sight crosses, water surface -> surface (no air part). A surface above
+    // the water right over it (a step a trough has bared) is seen through air: no path.
+    float receiverSideError = 0.0;
+    float receiverWaterY = hasReceiver
+        ? WaterSurfaceHeightAt(g_Waves, receiverWS.xz, g_CameraPositionWS.xyz, g_WaterParams.x, g_WaterArea, receiverSideError)
+        : 0.0;
+    float waterDepth = hasReceiver ? receiverWaterY - receiverWS.y : maxOpticalDistance;
+    float viewPath = hasReceiver ? (waterDepth > 0.0 ? length(receiverWS - input.worldPos) : 0.0) : maxOpticalDistance;
+    // 25 = how far the height lookup's rest point still lands from the surface point (white = 1 mm).
+    if (sceneDebugMode == 25) { return DebugOut((receiverSideError / 0.001).xxx); }
     // 10 / 11 = water depth / view path in the answer key's bands, 1 m contours, magenta = no surface.
     if (sceneDebugMode == 10 || sceneDebugMode == 11)
     {
@@ -268,7 +277,10 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     if (sceneDebugMode == 12 || sceneDebugMode == 13)
     {
         float meters = sceneDebugMode == 12 ? waterDepth : viewPath;
-        return DebugOut(hasReceiver ? EncodeMeters(meters, kMarkerMeasured) : float3(0.0, 0.0, kMarkerNoSurface));
+        // A surface above the water right over it gets the answer key's "above water" marker.
+        return DebugOut(!hasReceiver ? float3(0.0, 0.0, kMarkerNoSurface)
+                        : sceneDebugMode == 12 && waterDepth <= 0.0 ? float3(0.0, 0.0, kMarkerAboveWater)
+                        : EncodeMeters(meters, kMarkerMeasured));
     }
     // Transmittance: the share of the light left after the view path through the water, per channel
     // (rgb-attenuation). Each meter keeps the same fraction, so 2 m keeps the square of what 1 m keeps:
@@ -311,9 +323,10 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // water depth of the surface behind the pixel (1 right under the water, 0 at the band width, in meters, so
     // the width does not change with the camera). Water depth alone also catches flat shallows (rail heads,
     // a 0.2 m pad), so the slope filter keeps the band on steep surfaces, with the normal estimated from the
-    // depth buffer. Not in pass-through, which has to stay the frame without the water.
+    // depth buffer. Not in pass-through, which has to stay the frame without the water. Surfaces more than 1 cm above
+    // the water right over them (bared by a trough) get none; the waterline itself (depth ~0, either sign) keeps it.
     float foamWidth = max(g_FoamParams.x, 1e-3);
-    bool foamCandidate = transmissionMode >= 2 && g_FoamParams.w > 0.0 && hasReceiver && waterDepth < foamWidth;
+    bool foamCandidate = transmissionMode >= 2 && g_FoamParams.w > 0.0 && hasReceiver && waterDepth > -0.01 && waterDepth < foamWidth;
     // Normal source (normal-gbuffer): estimated from the depth buffer, or the one the opaque pass stored next to the
     // color (one read instead of four depth reads, four reconstructions and a cross product).
     bool storedNormal = g_SceneParams.w > 0.5;
