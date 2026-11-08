@@ -1,6 +1,6 @@
 # Refraction — 8단계 굴절과 경계
 
-> Branch: `feature/refraction` · Status: in-progress · Updated: 2026-11-09
+> Branch: `feature/refraction` · Status: done · Updated: 2026-11-09
 > waterfront 업그레이드 8단계. 앞 단계: [../wave-occlusion/NOTES.md](../wave-occlusion/NOTES.md)
 
 ## 1. Goal / Visual Target
@@ -75,9 +75,9 @@
 
 **사용자 검증**
 
-- [ ] 잔물결·파도에 따라 물속 체크무늬가 일렁인다
-- [ ] 수면 위 계단·기둥이 물속으로 끌려 들어가 비치지 않는다
-- [ ] 화면 공간 굴절의 한계(화면 밖, 다른 물체 뒤의 정보는 없음)와, 물리 굴절 대신 노멀 차이 방식을 기본으로 고른 이유를 설명할 수 있다
+- [x] 잔물결·파도에 따라 물속 체크무늬가 일렁인다
+- [x] 수면 위 계단·기둥이 물속으로 끌려 들어가 비치지 않는다
+- [x] 화면 공간 굴절의 한계(화면 밖, 다른 물체 뒤의 정보는 없음)와, 물리 굴절 대신 노멀 차이 방식을 기본으로 고른 이유를 설명할 수 있다
 
 ## 5. Notes
 
