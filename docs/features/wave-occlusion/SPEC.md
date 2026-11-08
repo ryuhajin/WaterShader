@@ -1,6 +1,6 @@
 # Wave Occlusion — 7단계 파도와 수면 가림
 
-> Branch: `feature/wave-occlusion` · Status: in-progress · Updated: 2026-11-07
+> Branch: `feature/wave-occlusion` · Status: done · Updated: 2026-11-09
 > waterfront 업그레이드 7단계. 앞 단계: [../normal-gbuffer/NOTES.md](../normal-gbuffer/NOTES.md)
 
 ## 1. Goal / Visual Target
@@ -80,9 +80,9 @@
 
 **사용자 검증**
 
-- [ ] 낮은 시점에서 먼 파도가 가까운 파도를 덮지 않는다 (None ↔ Prepass 비교)
-- [ ] 기둥의 거품 띠가 파도를 따라 오르내린다
-- [ ] 물 깊이 프리패스가 왜 필요한지(같은 깊이를 읽고 쓰지 못함, 셰이딩 한 번) 설명할 수 있다
+- [x] 낮은 시점에서 먼 파도가 가까운 파도를 덮지 않는다 (None ↔ Prepass 비교)
+- [x] 기둥의 거품 띠가 파도를 따라 오르내린다
+- [x] 물 깊이 프리패스가 왜 필요한지(같은 깊이를 읽고 쓰지 못함, 셰이딩 한 번) 설명할 수 있다
 
 ## 4. Notes
 
