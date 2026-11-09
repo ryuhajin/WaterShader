@@ -1,6 +1,6 @@
 # Sun Shadow — 9단계 수신 물체의 그림자
 
-> Branch: `feature/sun-shadow` · Status: 구현 완료, 사용자 검증 대기 · Updated: 2026-11-09 · 기록: [NOTES.md](NOTES.md)
+> Branch: `feature/sun-shadow` · Status: 완료 (사용자 승인 2026-11-09) · Updated: 2026-11-09 · 기록: [NOTES.md](NOTES.md)
 > waterfront 업그레이드 9단계. 앞 단계: [../refraction/NOTES.md](../refraction/NOTES.md)
 
 ## 1. Goal / Visual Target
