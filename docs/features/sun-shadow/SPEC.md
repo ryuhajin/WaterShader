@@ -16,7 +16,7 @@
 
 ```text
 태양 방향으로 놓은 직교 카메라 (물 영역 + 물체 높이를 감싸는 고정 상자)
-→ 테스트 장면 물체를 깊이만 그림 → 그림자 맵 (D32, **1024 × 1024** 기본, 512와 비교 가능. 사용자 결정 2026-11-09)
+→ 테스트 장면 물체를 깊이만 그림 → 그림자 맵 (D32, **1024 × 1024 고정**. 사용자 결정 2026-11-09)
 ```
 
 - 패스 순서: **그림자 패스 → 불투명 장면 → (물 깊이 프리패스) → 물**. 앞 패스(그림자 맵)를 뒤의 두 패스가 읽는다.
@@ -48,7 +48,7 @@
 |---|---|
 | Scene Debug 5 | 그림자 비율 (흰색 = 햇빛, 검정 = 그림자), 불투명 물체 |
 | Debug Mode 29 | 수면의 그림자 비율 |
-| Light 창 **Shadows** 대분류 | 켬/끔, **Map size** 목록 (512 / 1024, 기본 1024), **Filtering** 목록 (Hard / PCF 3×3 / PCSS) + PCSS 태양 크기, **Bias** 목록 (None / Constant / Slope-scaled / Normal offset / All, 기본 All) + 고른 바이어스의 세기 슬라이더, 그림자 맵 미리보기 |
+| Light 창 **Shadows** 대분류 | 켬/끔, **Filtering** 목록 (Hard / PCF 3×3 / PCSS) + PCSS 태양 크기, **Bias** 목록 (None / Constant / Slope-scaled / Normal offset / All, 기본 All) + 고른 바이어스의 세기 슬라이더, 그림자 맵 미리보기 |
 | 움직이는 시험 상자 | View 창 체크박스: Water Lab에 천천히 움직이는 상자 (그림자가 따라가는지) |
 | CLI | `--shadows on\|off`, `--shadow-filter hard\|pcf\|pcss`, `--shadow-bias none\|constant\|slope\|normal\|all` |
 
