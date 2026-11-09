@@ -42,6 +42,9 @@ public:
         DirectX::XMFLOAT4 waves[8];  // per wave: (direction.x, direction.y, amplitude, wavelength), (speed, steepness, 0, 0)
         DirectX::XMFLOAT4 camera;    // xyz = camera position (the waves fade with distance)
         DirectX::XMFLOAT4 timeArea;  // x = time, y = water patch half size, z = wave edge fade width
+        // Downwelling: light reaching points under the water loses exp(-extinction x path) on the way down.
+        // xyz = extinction (1/m), w = cos of the sun's angle under the water from vertical (0 = off).
+        DirectX::XMFLOAT4 underwaterLight = {0.0f, 0.0f, 0.0f, 0.0f};
     };
     void SetWaterSurface(const WaterSurface& surface) { waterSurface_ = surface; }
     // sun-shadow: the shadow map the objects receive (t0, comparison sampler s0). Bound by Begin; params.x = 0 = off.

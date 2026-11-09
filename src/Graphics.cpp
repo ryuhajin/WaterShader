@@ -17,6 +17,7 @@
 #include <cfloat>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -519,6 +520,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 }
                 else if (arg == L"--shadow-sun-size" && hasValue) { shadowSunSizeDeg_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--shadow-test-box" && hasValue) { shadowTestBox_ = std::wstring(argv[++i]) != L"off"; }
+                else if (arg == L"--downwelling" && hasValue) { downwelling_ = std::wstring(argv[++i]) != L"off"; }
+                else if (arg == L"--f0-from-ior" && hasValue) { fresnelF0FromIor_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--capture-time" && hasValue) { captureTime_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--transmission" && hasValue) { transmissionMode_ = _wtoi(argv[++i]); }
                 else if (arg == L"--reflection" && hasValue) { surfaceReflection_ = std::wstring(argv[++i]) != L"off"; }
@@ -1817,6 +1820,16 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
     surface.camera = DirectX::XMFLOAT4(cameraPosition_.x, cameraPosition_.y, cameraPosition_.z, 0.0f);
     const DirectX::XMFLOAT4 area = SceneWaterArea();
     surface.timeArea = DirectX::XMFLOAT4(elapsedTime_, area.x, area.y, 0.0f);
+    // Downwelling: only where the water is drawn and dims light (attenuation / scattering), so pass-through and the
+    // water-off frame stay the scene as in air. The sun's ray bends toward vertical at the flat surface (Snell):
+    // sin(under) = sin(above) / n, and its path down to depth d is d / cos(under).
+    if (downwelling_ && showWater_ && transmissionMode_ >= 2)
+    {
+        const float sinElevation = std::clamp(-lightDir.y, 0.0f, 1.0f);
+        const float sinUnder = std::sqrt(1.0f - sinElevation * sinElevation) / (std::max)(water_.refractionIndex, 1.0f);
+        const float cosUnder = std::sqrt((std::max)(1.0f - sinUnder * sinUnder, 1e-4f));
+        surface.underwaterLight = DirectX::XMFLOAT4(water_.extinction.x, water_.extinction.y, water_.extinction.z, cosUnder);
+    }
     sceneShader_->SetWaterSurface(surface);
     sceneShader_->SetShadow(shadowFrame_, d3d_->GetShadowSRV(), d3d_->GetShadowSampler());
     sceneShader_->Begin(context, view, projection, lightDir, lightColor, ambientColor, sceneDebugMode, writeNormal);
@@ -2089,6 +2102,12 @@ bool Graphics::Render(float deltaTime)
                          : oceanMode_ ? oceanGrid_.get() : model_.get();
         // Test scenes: the Surface window waves, or flat at y = 0 (known depths) with Lab Waves off. Not saved in presets.
         ColorShader::WaterParams waterDraw = water_;
+        if (fresnelF0FromIor_)
+        {
+            // Reflectance looking straight down, from the same IOR the refraction uses (1.33 -> 0.020).
+            const float n = (std::max)(water_.refractionIndex, 1.0f);
+            waterDraw.fresnelF0 = ((n - 1.0f) / (n + 1.0f)) * ((n - 1.0f) / (n + 1.0f));
+        }
         if (scene_ != NoScene && !labWaves_)
         {
             for (auto& wave : waterDraw.waves)
@@ -2966,7 +2985,14 @@ void Graphics::DrawWaterWindow()
         ImGui::TextDisabled(newWater ? "New: final = water below x (1 - R) + sky x R"
                                      : "Old: final = painted color blended to the sky by R");
         LabeledSlider("Reflection strength", &water_.reflectionStrength, 0.0f, 1.0f, "%.2f");
+        ImGui::BeginDisabled(fresnelF0FromIor_);
         LabeledSlider("Reflectivity head-on (F0, real water = 0.02)", &water_.fresnelF0, 0.0f, 0.6f, "%.3f");
+        ImGui::EndDisabled();
+        // F0 from the index of refraction (Fresnel at normal incidence): ((n - 1) / (n + 1))^2, 1.33 -> 0.020.
+        const float iorF0 = std::pow((water_.refractionIndex - 1.0f) / (water_.refractionIndex + 1.0f), 2.0f);
+        char iorLabel[64];
+        std::snprintf(iorLabel, sizeof(iorLabel), "F0 from IOR (%.2f -> %.3f)", water_.refractionIndex, iorF0);
+        ImGui::Checkbox(iorLabel, &fresnelF0FromIor_);
         LabeledSlider("Fresnel curve (5 = physical; higher = mirror only at low angles)", &water_.fresnelPower, 1.0f, 8.0f, "%.1f");
     }
 
@@ -3130,6 +3156,10 @@ void Graphics::DrawUnderwaterLightSettings()
     {
         water_.extinction = {0.35f, 0.06f, 0.01f};
     }
+    // Downwelling (rendering review): the same loss also on the way down, sun -> surface -> floor.
+    ImGui::Checkbox("Sunlight fades on the way down", &downwelling_);
+    ImGui::TextDisabled(downwelling_ ? "On: sun -> floor and floor -> eye both lose light\n(sun path = depth / cos of its angle under water)"
+                                     : "Off: only the way up (floor -> eye) loses light;\nthe floor is lit as if in air");
 
     // water-scatter: what the light loss took is filled with the water's own color (Transmission = Scattering).
     ImGui::SeparatorText("Water color");

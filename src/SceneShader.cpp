@@ -29,6 +29,7 @@ struct SceneCB
     DirectX::XMFLOAT4 waves[8];       // the water surface (wave-occlusion): same layout as the HLSL WaveParams x 4
     DirectX::XMFLOAT4 waterCamera;    // xyz = camera position
     DirectX::XMFLOAT4 waterTimeArea;  // x = time, y = water patch half size, z = wave edge fade width
+    DirectX::XMFLOAT4 underwaterLight; // downwelling: xyz = extinction (1/m), w = cos of the sun's angle under water (0 = off)
     ShadowFrame shadow;               // sun-shadow
 };
 static_assert(sizeof(SceneCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
@@ -169,6 +170,7 @@ void SceneShader::Render(ID3D11DeviceContext* deviceContext, int indexCount, con
         }
         data->waterCamera = waterSurface_.camera;
         data->waterTimeArea = waterSurface_.timeArea;
+        data->underwaterLight = waterSurface_.underwaterLight;
         data->shadow = shadow_;
         deviceContext->Unmap(perObjectCB_.Get(), 0);
     }
