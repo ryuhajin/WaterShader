@@ -1,6 +1,6 @@
 # Foam Masks — 6B+ 접촉 거품 마스크 업그레이드
 
-> Branch: `feature/foam-masks` · Status: in-progress · Updated: 2026-11-09
+> Branch: `feature/foam-masks` · Status: done · Updated: 2026-11-09
 > 6B(접촉 거품) 보강. 앞 단계: [../refraction/NOTES.md](../refraction/NOTES.md), 거품 원래 설계: [../contact-foam/SPEC.md](../contact-foam/SPEC.md)
 
 ## 1. Goal
@@ -71,6 +71,6 @@ foam_bake.hlsl (cs_5_0, 8 × 8 스레드) → RWTexture2D (UAV) → PNG 저장 �
 
 **사용자 검증**
 
-- [ ] 기본 마스크(Cells + bubbles + breakup)가 Clouds보다 자연스럽고 청량하게 보인다
-- [ ] Water 창에서 마스크를 바꿔 가며 고를 수 있다
-- [ ] 2 × 2 확인 그림에서 이음매가 안 보인다
+- [x] 기본 마스크(Cells + bubbles + breakup)가 Clouds보다 자연스럽고 청량하게 보인다
+- [x] Water 창에서 마스크를 바꿔 가며 고를 수 있다
+- [x] 2 × 2 확인 그림에서 이음매가 안 보인다
