@@ -1,6 +1,7 @@
 #include "Color.hlsli"
 #include "DepthBands.hlsli"
 #include "Waves.hlsli"
+#include "Shadow.hlsli"
 
 // Opaque objects of the test scenes (water-lab). Patterns follow world position (1 unit = 1 m), so a
 // scaled box keeps 1 m checker cells and the ruler bands read as heights.
@@ -19,7 +20,11 @@ cbuffer SceneCB : register(b0)
     WaveParams g_WaterWaves[WAVE_COUNT]; // the water surface (wave-occlusion), for the answer key
     float4 g_WaterCamera;    // xyz = camera position (the waves fade with distance)
     float4 g_WaterTimeArea;  // x = time, y = water patch half size, z = wave edge fade width
+    ShadowInputs g_Shadow;   // sun-shadow: the sun shadow map
 };
+
+Texture2D<float> g_ShadowMap : register(t0);               // sun-shadow: the sun's depth (orthographic)
+SamplerComparisonState g_ShadowSampler : register(s0);     // LESS_EQUAL, outside the map = lit
 
 // Water depth of a surface point: the wave surface right above it minus its height (y = 0 when the waves are off).
 float WaterDepthBelowSurface(float3 p)
@@ -153,7 +158,16 @@ float4 PSMain(PSInput input) : SV_TARGET
 
     float3 lightDirWS = normalize(-g_LightDirection.xyz);
     float diffuse = saturate(dot(n, lightDirWS));
-    float3 lighting = g_AmbientColor.rgb * g_AmbientColor.a + g_LightColor.rgb * g_LightColor.a * diffuse;
+    // sun-shadow: the sun term alone is shadowed; the sky light (ambient) still reaches the shadow.
+    float shadow = SunShadow(g_ShadowMap, g_ShadowSampler, g_Shadow, p, n, lightDirWS);
+    float3 lighting = g_AmbientColor.rgb * g_AmbientColor.a + g_LightColor.rgb * g_LightColor.a * (diffuse * shadow);
+
+    // 5 = sun share (white = sun reaches the point, black = shadow). Faces turned away from the sun get no sun anyway
+    // and are drawn mid gray, so only the shadow map's answer shows.
+    if (debugMode == 5)
+    {
+        return float4(SrgbToLinear(dot(n, lightDirWS) > 0.0 ? shadow.xxx : float3(0.5, 0.5, 0.5)), 1.0);
+    }
 
     // 3 = behind the water's numeric views: nothing measured here (only the water writes values).
     if (debugMode == 3)

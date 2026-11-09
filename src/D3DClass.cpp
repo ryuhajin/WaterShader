@@ -46,7 +46,12 @@ bool D3DClass::Initialize(int screenWidth, int screenHeight, bool vsync, HWND hw
             return false;
         }
 
-        return CreateSampler();
+        if (!CreateSampler())
+        {
+            return false;
+        }
+
+        return CreateShadowMap();
     }
     catch (const std::exception& error)
     {
@@ -503,6 +508,71 @@ void D3DClass::SetWaterPrepassDepth()
 void D3DClass::ClearWaterStencil()
 {
     deviceContext_->ClearDepthStencilView(waterDepthDSV_.Get(), D3D11_CLEAR_STENCIL, 1.0f, 0);
+}
+
+// sun-shadow: one depth texture the sun "camera" draws into, read back by the scene and the water.
+// R32_TYPELESS so it can be a depth target (D32_FLOAT) and a shader input (R32_FLOAT) like the scene depth.
+bool D3DClass::CreateShadowMap()
+{
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = kShadowMapSize;
+    desc.Height = kShadowMapSize;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R32_TYPELESS;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
+    ThrowIfFailed(device_->CreateTexture2D(&desc, nullptr, &shadowTexture_), "CreateTexture2D (shadow map) failed.");
+
+    D3D11_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+    dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+    dsvDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+    ThrowIfFailed(device_->CreateDepthStencilView(shadowTexture_.Get(), &dsvDesc, &shadowDSV_), "CreateDepthStencilView (shadow map) failed.");
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+    ThrowIfFailed(device_->CreateShaderResourceView(shadowTexture_.Get(), &srvDesc, &shadowSRV_), "CreateShaderResourceView (shadow map) failed.");
+
+    // Comparison sampler: the hardware compares the receiver depth with the 4 nearest texels and blends the four
+    // answers (PCF / PCSS taps). Outside the map = border depth 1 = nothing in the way = lit.
+    D3D11_SAMPLER_DESC cmpDesc = {};
+    cmpDesc.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+    cmpDesc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+    cmpDesc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+    cmpDesc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+    cmpDesc.BorderColor[0] = cmpDesc.BorderColor[1] = cmpDesc.BorderColor[2] = cmpDesc.BorderColor[3] = 1.0f;
+    cmpDesc.ComparisonFunc = D3D11_COMPARISON_LESS_EQUAL;
+    cmpDesc.MaxAnisotropy = 1;
+    cmpDesc.MaxLOD = D3D11_FLOAT32_MAX;
+    ThrowIfFailed(device_->CreateSamplerState(&cmpDesc, &shadowSampler_), "CreateSamplerState (shadow) failed.");
+    return true;
+}
+
+void D3DClass::BeginShadowPass()
+{
+    // The shadow map is still bound as a shader input from the last frame (scene t0, water t7): unbind it before it
+    // becomes the depth target, or the runtime unbinds it and the debug layer warns.
+    ID3D11ShaderResourceView* nullSrv = nullptr;
+    deviceContext_->PSSetShaderResources(0, 1, &nullSrv);
+    deviceContext_->PSSetShaderResources(7, 1, &nullSrv);
+    UINT viewportCount = 1;
+    deviceContext_->RSGetViewports(&viewportCount, &savedViewport_);
+    deviceContext_->OMSetRenderTargets(0, nullptr, shadowDSV_.Get());
+    deviceContext_->ClearDepthStencilView(shadowDSV_.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
+    D3D11_VIEWPORT viewport = {};
+    viewport.Width = static_cast<float>(kShadowMapSize);
+    viewport.Height = static_cast<float>(kShadowMapSize);
+    viewport.MaxDepth = 1.0f;
+    deviceContext_->RSSetViewports(1, &viewport);
+}
+
+void D3DClass::EndShadowPass()
+{
+    deviceContext_->RSSetViewports(1, &savedViewport_);
+    deviceContext_->OMSetRenderTargets(1, hdrRTV_.GetAddressOf(), depthStencilView_.Get());
 }
 
 void D3DClass::ReleaseRenderTarget()

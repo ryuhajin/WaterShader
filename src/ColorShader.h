@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ShadowFrame.h"
+
 #include <DirectXMath.h>
 #include <d3d11.h>
 #include <wrl/client.h>
@@ -122,6 +124,11 @@ public:
         DirectX::XMFLOAT4X4 invViewProjection = {}; // inverse of view x projection: depth buffer -> world position
         // Normal map rotation on the water (world XZ), as cos/sin: xy = layer A, zw = layer B. (1, 0) = as authored.
         DirectX::XMFLOAT4 normalRotation = {1.0f, 0.0f, 1.0f, 0.0f};
+        // sun-shadow (test scenes, set every frame, not saved): the sun shadow map (t7) and its comparison sampler (s2).
+        // shadow.params.x = 0 = off: the surface is lit everywhere as before.
+        ShadowFrame shadow{};
+        ID3D11ShaderResourceView* shadowSRV = nullptr;
+        ID3D11SamplerState* shadowSampler = nullptr;
     };
 
     bool Initialize(ID3D11Device* device);

@@ -45,6 +45,7 @@ add_executable(WaterShader WIN32
     src/Timer.cpp
     src/Timer.h
     src/WaveMacro.h
+    src/ShadowFrame.h
 )
 
 # Console check for the Simple wave generator (header-only, no D3D device needed).
@@ -117,6 +118,9 @@ add_custom_command(TARGET WaterShader POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${SHADER_SOURCE_DIR}/DepthBands.hlsli"
         "${SHADER_OUTPUT_DIR}/DepthBands.hlsli"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_SOURCE_DIR}/Shadow.hlsli"
+        "${SHADER_OUTPUT_DIR}/Shadow.hlsli"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${SHADER_SOURCE_DIR}/foam_bake.hlsl"
         "${SHADER_OUTPUT_DIR}/foam_bake.hlsl"

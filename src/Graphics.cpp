@@ -143,6 +143,11 @@ constexpr int kFirstLabShotIndex = 7; // UI: the lab shots start a new button ro
 constexpr float kLabWaterHalfSize = 12.0f;
 constexpr float kFrontWaterHalfSize = 40.0f;
 constexpr float kWaveEdgeFade = 1.0f;
+// sun-shadow: the Water Lab test box circles above the open water (center, radius, height, one turn per period).
+constexpr float kTestBoxSize = 1.0f;
+constexpr float kTestBoxCircleRadius = 3.0f;
+constexpr float kTestBoxBottomY = 0.5f;
+constexpr float kTestBoxPeriod = 20.0f; // s
 
 // Index of the fixed shot with this name (0 if there is none).
 int FindCaptureShot(const char* name)
@@ -495,6 +500,26 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                     waterOcclusion_ = mode == L"none" ? 0 : mode == L"single" ? 1 : 2;
                 }
                 else if (arg == L"--scene-debug" && hasValue) { sceneDebug_ = _wtoi(argv[++i]); }
+                else if (arg == L"--shadows" && hasValue)    { shadowsEnabled_ = std::wstring(argv[++i]) != L"off"; }
+                else if (arg == L"--shadow-filter" && hasValue)
+                {
+                    const std::wstring value = argv[++i];
+                    shadowFilter_ = value == L"hard" ? 0 : value == L"pcss" ? 2 : 1;
+                }
+                else if (arg == L"--shadow-bias" && hasValue)
+                {
+                    const std::wstring value = argv[++i];
+                    shadowBiasMode_ = value == L"none" ? 0 : value == L"constant" ? 1 : value == L"slope" ? 2
+                                    : value == L"normal" ? 3 : 4;
+                }
+                else if (arg == L"--shadow-bias-values" && hasValue)
+                {
+                    // constant (m), slope (texels), normal offset (texels)
+                    swscanf_s(argv[++i], L"%f,%f,%f", &shadowConstantBias_, &shadowSlopeBias_, &shadowNormalOffset_);
+                }
+                else if (arg == L"--shadow-sun-size" && hasValue) { shadowSunSizeDeg_ = static_cast<float>(_wtof(argv[++i])); }
+                else if (arg == L"--shadow-test-box" && hasValue) { shadowTestBox_ = std::wstring(argv[++i]) != L"off"; }
+                else if (arg == L"--capture-time" && hasValue) { captureTime_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--transmission" && hasValue) { transmissionMode_ = _wtoi(argv[++i]); }
                 else if (arg == L"--reflection" && hasValue) { surfaceReflection_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--water-type" && hasValue)
@@ -941,7 +966,7 @@ bool Graphics::BeginCaptureFrame()
     // --bench: a job keeps its preset and shot for all its frames; only the clock is held.
     if (benchMode_ && benchJobActive_)
     {
-        elapsedTime_ = kCaptureTime;
+        elapsedTime_ = captureTime_;
         return true;
     }
     if (captureQueue_.empty())
@@ -970,7 +995,7 @@ bool Graphics::BeginCaptureFrame()
     presetOceanMesh_ = view.ocean;
 
     // Fixed time so before/after frames show the same wave phase.
-    elapsedTime_ = kCaptureTime;
+    elapsedTime_ = captureTime_;
 
     const std::string fileName = std::string(kPresetFileNames[job.preset]) + "_" + shotName + (capturePng_ ? ".png" : ".jpg");
     pendingCapturePath_ = captureDir_ / fileName;
@@ -1793,6 +1818,7 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
     const DirectX::XMFLOAT4 area = SceneWaterArea();
     surface.timeArea = DirectX::XMFLOAT4(elapsedTime_, area.x, area.y, 0.0f);
     sceneShader_->SetWaterSurface(surface);
+    sceneShader_->SetShadow(shadowFrame_, d3d_->GetShadowSRV(), d3d_->GetShadowSampler());
     sceneShader_->Begin(context, view, projection, lightDir, lightColor, ambientColor, sceneDebugMode, writeNormal);
     // normal-gbuffer: the objects also write their world normal to a second target (MRT), only when the water reads
     // it, so the depth-reconstructed source keeps the cost of 6B.
@@ -1801,7 +1827,7 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
         d3d_->ClearSceneNormal();
         d3d_->BindSceneTargetsWithNormal();
     }
-    const std::vector<SceneObject>& objects = scene_ == WaterLab ? labObjects_ : frontObjects_;
+    const std::vector<SceneObject> objects = CurrentSceneObjects();
     Model* boundMesh = nullptr;
     for (const SceneObject& object : objects)
     {
@@ -1820,6 +1846,112 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
         d3d_->BindHdrTarget();
     }
     d3d_->SetRasterizerDefault();
+}
+
+std::vector<Graphics::SceneObject> Graphics::CurrentSceneObjects() const
+{
+    std::vector<SceneObject> objects = scene_ == WaterLab ? labObjects_ : frontObjects_;
+    if (scene_ == WaterLab && shadowTestBox_)
+    {
+        // sun-shadow: a box circling above the open water, so a shadow that follows its caster can be checked.
+        const float angle = DirectX::XM_2PI * elapsedTime_ / kTestBoxPeriod;
+        SceneObject box;
+        box.center = {kTestBoxCircleRadius * std::cos(angle), kTestBoxBottomY + 0.5f * kTestBoxSize,
+                      kTestBoxCircleRadius * std::sin(angle)};
+        box.size = {kTestBoxSize, kTestBoxSize, kTestBoxSize};
+        box.material = {{0.80f, 0.36f, 0.25f}, SceneShader::Solid};
+        objects.push_back(box);
+    }
+    return objects;
+}
+
+void Graphics::RenderShadowPass(const DirectX::XMFLOAT4& lightDir)
+{
+    using namespace DirectX;
+    shadowFrame_ = ShadowFrame{};
+    shadowBoxWidth_ = 0.0f;
+    if (scene_ == NoScene)
+    {
+        return;
+    }
+    const std::vector<SceneObject> objects = CurrentSceneObjects();
+
+    // The sun's box: everything the scene holds, plus the test box's whole circle so the box (and every texel)
+    // stays put while the test box moves. Only the sun direction changes it.
+    XMFLOAT3 lo(FLT_MAX, FLT_MAX, FLT_MAX);
+    XMFLOAT3 hi(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+    const auto grow = [&](const XMFLOAT3& c, const XMFLOAT3& half)
+    {
+        lo = XMFLOAT3((std::min)(lo.x, c.x - half.x), (std::min)(lo.y, c.y - half.y), (std::min)(lo.z, c.z - half.z));
+        hi = XMFLOAT3((std::max)(hi.x, c.x + half.x), (std::max)(hi.y, c.y + half.y), (std::max)(hi.z, c.z + half.z));
+    };
+    for (const SceneObject& object : scene_ == WaterLab ? labObjects_ : frontObjects_)
+    {
+        grow(object.center, XMFLOAT3(0.5f * object.size.x, 0.5f * object.size.y, 0.5f * object.size.z));
+    }
+    if (scene_ == WaterLab)
+    {
+        const float reach = kTestBoxCircleRadius + kTestBoxSize; // past the corners of the box on its circle
+        grow(XMFLOAT3(0.0f, kTestBoxBottomY + 0.5f * kTestBoxSize, 0.0f), XMFLOAT3(reach, 0.5f * kTestBoxSize, reach));
+    }
+
+    // Light camera: looks along the sunlight from the middle of the box. Orthographic, because the sun is so far
+    // away that its rays are parallel. The box is fitted around the 8 corners as the sun sees them, and made square
+    // so one texel covers the same meters across and down.
+    const XMVECTOR dir = XMVector3Normalize(XMVectorSet(lightDir.x, lightDir.y, lightDir.z, 0.0f));
+    const XMVECTOR up = std::fabs(lightDir.y) > 0.99f ? XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f) : XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+    const XMVECTOR center = XMVectorSet(0.5f * (lo.x + hi.x), 0.5f * (lo.y + hi.y), 0.5f * (lo.z + hi.z), 1.0f);
+    const XMMATRIX lightView = XMMatrixLookToLH(center, dir, up);
+    XMFLOAT3 boxLo(FLT_MAX, FLT_MAX, FLT_MAX);
+    XMFLOAT3 boxHi(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+    for (int corner = 0; corner < 8; ++corner)
+    {
+        const XMVECTOR p = XMVectorSet((corner & 1) ? hi.x : lo.x, (corner & 2) ? hi.y : lo.y, (corner & 4) ? hi.z : lo.z, 1.0f);
+        XMFLOAT3 q;
+        XMStoreFloat3(&q, XMVector3TransformCoord(p, lightView));
+        boxLo = XMFLOAT3((std::min)(boxLo.x, q.x), (std::min)(boxLo.y, q.y), (std::min)(boxLo.z, q.z));
+        boxHi = XMFLOAT3((std::max)(boxHi.x, q.x), (std::max)(boxHi.y, q.y), (std::max)(boxHi.z, q.z));
+    }
+    const float width = 1.01f * (std::max)(boxHi.x - boxLo.x, boxHi.y - boxLo.y); // 1 % margin: no object on the border
+    const float midX = 0.5f * (boxLo.x + boxHi.x);
+    const float midY = 0.5f * (boxLo.y + boxHi.y);
+    const float nearZ = boxLo.z - 0.5f;
+    const float farZ = boxHi.z + 0.5f;
+    const XMMATRIX lightProjection = XMMatrixOrthographicOffCenterLH(
+        midX - 0.5f * width, midX + 0.5f * width, midY - 0.5f * width, midY + 0.5f * width, nearZ, farZ);
+    shadowBoxWidth_ = width;
+
+    if (!shadowsEnabled_)
+    {
+        return; // params.x stays 0: the receivers skip the lookup
+    }
+    const float texelMeters = width / static_cast<float>(D3DClass::kShadowMapSize);
+    XMStoreFloat4x4(&shadowFrame_.lightViewProjection, lightView * lightProjection);
+    shadowFrame_.params = XMFLOAT4(1.0f, static_cast<float>(shadowFilter_), static_cast<float>(shadowBiasMode_), texelMeters);
+    shadowFrame_.bias = XMFLOAT4(shadowConstantBias_, shadowSlopeBias_, shadowNormalOffset_, farZ - nearZ);
+    shadowFrame_.pcss = XMFLOAT4(std::tan(XMConvertToRadians(0.5f * shadowSunSizeDeg_)),
+                                 static_cast<float>(D3DClass::kShadowMapSize), 16.0f, 0.0f);
+
+    // Shadow pass: the objects' depth as the sun sees them. The water casts none (it lets the light through).
+    ID3D11DeviceContext* context = d3d_->GetDeviceContext();
+    d3d_->BeginShadowPass();
+    d3d_->SetRasterizerDoubleSided();
+    sceneShader_->BeginDepthOnly(context, lightView, lightProjection);
+    Model* boundMesh = nullptr;
+    for (const SceneObject& object : objects)
+    {
+        Model* mesh = object.cylinder ? unitCylinder_.get() : unitBox_.get();
+        if (mesh != boundMesh)
+        {
+            mesh->Render(context);
+            boundMesh = mesh;
+        }
+        const XMMATRIX world = XMMatrixScaling(object.size.x, object.size.y, object.size.z)
+                             * XMMatrixTranslation(object.center.x, object.center.y, object.center.z);
+        sceneShader_->Render(context, mesh->GetIndexCount(), world, object.material);
+    }
+    d3d_->SetRasterizerDefault();
+    d3d_->EndShadowPass();
 }
 
 // The scene normal buffer is written when the water reads it: the stored source, or the debug views that show it.
@@ -1891,6 +2023,8 @@ bool Graphics::Render(float deltaTime)
     ImGui::NewFrame();
 
     gpuTimer_.Begin(d3d_->GetDeviceContext());
+    // sun-shadow: the sun's depth first; the opaque objects and the water read it.
+    RenderShadowPass(lightDir);
     // Clear color is the old sRGB background, converted because the HDR target holds linear values.
     d3d_->BeginScene(SrgbToLinear(0.02f), SrgbToLinear(0.08f), SrgbToLinear(0.11f), 1.0f);
 
@@ -1973,6 +2107,9 @@ bool Graphics::Render(float deltaTime)
             waterDraw.surfaceReflection = surfaceReflection_;
             waterDraw.normalSource = normalSource_;
             waterDraw.waterArea = SceneWaterArea();
+            waterDraw.shadow = shadowFrame_;
+            waterDraw.shadowSRV = d3d_->GetShadowSRV();
+            waterDraw.shadowSampler = d3d_->GetShadowSampler();
             // depth-reconstruct: pixel + depth -> world position goes back through view x projection.
             waterDraw.maxOpticalDistance = maxUnderwaterDistance_;
             DirectX::XMStoreFloat4x4(&waterDraw.invViewProjection, DirectX::XMMatrixInverse(nullptr, view * projection));
@@ -2036,8 +2173,8 @@ bool Graphics::Render(float deltaTime)
         if (sceneInputs)
         {
             // Unbind before the next frame binds the depth writable again (and the copy as a copy target).
-            ID3D11ShaderResourceView* nullSrvs[4] = {};
-            d3d_->GetDeviceContext()->PSSetShaderResources(3, 4, nullSrvs);
+            ID3D11ShaderResourceView* nullSrvs[5] = {};
+            d3d_->GetDeviceContext()->PSSetShaderResources(3, 5, nullSrvs);
             d3d_->SetDepthDefault();
         }
     }
@@ -2427,10 +2564,17 @@ void Graphics::DrawViewWindow()
             ImGui::Checkbox("Show Water", &showWater_);
             ImGui::SameLine();
             ImGui::Checkbox("Lab Waves", &labWaves_);
+            if (scene_ == WaterLab)
+            {
+                ImGui::Checkbox("Shadow test box", &shadowTestBox_);
+                ImGui::SameLine();
+                ImGui::TextDisabled("(circles above the water)");
+            }
             // Water depth = 0 - world position y (the water is at y = 0): the answer key the depth buffer is
             // checked against later, not the depth buffer itself.
             const char* sceneDebugLabels[] = { "Render", "Water depth (WP, m) - water hidden", "Water depth numeric (WP) - compare tool",
-                "Not measured marker (numeric views)", "World normal (answer key) - water hidden" };
+                "Not measured marker (numeric views)", "World normal (answer key) - water hidden",
+                "Sun shadow (white = sun, gray = facing away) - water hidden" };
             if (ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels)))
             {
                 SwapDebugViews(sceneDebug_, parkedSceneDebug_, water_.debugMode, parkedWaterDebug_);
@@ -2499,7 +2643,7 @@ void Graphics::DrawViewWindow()
             }
             ImGui::EndPopup();
         }
-        ImGui::TextDisabled("Fixed time %.1fs, UI hidden.", kCaptureTime);
+        ImGui::TextDisabled("Fixed time %.1fs, UI hidden.", captureTime_);
         if (!captureStatus_.empty())
         {
             ImGui::TextWrapped("%s", captureStatus_.c_str());
@@ -2516,7 +2660,8 @@ void Graphics::DrawViewWindow()
             "Contact foam amount", "Steepness behind the water (active normal)", "Normal from depth (world, color)",
             "Stored scene normal (G-buffer, color)", "Normal difference: depth vs stored (0-30 deg)",
             "Wave height lookup error (white = 1 mm)", "Refraction offset (pixels)",
-            "Refraction result (green ok, cyan reduced, red foreground leak, blue off screen)", "Refracted ray miss (white = 10 cm)" };
+            "Refraction result (green ok, cyan reduced, red foreground leak, blue off screen)", "Refracted ray miss (white = 10 cm)",
+            "Sun shadow at the water surface (white = sun)" };
         if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
         {
             SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
@@ -2659,6 +2804,18 @@ void Graphics::DrawLightWindow()
         }
     }
 
+    if (SectionHeader("Shadows"))
+    {
+        if (scene_ != NoScene)
+        {
+            DrawShadowSettings();
+        }
+        else
+        {
+            ImGui::TextDisabled("Test scenes only: pick Water Lab / Waterfront.");
+        }
+    }
+
     if (SectionHeader("Sun Glint"))
     {
         ImGui::TextDisabled("The sun mirrored on the water");
@@ -2705,6 +2862,68 @@ void Graphics::DrawLightWindow()
 
     ImGui::PopItemWidth();
     ImGui::End();
+}
+
+// sun-shadow: Light window > Shadows. Filters and biases are lists so each can be compared on the same frame.
+void Graphics::DrawShadowSettings()
+{
+    ImGui::TextDisabled("The sun's depth map (1024 x 1024). Shadows dim the\nsun alone; the sky light still reaches them.");
+    ImGui::Checkbox("Shadows##enabled", &shadowsEnabled_);
+    ImGui::BeginDisabled(!shadowsEnabled_);
+
+    // Texel size: the sun's box is spread over 1024 texels, so one texel = box width / 1024. On flat ground the
+    // sun's rays come in slanted, so a texel stretches by 1 / sin(elevation) along the sun's direction.
+    if (shadowBoxWidth_ > 0.0f)
+    {
+        const float texelCm = 100.0f * shadowBoxWidth_ / static_cast<float>(D3DClass::kShadowMapSize);
+        const float sinElevation = std::sin(DirectX::XMConvertToRadians((std::max)(sunElevationDeg_, 1.0f)));
+        ImGui::Text("Sun box %.1f m  ->  1 texel = %.1f cm", shadowBoxWidth_, texelCm);
+        ImGui::TextDisabled("On flat ground: %.1f cm along the sun (/ sin %.0f deg)", texelCm / sinElevation, sunElevationDeg_);
+    }
+
+    const char* filterLabels[] = { "Hard (1 texel)", "PCF 3 x 3", "PCSS (softer away from the caster)" };
+    ImGui::Combo("Filtering", &shadowFilter_, filterLabels, IM_ARRAYSIZE(filterLabels));
+    if (shadowFilter_ == 0)
+    {
+        ImGui::TextDisabled("One yes / no per texel: the edge shows the texel squares.");
+    }
+    else if (shadowFilter_ == 1)
+    {
+        ImGui::TextDisabled("9 comparisons averaged: an even soft edge, the same\nwidth everywhere.");
+    }
+    else
+    {
+        ImGui::TextDisabled("Finds the caster's distance first: sharp at the foot of\na pillar, softer toward the far end of its shadow.");
+        ImGui::SliderFloat("Sun size (deg)", &shadowSunSizeDeg_, 0.25f, 8.0f, "%.2f");
+        ImGui::TextDisabled("Real sun 0.53 deg. Blur radius is capped at 16 texels.");
+    }
+
+    const char* biasLabels[] = { "None", "Constant", "Slope-scaled", "Normal offset", "All (default)" };
+    ImGui::Combo("Bias", &shadowBiasMode_, biasLabels, IM_ARRAYSIZE(biasLabels));
+    ImGui::TextDisabled("Too little: a surface shades itself in stripes (acne).\nToo much: the shadow lets go of its caster (peter-panning).");
+    if (shadowBiasMode_ == 1 || shadowBiasMode_ == 4)
+    {
+        ImGui::SliderFloat("Constant (m)", &shadowConstantBias_, 0.0f, 0.2f, "%.3f");
+    }
+    if (shadowBiasMode_ == 2 || shadowBiasMode_ == 4)
+    {
+        ImGui::SliderFloat("Slope (texels x tan)", &shadowSlopeBias_, 0.0f, 4.0f, "%.2f");
+        ImGui::TextDisabled("More where the sun grazes the surface.");
+    }
+    if (shadowBiasMode_ == 3 || shadowBiasMode_ == 4)
+    {
+        ImGui::SliderFloat("Normal offset (texels)", &shadowNormalOffset_, 0.0f, 4.0f, "%.2f");
+        ImGui::TextDisabled("Looks the map up from a point lifted off the surface.");
+    }
+
+    if (ImGui::TreeNode("Shadow map preview"))
+    {
+        // R32 depth shows in the red channel: dark = near the sun, bright = far from it.
+        ImGui::Image(reinterpret_cast<ImTextureID>(d3d_->GetShadowSRV()), ImVec2(256.0f, 256.0f));
+        ImGui::TextDisabled("Red = depth from the sun (dark = nearer the sun).");
+        ImGui::TreePop();
+    }
+    ImGui::EndDisabled();
 }
 
 void Graphics::DrawWaterWindow()
