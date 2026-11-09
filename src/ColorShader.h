@@ -73,6 +73,14 @@ public:
         float foamSteepStart  = 0.35f;  // steepness (1 - |normal.y|) where foam starts ...
         float foamSteepFull   = 0.70f;  // ... and where it is full
         DirectX::XMFLOAT3 foamColor = {0.95f, 0.97f, 1.0f}; // sRGB picker value
+        // foam-masks: which mask (kFoamMaps in Graphics.cpp, default 3 = cells + bubbles + breakup) and how much of its
+        // bubbles (G) and breakup (B) to use.
+        int foamMap = 3;
+        float foamBubbles = 0.6f;
+        float foamErosion = 0.5f;
+        // Set every frame from the picked mask, not saved: x = repeats without a seam (else the old mirrored read),
+        // y = G holds bubbles, z = B holds breakup (1 / 0).
+        DirectX::XMFLOAT3 foamMapFlags = {1.0f, 1.0f, 1.0f};
         // Set every frame from the selected normal maps (NormalMapEntry::slopeVariance), not saved in presets.
         float rippleSlopeVarianceA = 0.0f;
         float rippleSlopeVarianceB = 0.0f;

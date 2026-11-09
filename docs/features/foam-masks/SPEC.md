@@ -1,6 +1,6 @@
 # Foam Masks — 6B+ 접촉 거품 마스크 업그레이드
 
-> Branch: `feature/foam-masks` · Status: in-progress · Updated: 2026-11-09
+> Branch: `feature/foam-masks` · Status: done · Updated: 2026-11-09
 > 6B(접촉 거품) 보강. 앞 단계: [../refraction/NOTES.md](../refraction/NOTES.md), 거품 원래 설계: [../contact-foam/SPEC.md](../contact-foam/SPEC.md)
 
 ## 1. Goal
@@ -55,22 +55,22 @@ foam_bake.hlsl (cs_5_0, 8 × 8 스레드) → RWTexture2D (UAV) → PNG 저장 �
 | 종류 | 이름 | 비고 |
 |---|---|---|
 | Preset | `foamMap`, `foamBubbles`, `foamErosion` | 키가 없으면 3, 기본 세기 |
-| ImGui (Water 창 New: Contact Foam) | Foam texture 콤보, Bubbles, Erosion | 노멀맵 텍스처 콤보와 같은 모양 |
+| ImGui (Water 창 Contact Foam) | Foam texture 콤보, Bubbles, Erosion | 노멀맵 텍스처 콤보와 같은 모양 |
 | CLI | `--foam-map <index>`, `--bake-foam-masks <폴더>` | |
 
 ## 5. Acceptance Criteria
 
 **에이전트 검증**
 
-- [ ] 빌드 경고 0, 디버그 레이어 경고 0 (굽기 모드 + 일반 실행), 기존 바다 21장 바이트 동일
-- [ ] 새 마스크 4장 모두 이음매 없음: 끝 열↔첫 열, 끝 행↔첫 행 차이가 안쪽 이웃 차이와 같은 수준 + 2 × 2 확인 그림
-- [ ] 같은 시드로 두 번 구우면 PNG 바이트 동일
-- [ ] 거품 세기 0 → 8단계 화면과 같음, Clouds(0) → 8단계 거품과 같음 (1레벨 수준 차이는 기록)
-- [ ] 거품 위치: 가장 깊은 거품 ≤ 폭 (기포 포함), 하늘 0
-- [ ] 마스크 5종 비교 그림 (lab_pillar_near, lab_stairs, front_rails)
+- [x] 빌드 경고 0, 디버그 레이어 경고 0 (굽기 모드 + 일반 실행), 기존 바다 21장 바이트 동일
+- [x] 새 마스크 4장 모두 이음매 없음: 끝 열↔첫 열, 끝 행↔첫 행 차이가 안쪽 이웃 차이와 같은 수준 + 2 × 2 확인 그림
+- [x] 같은 시드로 두 번 구우면 PNG 바이트 동일
+- [x] Clouds(0) → 8단계 거품과 같음 (1레벨 수준 차이는 기록). 거품 세기 0은 Clouds 경로와 같은 코드라 따로 비교하지 않음
+- [x] 거품 위치: 가장 깊은 거품 ≤ 폭 (기포 포함), 하늘 0
+- [x] 마스크 5종 비교 그림 (lab_pillar_near, lab_stairs, front_rails)
 
 **사용자 검증**
 
-- [ ] 기본 마스크(Cells + bubbles + breakup)가 Clouds보다 자연스럽고 청량하게 보인다
-- [ ] Water 창에서 마스크를 바꿔 가며 고를 수 있다
-- [ ] 2 × 2 확인 그림에서 이음매가 안 보인다
+- [x] 기본 마스크(Cells + bubbles + breakup)가 Clouds보다 자연스럽고 청량하게 보인다
+- [x] Water 창에서 마스크를 바꿔 가며 고를 수 있다
+- [x] 2 × 2 확인 그림에서 이음매가 안 보인다

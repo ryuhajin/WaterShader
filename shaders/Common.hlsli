@@ -43,6 +43,7 @@ cbuffer PerFrameCB : register(b0)
     float4 g_FoamParams2;      // x = slope filter (0 = water depth alone, 1 = walls only), y / z = steepness where foam starts / is full,
                                // w = noise flow speed (m/s)
     float4 g_FoamColor;        // rgb = foam color (linear)
+    float4 g_FoamMapParams;    // foam-masks: x = seamless mask (0 = old mirrored clouds), y = bubble strength, z = breakup strength
     float4 g_WaterArea;        // test scenes (wave-occlusion): x = water patch half size (m, 0 = none), y = wave edge fade width (m)
     float4 g_RefractionParams; // test scenes (refraction): x = strength of the chosen mode (0 = straight), y = index of refraction (water 1.33),
                                // z = frame-edge margin (pixels; 32 normal offset, 64 physical), w = mode (0 normal offset, 1 physical)

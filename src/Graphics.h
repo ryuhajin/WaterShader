@@ -37,9 +37,10 @@ private:
     bool Render(float deltaTime);
     // Settings windows, toggled with keys 1 / 2 / 3 / 4 (UpdateWindowToggles).
     void DrawViewWindow();    // presets, camera, scene, capture, debug view
-    void DrawLightWindow();   // sky, sun, glint, ambient, tonemapping
-    void DrawWaterWindow();   // color and light: the water version's own settings, then the reflection
-    void DrawNewWaterSettings(); // test scenes: transmission, underwater light loss and color, contact foam
+    void DrawLightWindow();   // sky, sun, glint, ambient, underwater light (New water), tonemapping
+    void DrawWaterWindow();   // the water version's own settings (underwater, foam), then the reflection
+    void DrawNewWaterSettings(); // test scenes: underwater, refraction, contact foam
+    void DrawUnderwaterLightSettings(); // test scenes: water type, light loss, water color (Light window)
     void DrawSurfaceWindow(); // shape and motion of the surface, both versions (DrawSurfaceSettings)
     void DrawSurfaceSettings();  // normal maps, ocean detail, waves
     void DrawStatsOverlay();
@@ -186,11 +187,12 @@ private:
     int environmentIndex_ = 0;
     // Water normal maps (kNormalMaps, plus the --normal-map file if given). Each layer picks its own.
     std::vector<std::unique_ptr<Texture>> normalMaps_;
-    std::unique_ptr<Texture> foamMap_; // contact foam noise (wave_foam.dds)
+    std::vector<std::unique_ptr<Texture>> foamMaps_; // contact foam masks, one per kFoamMaps entry (foam-masks)
     std::vector<std::string> normalMapNames_;
     int normalMapA_ = 0;
     int normalMapB_ = 0;
     int normalOverrideA_ = -1; // --normal-a / --normal-b / --normal-map: win over the preset
+    int foamMapOverride_ = -1; // --foam-map <index>: wins over the preset (foam-masks)
     int normalOverrideB_ = -1;
     std::vector<float> normalMapAxisDeg_; // per normal map: ripple travel axis (NormalMapEntry::rippleAxisDeg)
     std::vector<float> normalMapSlopeVariance_; // per normal map: NormalMapEntry::slopeVariance

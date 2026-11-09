@@ -78,8 +78,21 @@ float FrameInside(float2 pixel, float2 frameSize)
 #define REFRACTION_STEPS 4
 #endif
 
-// Foam noise, 0..1. The texture does not tile (its edges do not match), so it is read mirrored: every other
-// repeat is flipped, which hides the seam. A second read, turned and smaller, breaks the mirror symmetry.
+// Baked foam mask (foam-masks): repeats without a seam, so it is read as it is (wrap). Two layers, the second turned,
+// a little larger and drifting across the first (flow = how far the first has drifted, in mask repeats), so the
+// network keeps changing shape instead of sliding as one sheet. R = the brighter of the two networks, G = either
+// layer's bubbles, B = the first layer's breakup (low frequency; averaging would flatten it).
+float4 FoamMask(float2 uv, float flow)
+{
+    float4 a = g_FoamMap.Sample(g_NormalSampler, uv);
+    float2 uvB = float2(uv.x * 0.8 - uv.y * 0.6, uv.x * 0.6 + uv.y * 0.8) * 0.77 + float2(0.31, 0.57) + float2(-0.6, 0.8) * (0.4 * flow);
+    float4 b = g_FoamMap.Sample(g_NormalSampler, uvB);
+    return float4(max(a.r, 0.85 * b.r), max(a.g, b.g), a.b, 1.0);
+}
+
+// Foam noise of the old cloud texture (contact-foam), 0..1. The texture does not tile (its edges do not match), so it
+// is read mirrored: every other repeat is flipped, which hides the seam. A second read, turned and smaller, breaks
+// the mirror symmetry.
 float FoamNoise(float2 uv)
 {
     float2 uvB = float2(uv.x * 0.8 - uv.y * 0.6, uv.x * 0.6 + uv.y * 0.8) * 1.7 + 0.37;
@@ -573,10 +586,28 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         // The noise drifts downwind on the water surface; its threshold sits inside [softness, 1 - softness],
         // so closeness 0 never shows foam and closeness 1 always does, whatever the noise.
         float2 drift = g_Waves[0].direction * (g_WaterParams.x * g_FoamParams2.w);
-        float noise = FoamNoise((input.worldPos.xz - drift) / max(g_FoamParams.z, 1e-3));
+        float2 foamUv = (input.worldPos.xz - drift) / max(g_FoamParams.z, 1e-3);
         float softness = clamp(g_FoamParams.y, 1e-3, 0.5);
-        float threshold = lerp(softness, 1.0 - softness, noise);
-        foamAmount = saturate(smoothstep(threshold - softness, threshold + softness, closeness * slopeMask) * g_FoamParams.w);
+        float band = closeness * slopeMask;
+        if (g_FoamMapParams.x < 0.5)
+        {
+            // The old cloud texture (contact-foam), read and used as before.
+            float noise = FoamNoise(foamUv);
+            float threshold = lerp(softness, 1.0 - softness, noise);
+            foamAmount = saturate(smoothstep(threshold - softness, threshold + softness, band) * g_FoamParams.w);
+        }
+        else
+        {
+            // Baked seamless mask (foam-masks). R = foam network: where it is bright the threshold drops, so the foam
+            // forms along the cell borders first and fills in toward the waterline. B = breakup: raises the
+            // threshold in patches, so the band breaks into islands. G = loose bubbles in the band's outer part,
+            // beyond the solid body.
+            float4 mask = FoamMask(foamUv, g_WaterParams.x * g_FoamParams2.w / max(g_FoamParams.z, 1e-3));
+            float threshold = lerp(softness, 1.0 - softness, saturate(1.0 - mask.r + (mask.b - 0.5) * g_FoamMapParams.z));
+            float body = smoothstep(threshold - softness, threshold + softness, band);
+            float bubbles = smoothstep(0.45, 0.7, mask.g) * saturate(band * 3.0) * g_FoamMapParams.y;
+            foamAmount = saturate(max(body, bubbles) * g_FoamParams.w);
+        }
     }
     // 20 = foam amount (white = foam).
     if (sceneDebugMode == 20) { return DebugOut(foamAmount.xxx); }
