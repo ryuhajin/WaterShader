@@ -1,0 +1,138 @@
+# Sun Shadow — NOTES
+
+> 9단계 진행 기록. 상태: **구현·에이전트 검증 완료, 사용자 검증 대기** (2026-11-09)
+
+## 1. 개념 요약
+
+```text
+패스 순서:  그림자 패스 (태양에서 본 깊이 → 그림자 맵 1024 × 1024, D32)
+            → 불투명 장면 (그림자 맵을 읽어 햇빛만 가림) → (물 깊이 프리패스) → 물 (수면 점에서 다시 읽음)
+
+받는 쪽:    점을 태양 카메라로 옮김 → 그 자리에 저장된 깊이보다 멀면 = 태양과 나 사이에 무언가 있음
+            빛 = 환경광 + 햇빛 × (햇빛 각도 × 그림자 비율)       // 그림자 비율 0 ~ 1, 환경광은 그대로
+```
+
+- **태양 카메라:** 직교(orthographic). 태양은 아주 멀어서 빛줄기가 나란하기 때문이다. 장면의 모든 물체(+ 시험 상자가 도는 원 전체)를 담는 상자를 태양 쪽에서 보고, 8개 모서리가 들어가도록 정사각형으로 맞춘다. 상자는 태양 방향이 바뀔 때만 달라진다 (시험 상자가 움직여도 텍셀이 흔들리지 않음).
+- **텍셀 하나의 크기 = 상자 폭 ÷ 1024.** 바닥에서는 햇빛이 비스듬히 오므로 태양 방향으로 ÷ sin(태양 고도)만큼 늘어난다. Light 창 Shadows에 매 프레임 표시된다.
+- 물은 그림자를 드리우지 않는다 (투명). 그림자 맵에는 물체만 그린다.
+
+**필터** (Light 창 Shadows > Filtering)
+
+| 이름 | 하는 일 | 가장자리 |
+|---|---|---|
+| Hard | 텍셀 하나, 예 / 아니오 한 번 | 텍셀 모양 계단 |
+| PCF 3 × 3 | 주변 9곳을 비교해 평균. 비교 샘플러가 한 번에 이웃 4텍셀 답을 섞어 줌 | 어디서나 같은 폭 (약 3텍셀) |
+| PCSS | ① 주변에서 가리는 물체의 깊이를 찾고(16곳) ② 반그림자 반지름 = (받는 면 − 가리는 물체) × tan(태양 반지름) ③ 그 반지름으로 PCF(32곳) | 물체 밑동은 선명, 멀수록 흐림. 최대 16텍셀 |
+
+**바이어스** (Bias): 텍셀 하나가 받는 면의 한 조각을 덮는다. 태양 쪽으로 기운 면은 그 조각 안에서도 깊이가 달라서, 조각의 절반이 "자기 자신 뒤"로 판정되어 줄무늬 그림자(acne)가 생긴다. 비교 깊이를 태양 쪽으로 밀어 숨긴다.
+
+| 이름 | 미는 양 | 기본값 |
+|---|---|---|
+| Constant | 고정 거리 (m) | 0.02 m |
+| Slope-scaled | 텍셀 × tan(햇빛과 면의 각도) × 배수: 기운 면에서 텍셀 하나가 만드는 깊이 차이 그대로 | 1 텍셀 |
+| Normal offset | 받는 점을 면의 노멀 방향으로 텍셀 × 배수만큼 띄운 뒤 맵을 읽음 | 1 텍셀 |
+| All (기본) | 셋 다 | — |
+
+## 2. 만든 것
+
+| 파일 | 내용 |
+|---|---|
+| `shaders/Shadow.hlsli` | `ShadowInputs`(행렬, 켬·필터·바이어스·텍셀 m, 바이어스 값·깊이 범위 m, PCSS) + `SunShadow(맵, 비교 샘플러, 입력, 위치, 노멀, 태양 방향)`. 세 필터와 다섯 바이어스, Vogel 원판 표본 |
+| `src/ShadowFrame.h` | 같은 배치의 C++ 구조체 (112바이트, `static_assert`) |
+| `src/D3DClass.*` | `R32_TYPELESS` 1024² + D32 DSV + R32 SRV, 비교 샘플러(LESS_EQUAL, 바깥 = 빛). `BeginShadowPass` (지난 프레임 t0·t7 해제, viewport 저장 → 1024, 깊이만) / `EndShadowPass` (viewport·HDR 타깃 복구) |
+| `src/SceneShader.*`, `shaders/scene.hlsl` | `BeginDepthOnly` (PS 없음), `SetShadow` (t0, s0). 햇빛 항 × 그림자. Scene Debug **5** = 그림자 비율 |
+| `src/ColorShader.*`, `shaders/Common.hlsli`, `shaders/PixelShader.hlsl` | 물(SCENE_INPUTS)에 t7·s2, `g_Shadow`. 수면 점의 그림자 비율을 **글린트**와 물색·거품을 비추는 **햇빛 부분**에 곱함. Debug Mode **29** = 수면의 그림자 비율 |
+| `src/Graphics.*` | `RenderShadowPass` (상자 맞춤 → 그림자 패스), `CurrentSceneObjects` (Water Lab 시험 상자 포함), Light 창 **Shadows** 대분류, View 창 **Shadow test box**, CLI |
+| `tools/count_shadow_acne.ps1` | Scene Debug 5 캡처에서 반쯤 그림자인 픽셀 비율 (acne 측정) |
+| `CMakeLists.txt` | `Shadow.hlsli`를 실행 파일 옆 shaders 폴더로 복사 (빠뜨리면 시작 시 컴파일 실패로 종료됨) |
+
+**CLI:** `--shadows on|off`, `--shadow-filter hard|pcf|pcss`, `--shadow-bias none|constant|slope|normal|all`, `--shadow-bias-values 상수m,기울기,노멀`, `--shadow-sun-size 도`, `--shadow-test-box on|off`, `--capture-time 초`
+
+## 3. 텍셀 크기 (1024 고정)
+
+```text
+텍셀(m) = 상자 폭(m) ÷ 1024
+상자 폭 ≈ 장면을 태양에 수직인 면에 비춘 그림자 폭   (가로 L 정사각형 바닥이면 L × (|cos 방위| + |sin 방위|), 45°에서 L × 1.41)
+바닥 위 텍셀 = 텍셀 ÷ sin(태양 고도)                  (태양 방향으로만 늘어남)
+경험칙: 그림자를 꼭 보여야 하는 가장 작은 물체가 텍셀 3 ~ 4개 이상
+```
+
+| 장면 · 프리셋 | 태양 방위 / 고도 | 상자 폭 | 텍셀 | 바닥에서 (태양 방향) |
+|---|---|---|---|---|
+| Water Lab basic | 43.9° / 43.5° | 34.3 m | 3.3 cm | 4.9 cm |
+| Water Lab sunset | 24.7° / 26° | 32.2 m | 3.1 cm | 7.2 cm |
+| Waterfront basic | 43.9° / 43.5° | 114.2 m | 11.2 cm | 16.2 cm |
+| Waterfront sunset | 24.7° / 26° | 107.2 m | 10.5 cm | 23.9 cm |
+
+- Water Lab: 가장 작은 계단 높이 0.25 m ≈ 8텍셀 → 충분.
+- Waterfront: 전주 0.3 m ≈ 2.7텍셀(경계선), 침목 0.25 m ≈ 2.3텍셀, **레일 7 cm는 텍셀보다 작다** → 레일 그림자는 흐릿하거나 사라진다. 80 m 바닥이 대각선(방위 45°)으로 비쳐 113 m가 되는 탓이 크다. 해결 방향: 상자를 카메라 근처로 좁히기(계단식 그림자 CSM, 언리얼 14단계), 2048 맵, 또는 상자 축을 장면 축에 맞추기.
+
+## 4. 에이전트 검증 (2026-11-09)
+
+| 항목 | 방법 | 결과 |
+|---|---|---|
+| 빌드 | Debug·Release | 경고·오류 0 |
+| 기존 장면 회귀 | 기존 샷 21장 vs 0단계 기준 | **21장 바이트 동일** |
+| 그림자 끔 = 8단계 | `--shadows off` 6샷 × 3프리셋 vs `before_step8` | 15장 동일, 3장(sunset lab_pillar·lab_stairs, tropical lab_pillar) 물 위 10~16픽셀. **8단계 코드를 오늘 다시 빌드해 찍어도 같은 3장이 같은 픽셀만큼 다름** → 기준 세트 쪽 차이. 오늘의 8단계 빌드 vs 그림자 끔: 4장 **바이트 동일** |
+| acne (바이어스) | Scene Debug 5, 반쯤 그림자인 픽셀 비율 (`count_shadow_acne.ps1`) | None 76~88% → **All 1.4~2.2%** (Lab). Waterfront All 19%는 침목·레일의 실제 부드러운 그림자 |
+| 바이어스 하나만 쓸 때 필요한 양 | Lab 2샷 | Constant 0.05 m 41~44% / 0.1 m 3% / 0.2 m 1~1.5% (대신 계단 단차 그림자가 사라짐 = peter-panning), Slope 2텍셀 1.9%, Normal 2텍셀 2.7~5.5% (더 올려도 그대로) |
+| 필터 가장자리 폭 | lab_top Scene Debug 5, 기둥 그림자를 가로지르는 반쯤 그림자 픽셀 수 | Hard 0 / 0, PCF 6 / 5, **PCSS 4 / 21** (밑동 / 먼 끝) |
+| 그림자 속이 새까맣지 않음 | 셰이더 구조: 환경광 항은 그림자와 곱하지 않음 | 그림자 속 = 환경광 × 알베도 |
+| 수면 글린트 | Debug 18(반사 부분) 그림자 켬 / 끔, Debug 29의 수면 그림자 영역 | sunset lab_low: 그림자 안 5,031픽셀이 어두워짐(최대 RGB 합 210레벨), 그림자 밖 121,639픽셀 중 바뀐 것 10픽셀(반그림자 경계). basic 샷들은 그림자 안에 글린트가 없어 변화 0 |
+| 시험 상자 | `--shadow-test-box on`, `--capture-time 12` vs `17` | 상자와 그림자가 함께 이동 (17초: 바닥 9 m 아래 계단 그림자 옆 사각형) |
+| 디버그 레이어 | Debug, PCSS + 시험 상자, 2샷 | 경고·오류 0건 |
+| 성능 | 측정하지 않음 (요청 시만) | — |
+
+### 과정에서 고친 것
+
+- **Windows `min`/`max` 매크로:** `std::min(` 이 매크로로 풀려 컴파일 오류 → `(std::min)(`.
+- **`Shadow.hlsli` 복사 누락:** 셰이더는 실행 파일 옆 `shaders` 폴더에서 읽는다. 새 파일을 CMake 복사 목록에 넣지 않아 시작하자마자 종료(코드 1) → 목록에 추가.
+- **곱하는 순서:** `햇빛 × 고도 × 그림자`를 `햇빛 × (고도 × 그림자)`로 묶어, 그림자 1일 때 예전과 같은 반올림이 되게 함.
+
+**캡처 위치 (로컬):** `C:\Users\da171\ws-capture\sun-shadow\captures\`
+
+| 폴더 | 내용 |
+|---|---|
+| `before_step8`, `before_step8_1080p` | 9단계 전 (6샷 × 3프리셋, 1080p 3샷) |
+| `after_step9` | 그림자 켬 기본값 (PCF, All), 6샷 × 3프리셋 |
+| `dbg_shadow`, `dbg_shadow_nobias` | Scene Debug 5, 바이어스 All / None (acne 줄무늬) |
+| `bias_{none,constant,slope,normal,all}` | Scene Debug 5, 바이어스 목록별 (기본값) |
+| `bias_single_needed` | 바이어스 하나만 쓸 때 값별 lab_stairs (constant 0.2의 계단 그림자 사라짐 포함) |
+| `filter_{hard,pcf,pcss}`, `..._dbg` | 필터별 화면 / Scene Debug 5 |
+| `dbg29` | Debug Mode 29 수면 그림자 |
+| `glint_check` | sunset lab_low 반사 부분 그림자 끔 / 켬 + 수면 그림자 |
+| `box_t12`, `box_t17`, `box_dbg_t12`, `box_dbg_t17` | 시험 상자 12초 / 17초 |
+
+## 5. 관찰과 한계
+
+- **물속 그림자의 위치:** 햇빛도 수면에서 꺾이지만 그림자는 꺾이지 않은 방향으로 계산한다. 바닥이 깊을수록(Lab 8 m) 실제보다 그림자가 조금 더 멀리 떨어진다.
+- **수면 그림자는 물색에서만 보인다:** 수면 그림자는 물이 산란해 돌려보내는 햇빛(물색)과 글린트만 줄인다. 하늘 반사는 하늘빛이라 그대로다. 그래서 얕은 물(물색이 적은 곳)에서는 수면 그림자가 거의 안 보이고, 깊은 물에서 파란 띠로 보인다.
+- **바이어스 하나로는 기본값이 모자라다:** PCF는 이웃 1~2텍셀까지 비교하므로, 1텍셀 기준 기울기 바이어스로는 부족하다(2텍셀 필요). 셋을 작게 섞은 All이 각각을 크게 쓰는 것보다 그림자를 덜 띄운다.
+- **PCSS의 큰 반지름:** 표본 32개를 고정 패턴으로 쓰므로, 반지름이 10텍셀을 넘는 먼 끝에서는 층진 무늬가 조금 보일 수 있다 (노이즈 회전 + 시간 누적이 실무 방식).
+
+## 6. 사용자 검증 안내
+
+**실행:** `.\build\vs2022\Debug\WaterShader.exe` → `1` 키 View 창에서 Scene = **Water Lab** → `2` 키 Light 창 **Shadows**
+
+| 순서 | 조작 | 정상 | 실패 징후 |
+|---|---|---|---|
+| 1 | 카메라 **lab_stairs**, Shadows 끔 ↔ 켬 | 물속 바닥에 계단·받침대 그림자, 물 밖 바닥에도 그림자 | 그림자 없음 / 화면 전체가 어두워짐 |
+| 2 | Light 창 Sun의 Yaw·Elevation 돌리기 | 그림자가 따라 돌고, 고도가 낮을수록 길어짐. Shadows의 텍셀 크기 표시가 바뀜 | 그림자가 안 움직임 |
+| 3 | View 창 **Shadow test box** 켜기 | 주황 상자가 수면 위를 20초에 한 바퀴, 그림자가 따라감 | 그림자가 제자리 |
+| 4 | View 창 Scene Debug **Sun shadow** | 흰색(햇빛) / 검정(그림자) / 회색(태양 반대쪽 면) | 밝은 면에 줄무늬 |
+| 5 | Bias **None** → Constant → Slope → Normal → All | None에서 밝은 면 전체에 줄무늬(acne). Constant를 0.2로 올리면 줄무늬는 사라지지만 계단 단차 그림자도 사라짐 | — |
+| 6 | Filtering **Hard → PCF → PCSS**, lab_top 또는 lab_pillar_near | Hard 계단진 가장자리, PCF 고르게 부드러움, PCSS 기둥 밑동은 선명하고 그림자 끝은 흐림 | PCSS가 PCF와 같음 → Sun size를 올려 확인 |
+| 7 | Debug Mode **Sun shadow at the water surface** (29) | 수면 위에 물체 그림자가 흰 바탕의 검은 띠로 | — |
+| 8 | Scene = Waterfront, front_rails | 전주·침목 그림자. 텍셀 표시 약 11 cm, 레일 그림자는 흐릿함(한계) | — |
+| 9 | Shadows 펼침 > **Shadow map preview** | 붉은 그림: 태양에서 본 장면 깊이 | 검정 |
+
+**확인 질문**
+
+- [ ] 기둥·계단·받침대의 그림자가 바닥과 물속 바닥에 보인다
+- [ ] 태양 방향을 바꾸거나 시험 상자를 움직이면 그림자가 따라간다
+- [ ] 바이어스를 0으로 하면 얼룩이, 너무 크면 떠 있는 그림자가 생기는 이유를 설명할 수 있다
+- [ ] Hard / PCF / PCSS의 차이(가장자리 계단, 고른 부드러움, 거리에 따른 부드러움)를 설명할 수 있다
+
+## 7. 승인 기록
+
+- (대기)

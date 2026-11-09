@@ -129,6 +129,12 @@ private:
     void RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection,
                          const DirectX::XMFLOAT4& lightDir, const DirectX::XMFLOAT4& lightColor,
                          const DirectX::XMFLOAT4& ambientColor);
+    // sun-shadow: the objects of the current test scene (plus the moving test box in the Water Lab, when on).
+    std::vector<SceneObject> CurrentSceneObjects() const;
+    // Fits the sun's orthographic box around the scene and draws the objects' depth into the shadow map.
+    // Fills shadowFrame_ (off: params.x = 0, nothing drawn).
+    void RenderShadowPass(const DirectX::XMFLOAT4& lightDir);
+    void DrawShadowSettings(); // Light window, Shadows section
 
     CameraView MakeViewFromCurrent() const;
     bool IsTopShotView() const; // camera exactly on the fixed "top" shot (position, rotation, mesh)
@@ -180,6 +186,18 @@ private:
     bool surfaceReflection_ = true; // test scenes: sky and sun mirrored on top of the water below (surface-reflection)
     int normalSource_ = 0;          // test scenes: 0 normal from the depth buffer, 1 stored scene normal (normal-gbuffer)
     int waterOcclusion_ = 2;        // test scenes: 0 none (step 6), 1 single pass writes the water depth, 2 depth prepass + EQUAL
+    // sun-shadow (test scenes, not saved in presets): one 1024 x 1024 shadow map from the sun.
+    bool shadowsEnabled_ = true;
+    int shadowFilter_ = 1;              // 0 hard, 1 PCF 3 x 3, 2 PCSS
+    int shadowBiasMode_ = 4;            // 0 none, 1 constant, 2 slope-scaled, 3 normal offset, 4 all
+    float shadowConstantBias_ = 0.02f;  // m
+    float shadowSlopeBias_ = 1.0f;      // texels x tan(angle to the sun)
+    float shadowNormalOffset_ = 1.0f;   // texels along the surface normal
+    float shadowSunSizeDeg_ = 2.0f;     // PCSS: angular diameter of the sun (the real sun is 0.53 deg)
+    bool shadowTestBox_ = false;        // Water Lab: a box circling above the water (its shadow should follow)
+    ShadowFrame shadowFrame_{};         // this frame's shadow inputs for the receivers
+    float shadowBoxWidth_ = 0.0f;       // m: side of the sun's box this frame (texel = width / 1024)
+    float captureTime_ = 12.0f;         // --capture-time: the fixed clock of captured frames (s)
     // Debug layer messages (Debug builds), counted per text; written next to a capture set.
     std::map<std::string, int> d3dMessages_;
     size_t d3dMessageTotal_ = 0;

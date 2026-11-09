@@ -16,6 +16,8 @@ Texture2D        g_SceneColor : register(t3); // HDR color copy
 Texture2D<float> g_SceneDepth : register(t4); // depth buffer, 0 (near) .. 1 (far), not linear in distance
 Texture2D        g_FoamMap    : register(t5); // contact foam noise (R), the cloud texture of the old foam-mask branch
 Texture2D        g_SceneNormal : register(t6); // world normal x 0.5 + 0.5 written by the opaque pass, a = 0: none
+Texture2D<float> g_ShadowMap  : register(t7); // sun-shadow: the sun's depth (orthographic, 0 at the sun end .. 1)
+SamplerComparisonState g_ShadowSampler : register(s2); // LESS_EQUAL, outside the map = lit
 #include "DepthBands.hlsli"
 #endif
 
@@ -344,6 +346,13 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     if (sceneDebugMode == 8) { return DebugOut(sceneDepth.xxx); }
     // 9 = where the water is drawn: the scene tinted blue (HDR, tonemapped like a normal frame).
     if (sceneDebugMode == 9) { return float4(sceneColor * float3(0.35, 0.55, 1.0) + float3(0.0, 0.02, 0.08), 1.0); }
+    // sun-shadow: how much sun reaches this surface point (1 = lit, 0 = a caster is between it and the sun). It dims the
+    // sun's part of the light on the water (glint, water color, foam); the floor below already has its own shadow in
+    // the scene color. The sun is not bent at the surface here (approximation: shadows under the water sit a little off).
+    float surfaceShadow = SunShadow(g_ShadowMap, g_ShadowSampler, g_Shadow, input.worldPos, finalNormalWS,
+                                    normalize(-g_LightDirection.xyz));
+    // 29 = sun share at the water surface (white = sun, black = shadow).
+    if (sceneDebugMode == 29) { return DebugOut(surfaceShadow.xxx); }
 
     // Receiver = the surface this pixel sees through the water (depth-reconstruct). The pixel and its depth are
     // where projection and view put the surface; the inverse matrix takes them back, and dividing by w undoes
@@ -523,7 +532,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // filling in what the extinction took: + color x incoming light x strength x (1 - T). Same form as aerial
     // perspective. Lit by the scene's lights, so a sunset preset darkens and warms the water too.
     float sunHeight = saturate(-g_LightDirection.y); // g_LightDirection is the direction light travels
-    float3 incomingLight = g_AmbientColor.rgb * g_AmbientColor.a + g_LightColor.rgb * g_LightColor.a * sunHeight;
+    float3 incomingLight = g_AmbientColor.rgb * g_AmbientColor.a + g_LightColor.rgb * g_LightColor.a * (sunHeight * surfaceShadow);
     // Ramp (art mode): shallow -> mid -> deep picked by water depth (the same bed keeps its color from any
     // angle) or by view path (deeper looking at a low angle, like the physical mode).
     float rampDistance = g_RampParams.z > 0.5 ? viewPath : waterDepth;
@@ -674,6 +683,9 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float sunGlintPower = WidenExponent(g_SpecularParams.z, slopeVariance);
     float sunGlintIntensity = g_SpecularParams.w;
     float lobe = SunGlintFactor(reflectionDirWS, lightDirWS, sunGlintPower) * (sunGlintPower + 2.0) * 0.5;
+#if SCENE_INPUTS
+    lobe *= surfaceShadow; // sun-shadow: no mirrored sun where the sun does not reach the surface
+#endif
     finalColor += lobe * sunGlintIntensity * reflectionAmount * g_LightColor.rgb * g_LightColor.a;
 
 #if SCENE_INPUTS

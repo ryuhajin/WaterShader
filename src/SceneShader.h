@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ShadowFrame.h"
+
 #include <DirectXMath.h>
 #include <d3d11.h>
 #include <wrl/client.h>
@@ -42,6 +44,15 @@ public:
         DirectX::XMFLOAT4 timeArea;  // x = time, y = water patch half size, z = wave edge fade width
     };
     void SetWaterSurface(const WaterSurface& surface) { waterSurface_ = surface; }
+    // sun-shadow: the shadow map the objects receive (t0, comparison sampler s0). Bound by Begin; params.x = 0 = off.
+    void SetShadow(const ShadowFrame& shadow, ID3D11ShaderResourceView* map, ID3D11SamplerState* sampler)
+    {
+        shadow_ = shadow;
+        shadowMap_ = map;
+        shadowSampler_ = sampler;
+    }
+    // Shadow pass: the same objects seen from the sun, depth only (no pixel shader). Render as usual afterwards.
+    void BeginDepthOnly(ID3D11DeviceContext* deviceContext, const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection);
     void Render(ID3D11DeviceContext* deviceContext, int indexCount, const DirectX::XMMATRIX& world, const Material& material);
 
     const std::string& GetLastError() const { return lastError_; }
@@ -66,6 +77,9 @@ private:
     DirectX::XMFLOAT4 ambientColor_{};
     int debugMode_ = 0;
     WaterSurface waterSurface_{};
+    ShadowFrame shadow_{};
+    ID3D11ShaderResourceView* shadowMap_ = nullptr;
+    ID3D11SamplerState* shadowSampler_ = nullptr;
 
     std::wstring shaderPath_;
     std::filesystem::file_time_type lastWriteTime_{};

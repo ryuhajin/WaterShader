@@ -29,7 +29,9 @@ struct SceneCB
     DirectX::XMFLOAT4 waves[8];       // the water surface (wave-occlusion): same layout as the HLSL WaveParams x 4
     DirectX::XMFLOAT4 waterCamera;    // xyz = camera position
     DirectX::XMFLOAT4 waterTimeArea;  // x = time, y = water patch half size, z = wave edge fade width
+    ShadowFrame shadow;               // sun-shadow
 };
+static_assert(sizeof(SceneCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
 
 bool CompileShader(const wchar_t* path, const char* entryPoint, const char* target, ID3DBlob** bytecode, std::string* outError)
 {
@@ -131,6 +133,19 @@ void SceneShader::Begin(
     deviceContext->PSSetShader(writeNormal ? pixelShaderWithNormal_.Get() : pixelShader_.Get(), nullptr, 0);
     deviceContext->VSSetConstantBuffers(0, 1, perObjectCB_.GetAddressOf());
     deviceContext->PSSetConstantBuffers(0, 1, perObjectCB_.GetAddressOf());
+    deviceContext->PSSetShaderResources(0, 1, &shadowMap_);
+    deviceContext->PSSetSamplers(0, 1, &shadowSampler_);
+}
+
+void SceneShader::BeginDepthOnly(ID3D11DeviceContext* deviceContext, const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection)
+{
+    DirectX::XMStoreFloat4x4(&view_, view);
+    DirectX::XMStoreFloat4x4(&projection_, projection);
+    debugMode_ = 0;
+    deviceContext->IASetInputLayout(layout_.Get());
+    deviceContext->VSSetShader(vertexShader_.Get(), nullptr, 0);
+    deviceContext->PSSetShader(nullptr, nullptr, 0);
+    deviceContext->VSSetConstantBuffers(0, 1, perObjectCB_.GetAddressOf());
 }
 
 void SceneShader::Render(ID3D11DeviceContext* deviceContext, int indexCount, const DirectX::XMMATRIX& world, const Material& material)
@@ -154,6 +169,7 @@ void SceneShader::Render(ID3D11DeviceContext* deviceContext, int indexCount, con
         }
         data->waterCamera = waterSurface_.camera;
         data->waterTimeArea = waterSurface_.timeArea;
+        data->shadow = shadow_;
         deviceContext->Unmap(perObjectCB_.Get(), 0);
     }
 

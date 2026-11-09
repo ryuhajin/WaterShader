@@ -72,6 +72,7 @@ struct PerFrameCB
     DirectX::XMFLOAT4 waterArea;           // x = water patch half size (m, 0 = none), y = wave edge fade width (m)
     DirectX::XMFLOAT4 refractionParams;    // x = strength of the mode (0 = straight), y = index of refraction, z = frame-edge margin (px), w = mode
     DirectX::XMFLOAT4 refractionParams2;   // normal offset: x = shore fade depth (m), y = wobble depth (m)
+    ShadowFrame shadow;                    // sun-shadow: the sun shadow map, read at the water surface (test scenes)
 };
 static_assert(sizeof(WaveParams) == 32, "WaveParams must match the 2-register HLSL layout");
 static_assert(sizeof(PerFrameCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
@@ -195,6 +196,7 @@ bool ColorShader::InitializeShader(ID3D11Device* device)
         {GetShaderPath(L"Color.hlsli"),    {}},
         {GetShaderPath(L"Waves.hlsli"),    {}},
         {GetShaderPath(L"DepthBands.hlsli"), {}},
+        {GetShaderPath(L"Shadow.hlsli"),   {}},
     };
 
     D3D11_BUFFER_DESC cbDesc = {};
@@ -471,6 +473,7 @@ void ColorShader::RenderShader(
         data->refractionParams = DirectX::XMFLOAT4(physicalRefraction ? water.refractionStrength : water.refractionDistortion,
             water.refractionIndex, physicalRefraction ? 64.0f : 32.0f, physicalRefraction ? 1.0f : 0.0f);
         data->refractionParams2 = DirectX::XMFLOAT4(water.refractionShoreFade, water.refractionWobbleDepth, 0.0f, 0.0f);
+        data->shadow = water.shadow;
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 
@@ -497,8 +500,10 @@ void ColorShader::RenderShader(
     deviceContext->PSSetShaderResources(0, 3, srvs);
     if (sceneInputs)
     {
-        ID3D11ShaderResourceView* sceneSrvs[4] = {sceneColorSRV, sceneDepthSRV, foamSRV, sceneNormalSRV};
-        deviceContext->PSSetShaderResources(3, 4, sceneSrvs);
+        ID3D11ShaderResourceView* sceneSrvs[5] = {sceneColorSRV, sceneDepthSRV, foamSRV, sceneNormalSRV, water.shadowSRV};
+        deviceContext->PSSetShaderResources(3, 5, sceneSrvs);
+        ID3D11SamplerState* shadowSampler = water.shadowSampler;
+        deviceContext->PSSetSamplers(2, 1, &shadowSampler);
     }
     deviceContext->PSSetSamplers(0, 2, samplers);
     deviceContext->DrawIndexed(indexCount, 0, 0);

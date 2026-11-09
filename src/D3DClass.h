@@ -60,6 +60,14 @@ public:
     void SetWaterPrepassDepth();   // prepass: LESS + write, stencil = 1 where the water wins
     void ClearWaterStencil();      // after the depth copy: no pixel marked yet
 
+    // Sun shadow map (sun-shadow): fixed 1024 x 1024 32-bit depth. BeginShadowPass binds it as the only target
+    // (no color) with a matching viewport; EndShadowPass puts the HDR target, scene depth and viewport back.
+    static constexpr unsigned int kShadowMapSize = 1024;
+    void BeginShadowPass();
+    void EndShadowPass();
+    ID3D11ShaderResourceView* GetShadowSRV() const { return shadowSRV_.Get(); }
+    ID3D11SamplerState* GetShadowSampler() const { return shadowSampler_.Get(); } // comparison, LESS_EQUAL, border = lit
+
     // Debug layer (Debug builds): warnings and errors since the last call. Empty without the layer.
     // allMessages (optional) counts every stored message, info included: proof the queue is live.
     std::vector<std::string> TakeDebugMessages(size_t* allMessages = nullptr);
@@ -77,6 +85,7 @@ private:
     bool CreateDepthStencil();
     bool CreateRasterizerState();
     bool CreateDepthStates();
+    bool CreateShadowMap();
     bool CreateSampler();
     void ReleaseRenderTarget();
 
@@ -114,4 +123,9 @@ private:
     Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthLessEqualState_;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> defaultSampler_;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> wrapSampler_;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> shadowTexture_;     // R32_TYPELESS: sun depth, D32 target and R32 input
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilView> shadowDSV_;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> shadowSRV_;
+    Microsoft::WRL::ComPtr<ID3D11SamplerState> shadowSampler_;
+    D3D11_VIEWPORT savedViewport_ = {};
 };
