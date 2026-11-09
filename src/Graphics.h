@@ -198,6 +198,9 @@ private:
     ShadowFrame shadowFrame_{};         // this frame's shadow inputs for the receivers
     float shadowBoxWidth_ = 0.0f;       // m: side of the sun's box this frame (texel = width / 1024)
     float captureTime_ = 12.0f;         // --capture-time: the fixed clock of captured frames (s)
+    // Rendering review (2026-11-09), test scenes, not saved in presets:
+    bool downwelling_ = true;           // light reaching points under the water fades on the way down (--downwelling)
+    bool fresnelF0FromIor_ = false;     // F0 = ((n - 1) / (n + 1))^2 from the refraction IOR instead of the slider (--f0-from-ior)
     // Debug layer messages (Debug builds), counted per text; written next to a capture set.
     std::map<std::string, int> d3dMessages_;
     size_t d3dMessageTotal_ = 0;

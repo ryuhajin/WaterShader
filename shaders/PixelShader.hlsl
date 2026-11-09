@@ -335,6 +335,14 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 #endif
     float3 tangentWS  = normalize(mul(float3(1, 0, 0), (float3x3)g_World));
     float3 bitangentWS  = normalize(mul(float3(0, 0, 1), (float3x3)g_World));
+#if SCENE_INPUTS
+    // Rendering review: the ripple map's two in-plane axes follow the wave surface, so they lie in it (Gram-Schmidt:
+    // remove the part of X along the wave normal, then the second axis = X' x N, which is +Z on flat water). Flat X / Z
+    // on a tilted wave face pierce the surface and mix the ripple slopes with the wave's own tilt. Test scenes only:
+    // the old ocean keeps its exact look.
+    tangentWS = normalize(tangentWS - baseNormalWS * dot(baseNormalWS, tangentWS));
+    bitangentWS = cross(tangentWS, baseNormalWS);
+#endif
     float3 finalNormalWS  = normalize(blendedNormalTS.x * tangentWS + blendedNormalTS.y * bitangentWS + blendedNormalTS.z * baseNormalWS);
 #if SCENE_INPUTS
     int3 scenePixel = int3(input.position.xy, 0); // SV_POSITION.xy is the pixel center (x + 0.5)

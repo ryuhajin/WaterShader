@@ -20,6 +20,8 @@ cbuffer SceneCB : register(b0)
     WaveParams g_WaterWaves[WAVE_COUNT]; // the water surface (wave-occlusion), for the answer key
     float4 g_WaterCamera;    // xyz = camera position (the waves fade with distance)
     float4 g_WaterTimeArea;  // x = time, y = water patch half size, z = wave edge fade width
+    float4 g_UnderwaterLight; // downwelling: xyz = the water's extinction (1/m), w = cos of the sun's angle under the
+                              // water (Snell, from vertical; 0 = off: lit as in air)
     ShadowInputs g_Shadow;   // sun-shadow: the sun shadow map
 };
 
@@ -33,6 +35,37 @@ float WaterDepthBelowSurface(float3 p)
     float surfaceY = WaterSurfaceHeightAt(g_WaterWaves, p.xz, g_WaterCamera.xyz, g_WaterTimeArea.x,
                                           float4(g_WaterTimeArea.yz, 0.0, 0.0), sideError);
     return surfaceY - p.y;
+}
+
+// Downwelling: the light that reaches a point under the water has crossed water on its way down, and loses the same
+// share per meter as the view path does on its way up (exp(-extinction x path)). The sun's path is the depth over
+// the cosine of its angle under the water (bent toward vertical at the surface, Snell); the sky light comes from
+// every direction and is taken straight down. Outside the water patch or above the water: 1, lit as in air.
+void UnderwaterLightFade(float3 p, out float3 sunFade, out float3 skyFade)
+{
+    sunFade = 1.0;
+    skyFade = 1.0;
+    float halfSize = g_WaterTimeArea.y;
+    if (g_UnderwaterLight.w <= 0.0 || halfSize <= 0.0 || max(abs(p.x), abs(p.z)) > halfSize)
+    {
+        return;
+    }
+    float highestWave = 0.0;
+    [unroll]
+    for (int i = 0; i < WAVE_COUNT; ++i)
+    {
+        highestWave += max(g_WaterWaves[i].amplitude, 0.0);
+    }
+    if (p.y > highestWave)
+    {
+        return; // above every crest: dry, no need for the height lookup
+    }
+    float depth = WaterDepthBelowSurface(p);
+    if (depth > 0.0)
+    {
+        sunFade = exp(-g_UnderwaterLight.xyz * (depth / g_UnderwaterLight.w));
+        skyFade = exp(-g_UnderwaterLight.xyz * depth);
+    }
 }
 
 struct VSInput
@@ -160,7 +193,12 @@ float4 PSMain(PSInput input) : SV_TARGET
     float diffuse = saturate(dot(n, lightDirWS));
     // sun-shadow: the sun term alone is shadowed; the sky light (ambient) still reaches the shadow.
     float shadow = SunShadow(g_ShadowMap, g_ShadowSampler, g_Shadow, p, n, lightDirWS);
-    float3 lighting = g_AmbientColor.rgb * g_AmbientColor.a + g_LightColor.rgb * g_LightColor.a * (diffuse * shadow);
+    // Downwelling: under the water both lights arrive weakened by the water above (1 = off / dry).
+    float3 sunFade;
+    float3 skyFade;
+    UnderwaterLightFade(p, sunFade, skyFade);
+    float3 lighting = g_AmbientColor.rgb * g_AmbientColor.a * skyFade
+                    + g_LightColor.rgb * g_LightColor.a * sunFade * (diffuse * shadow);
 
     // 5 = sun share (white = sun reaches the point, black = shadow). Faces turned away from the sun get no sun anyway
     // and are drawn mid gray, so only the shadow map's answer shows.
