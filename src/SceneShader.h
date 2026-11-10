@@ -54,6 +54,18 @@ public:
         shadowMap_ = map;
         shadowSampler_ = sampler;
     }
+    // caustics: the sunlight pattern under the water (t1, repeat sampler s1). params.x = 0 = off.
+    struct Caustics
+    {
+        DirectX::XMFLOAT4 params = {0.0f, 0.0f, 0.0f, 5.0f};  // x = strength, y = 1 / pattern size (1/m), z = pattern time, w = fade-out depth (m)
+        DirectX::XMFLOAT4 params2 = {0.0f, 0.0f, 0.0f, 0.0f}; // x = mip bias (softness), zw = xz offset per meter of depth toward the sun
+    };
+    void SetCaustics(const Caustics& caustics, ID3D11ShaderResourceView* map, ID3D11SamplerState* sampler)
+    {
+        caustics_ = caustics;
+        causticMap_ = map;
+        causticSampler_ = sampler;
+    }
     // Shadow pass: the same objects seen from the sun, depth only (no pixel shader). Render as usual afterwards.
     void BeginDepthOnly(ID3D11DeviceContext* deviceContext, const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection);
     void Render(ID3D11DeviceContext* deviceContext, int indexCount, const DirectX::XMMATRIX& world, const Material& material);
@@ -83,6 +95,9 @@ private:
     ShadowFrame shadow_{};
     ID3D11ShaderResourceView* shadowMap_ = nullptr;
     ID3D11SamplerState* shadowSampler_ = nullptr;
+    Caustics caustics_{};
+    ID3D11ShaderResourceView* causticMap_ = nullptr;
+    ID3D11SamplerState* causticSampler_ = nullptr;
 
     std::wstring shaderPath_;
     std::filesystem::file_time_type lastWriteTime_{};

@@ -135,6 +135,8 @@ private:
     // Fills shadowFrame_ (off: params.x = 0, nothing drawn).
     void RenderShadowPass(const DirectX::XMFLOAT4& lightDir);
     void DrawShadowSettings(); // Light window, Shadows section
+    void DrawCausticsSettings(); // Light window, Caustics section
+    SceneShader::Caustics MakeCaustics(const DirectX::XMFLOAT4& lightDir) const; // this frame's caustic inputs
 
     CameraView MakeViewFromCurrent() const;
     bool IsTopShotView() const; // camera exactly on the fixed "top" shot (position, rotation, mesh)
@@ -198,6 +200,17 @@ private:
     ShadowFrame shadowFrame_{};         // this frame's shadow inputs for the receivers
     float shadowBoxWidth_ = 0.0f;       // m: side of the sun's box this frame (texel = width / 1024)
     float captureTime_ = 12.0f;         // --capture-time: the fixed clock of captured frames (s)
+    // caustics (test scenes, not saved in presets): the sunlight pattern on surfaces under the water.
+    bool causticsEnabled_ = true;
+    float causticStrength_ = 0.8f;      // 0 = flat sunlight; 1 = the dark gaps reach black
+    float causticPatternSize_ = 2.0f;   // m: one repeat of the baked pattern (its large cells are a sixth of this)
+    float causticFlowSpeed_ = 1.0f;     // how fast the pattern bends and drifts (1 = default)
+    float causticSharpness_ = 1.0f;     // 1 = the texture's full detail, 0 = three mip levels softer
+    float causticFadeDepth_ = 5.0f;     // m: the pattern's contrast is gone at this depth (user decision 2026-11-10)
+    int causticProjection_ = 0;         // 0 = along the bent sun ray, 1 = straight down (comparison)
+    bool causticFreeze_ = false;        // hold the pattern still (check that it sticks to the floor)
+    float causticFreezeTime_ = 0.0f;    // the clock the pattern was frozen at
+    std::unique_ptr<Texture> causticMap_; // assets/textures/caustics.dds (tools/bake_foam_masks.ps1)
     // Rendering review (2026-11-09), test scenes, not saved in presets:
     bool downwelling_ = true;           // light reaching points under the water fades on the way down (--downwelling)
     bool fresnelF0FromIor_ = false;     // F0 = ((n - 1) / (n + 1))^2 from the refraction IOR instead of the slider (--f0-from-ior)

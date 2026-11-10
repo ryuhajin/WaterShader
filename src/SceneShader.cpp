@@ -31,6 +31,8 @@ struct SceneCB
     DirectX::XMFLOAT4 waterTimeArea;  // x = time, y = water patch half size, z = wave edge fade width
     DirectX::XMFLOAT4 underwaterLight; // downwelling: xyz = extinction (1/m), w = cos of the sun's angle under water (0 = off)
     ShadowFrame shadow;               // sun-shadow
+    DirectX::XMFLOAT4 caustics;       // caustics: strength, 1 / pattern size, time, fade-out depth
+    DirectX::XMFLOAT4 caustics2;      // mip bias, -, xz offset per meter of depth toward the sun
 };
 static_assert(sizeof(SceneCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
 
@@ -136,6 +138,8 @@ void SceneShader::Begin(
     deviceContext->PSSetConstantBuffers(0, 1, perObjectCB_.GetAddressOf());
     deviceContext->PSSetShaderResources(0, 1, &shadowMap_);
     deviceContext->PSSetSamplers(0, 1, &shadowSampler_);
+    deviceContext->PSSetShaderResources(1, 1, &causticMap_);
+    deviceContext->PSSetSamplers(1, 1, &causticSampler_);
 }
 
 void SceneShader::BeginDepthOnly(ID3D11DeviceContext* deviceContext, const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection)
@@ -172,6 +176,8 @@ void SceneShader::Render(ID3D11DeviceContext* deviceContext, int indexCount, con
         data->waterTimeArea = waterSurface_.timeArea;
         data->underwaterLight = waterSurface_.underwaterLight;
         data->shadow = shadow_;
+        data->caustics = caustics_.params;
+        data->caustics2 = caustics_.params2;
         deviceContext->Unmap(perObjectCB_.Get(), 0);
     }
 

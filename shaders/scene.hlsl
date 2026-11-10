@@ -23,10 +23,15 @@ cbuffer SceneCB : register(b0)
     float4 g_UnderwaterLight; // downwelling: xyz = the water's extinction (1/m), w = cos of the sun's angle under the
                               // water (Snell, from vertical; 0 = off: lit as in air)
     ShadowInputs g_Shadow;   // sun-shadow: the sun shadow map
+    float4 g_Caustics;       // caustics: x = strength (0 = off), y = 1 / pattern size (1/m), z = pattern time (s x flow speed),
+                             // w = fade-out depth (m)
+    float4 g_Caustics2;      // x = mip bias (softness), zw = xz offset per meter of depth back toward the sun (0 = straight)
 };
 
 Texture2D<float> g_ShadowMap : register(t0);               // sun-shadow: the sun's depth (orthographic)
 SamplerComparisonState g_ShadowSampler : register(s0);     // LESS_EQUAL, outside the map = lit
+Texture2D g_CausticMap : register(t1);                     // caustics: baked tileable pattern (R), with mips
+SamplerState g_WrapSampler : register(s1);                 // repeat
 
 // Water depth of a surface point: the wave surface right above it minus its height (y = 0 when the waves are off).
 float WaterDepthBelowSurface(float3 p)
@@ -37,18 +42,14 @@ float WaterDepthBelowSurface(float3 p)
     return surfaceY - p.y;
 }
 
-// Downwelling: the light that reaches a point under the water has crossed water on its way down, and loses the same
-// share per meter as the view path does on its way up (exp(-extinction x path)). The sun's path is the depth over
-// the cosine of its angle under the water (bent toward vertical at the surface, Snell); the sky light comes from
-// every direction and is taken straight down. Outside the water patch or above the water: 1, lit as in air.
-void UnderwaterLightFade(float3 p, out float3 sunFade, out float3 skyFade)
+// How deep a point sits under the water (m), or 0 when it is dry: outside the water patch, or above the water.
+// Only looked up when something under the water needs it (downwelling, caustics).
+float UnderwaterDepth(float3 p)
 {
-    sunFade = 1.0;
-    skyFade = 1.0;
     float halfSize = g_WaterTimeArea.y;
-    if (g_UnderwaterLight.w <= 0.0 || halfSize <= 0.0 || max(abs(p.x), abs(p.z)) > halfSize)
+    if (halfSize <= 0.0 || max(abs(p.x), abs(p.z)) > halfSize)
     {
-        return;
+        return 0.0;
     }
     float highestWave = 0.0;
     [unroll]
@@ -58,14 +59,54 @@ void UnderwaterLightFade(float3 p, out float3 sunFade, out float3 skyFade)
     }
     if (p.y > highestWave)
     {
-        return; // above every crest: dry, no need for the height lookup
+        return 0.0; // above every crest: dry, no need for the height lookup
     }
-    float depth = WaterDepthBelowSurface(p);
-    if (depth > 0.0)
+    return max(WaterDepthBelowSurface(p), 0.0);
+}
+
+// Downwelling: the light that reaches a point under the water has crossed water on its way down, and loses the same
+// share per meter as the view path does on its way up (exp(-extinction x path)). The sun's path is the depth over
+// the cosine of its angle under the water (bent toward vertical at the surface, Snell); the sky light comes from
+// every direction and is taken straight down. Dry (depth 0) or off: 1, lit as in air.
+void UnderwaterLightFade(float depth, out float3 sunFade, out float3 skyFade)
+{
+    sunFade = 1.0;
+    skyFade = 1.0;
+    if (g_UnderwaterLight.w > 0.0 && depth > 0.0)
     {
         sunFade = exp(-g_UnderwaterLight.xyz * (depth / g_UnderwaterLight.w));
         skyFade = exp(-g_UnderwaterLight.xyz * depth);
     }
+}
+
+// Caustics: the rippled surface works as many small lenses. Where a ripple bulges it gathers the sunlight into a bright
+// line on the floor, where it dips it spreads the light thinner. Light is moved, not made, so the pattern scales the
+// sunlight around 1: x (pattern / its average). Not computed from the actual waves (a baked tileable pattern, bent and
+// drifted in two scales so its shape keeps changing); its place on the floor is where the bent sun ray came through
+// the surface, so it sticks to the floor while the camera moves.
+// Depth: fades in over the first 0.1 m (the lenses have not gathered the light yet), then blurs and loses its contrast
+// toward the fade-out depth (the networks of large and small ripples overlap and wash out). The sunlight itself fading
+// with depth is the downwelling term, and the water color laid over it is the water pass: both separate.
+float CausticFactor(float3 p, float depth)
+{
+    if (g_Caustics.x <= 0.0 || depth <= 0.0)
+    {
+        return 1.0;
+    }
+    float2 surfaceXZ = p.xz + g_Caustics2.zw * depth; // back along the bent sun ray to the surface (0 = straight up)
+    float2 uv = surfaceXZ * g_Caustics.y;
+    float t = g_Caustics.z;
+    // Two scales of slow bending: the cells stretch, merge and split instead of only sliding.
+    float2 warp = 0.09 * float2(sin(uv.y * 2.1 + t * 0.9) + sin(uv.x * 0.9 + uv.y * 0.7 - t * 0.5),
+                                cos(uv.x * 1.9 - t * 0.8) + cos(uv.x * 0.6 - uv.y * 0.8 + t * 0.6))
+                + 0.035 * float2(sin(uv.x * 1.1 + uv.y * 5.3 + t * 1.7), cos(uv.x * 4.7 + uv.y * 0.9 - t * 1.5));
+    uv += warp + float2(0.031, 0.017) * t;
+    float fadeDepth = max(g_Caustics.w, 0.6);
+    float deep = saturate(depth / fadeDepth);
+    float pattern = g_CausticMap.SampleBias(g_WrapSampler, uv, g_Caustics2.x + 2.5 * deep).r;
+    float average = g_CausticMap.SampleLevel(g_WrapSampler, uv, 16.0).r; // the 1 x 1 mip: the whole pattern's mean
+    float contrast = smoothstep(0.0, 0.1, depth) * (1.0 - smoothstep(0.5, fadeDepth, depth));
+    return max(1.0 + g_Caustics.x * contrast * (pattern / max(average, 1e-3) - 1.0), 0.0);
 }
 
 struct VSInput
@@ -193,12 +234,25 @@ float4 PSMain(PSInput input) : SV_TARGET
     float diffuse = saturate(dot(n, lightDirWS));
     // sun-shadow: the sun term alone is shadowed; the sky light (ambient) still reaches the shadow.
     float shadow = SunShadow(g_ShadowMap, g_ShadowSampler, g_Shadow, p, n, lightDirWS);
+    // Under the water (depth looked up only when downwelling or caustics need it; 0 = dry).
+    float depth = (g_UnderwaterLight.w > 0.0 || g_Caustics.x > 0.0 || debugMode == 6) ? UnderwaterDepth(p) : 0.0;
     // Downwelling: under the water both lights arrive weakened by the water above (1 = off / dry).
     float3 sunFade;
     float3 skyFade;
-    UnderwaterLightFade(p, sunFade, skyFade);
+    UnderwaterLightFade(depth, sunFade, skyFade);
+    // Caustics: the sunlight rearranged by the ripples (1 = off / dry). Part of the sun term, so the shadow and the
+    // downwelling fade apply to it too.
+    float caustic = CausticFactor(p, depth);
     float3 lighting = g_AmbientColor.rgb * g_AmbientColor.a * skyFade
-                    + g_LightColor.rgb * g_LightColor.a * sunFade * (diffuse * shadow);
+                    + g_LightColor.rgb * g_LightColor.a * sunFade * (diffuse * shadow * caustic);
+
+    // 6 = caustic factor: mid gray = 1 (no change), brighter = light gathered, darker = light spread thinner
+    // (gray x factor, white from 2). Dry, shadowed or turned away from the sun: the plain gray.
+    if (debugMode == 6)
+    {
+        float shown = dot(n, lightDirWS) > 0.0 ? lerp(1.0, caustic, shadow) : 1.0;
+        return float4(SrgbToLinear(saturate(0.5 * shown).xxx), 1.0);
+    }
 
     // 5 = sun share (white = sun reaches the point, black = shadow). Faces turned away from the sun get no sun anyway
     // and are drawn mid gray, so only the shadow map's answer shows.
