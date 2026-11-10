@@ -524,6 +524,11 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--f0-from-ior" && hasValue) { fresnelF0FromIor_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--caustics" && hasValue)   { causticsEnabled_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--caustics-strength" && hasValue) { causticStrength_ = static_cast<float>(_wtof(argv[++i])); }
+                else if (arg == L"--caustics-waves" && hasValue)
+                {
+                    // sway,bands (1 = physical, 0 = off)
+                    swscanf_s(argv[++i], L"%f,%f", &causticWaveSway_, &causticWaveBands_);
+                }
                 else if (arg == L"--caustics-fade" && hasValue) { causticFadeDepth_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--caustics-projection" && hasValue) { causticProjection_ = std::wstring(argv[++i]) == L"down" ? 1 : 0; }
                 else if (arg == L"--caustics-freeze" && hasValue)
@@ -2004,16 +2009,18 @@ SceneShader::Caustics Graphics::MakeCaustics(const DirectX::XMFLOAT4& lightDir) 
                                         time * causticFlowSpeed_, causticFadeDepth_);
     float offsetX = 0.0f;
     float offsetZ = 0.0f;
+    const float n = (std::max)(water_.refractionIndex, 1.0f);
     if (causticProjection_ == 0)
     {
-        const float n = (std::max)(water_.refractionIndex, 1.0f);
         const float sideX = lightDir.x / n; // the bent ray's sideways part (unit direction)
         const float sideZ = lightDir.z / n;
         const float up = std::sqrt((std::max)(1.0f - sideX * sideX - sideZ * sideZ, 1e-4f));
         offsetX = -sideX / up;
         offsetZ = -sideZ / up;
     }
-    caustics.params2 = DirectX::XMFLOAT4(3.0f * (1.0f - std::clamp(causticSharpness_, 0.0f, 1.0f)), 0.0f, offsetX, offsetZ);
+    caustics.params2 = DirectX::XMFLOAT4(3.0f * (1.0f - std::clamp(causticSharpness_, 0.0f, 1.0f)), 1.0f - 1.0f / n,
+                                         offsetX, offsetZ);
+    caustics.params3 = DirectX::XMFLOAT4((std::max)(causticWaveSway_, 0.0f), (std::max)(causticWaveBands_, 0.0f), 0.0f, 0.0f);
     return caustics;
 }
 
@@ -2644,7 +2651,8 @@ void Graphics::DrawViewWindow()
             const char* sceneDebugLabels[] = { "Render", "Water depth (WP, m) - water hidden", "Water depth numeric (WP) - compare tool",
                 "Not measured marker (numeric views)", "World normal (answer key) - water hidden",
                 "Sun shadow (white = sun, gray = facing away) - water hidden",
-                "Caustics (gray = 1, bright = gathered, dark = spread) - water hidden" };
+                "Caustics (gray = 1, bright = gathered, dark = spread) - water hidden",
+                "Caustic wave bands only (big waves, same scale) - water hidden" };
             if (ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels)))
             {
                 SwapDebugViews(sceneDebug_, parkedSceneDebug_, water_.debugMode, parkedWaterDebug_);
@@ -3021,6 +3029,11 @@ void Graphics::DrawCausticsSettings()
     ImGui::SliderFloat("Sharpness##caustics", &causticSharpness_, 0.0f, 1.0f, "%.2f");
     ImGui::SliderFloat("Fade-out depth (m)", &causticFadeDepth_, 0.6f, 12.0f, "%.1f");
     ImGui::TextDisabled("Sharp from 0.1 m, contrast fades from 0.5 m and is\ngone here; it also blurs with depth. The light itself\nfading with depth is Underwater Light (downwelling).");
+    ImGui::SeparatorText("Follow the big waves");
+    ImGui::SliderFloat("Wave sway", &causticWaveSway_, 0.0f, 3.0f, "%.2f");
+    ImGui::TextDisabled("A tilted surface sends the light sideways:\ndepth x (1 - 1/n) x slope. 1 = Snell.");
+    ImGui::SliderFloat("Wave light bands", &causticWaveBands_, 0.0f, 3.0f, "%.2f");
+    ImGui::TextDisabled("Crests gather the light into a band, troughs spread it\n(a lens: grows with depth). 1 = lens strength.\nBoth need Lab Waves on (View window).");
     const char* projectionLabels[] = { "Along the sun ray (bent at the surface)", "Straight down (comparison)" };
     ImGui::Combo("Projection", &causticProjection_, projectionLabels, IM_ARRAYSIZE(projectionLabels));
     if (ImGui::Checkbox("Freeze pattern", &causticFreeze_) && causticFreeze_)

@@ -32,7 +32,8 @@ struct SceneCB
     DirectX::XMFLOAT4 underwaterLight; // downwelling: xyz = extinction (1/m), w = cos of the sun's angle under water (0 = off)
     ShadowFrame shadow;               // sun-shadow
     DirectX::XMFLOAT4 caustics;       // caustics: strength, 1 / pattern size, time, fade-out depth
-    DirectX::XMFLOAT4 caustics2;      // mip bias, -, xz offset per meter of depth toward the sun
+    DirectX::XMFLOAT4 caustics2;      // mip bias, 1 - 1/n, xz offset per meter of depth toward the sun
+    DirectX::XMFLOAT4 caustics3;      // big waves: sway, light bands
 };
 static_assert(sizeof(SceneCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
 
@@ -178,6 +179,7 @@ void SceneShader::Render(ID3D11DeviceContext* deviceContext, int indexCount, con
         data->shadow = shadow_;
         data->caustics = caustics_.params;
         data->caustics2 = caustics_.params2;
+        data->caustics3 = caustics_.params3;
         deviceContext->Unmap(perObjectCB_.Get(), 0);
     }
 

@@ -25,7 +25,9 @@ cbuffer SceneCB : register(b0)
     ShadowInputs g_Shadow;   // sun-shadow: the sun shadow map
     float4 g_Caustics;       // caustics: x = strength (0 = off), y = 1 / pattern size (1/m), z = pattern time (s x flow speed),
                              // w = fade-out depth (m)
-    float4 g_Caustics2;      // x = mip bias (softness), zw = xz offset per meter of depth back toward the sun (0 = straight)
+    float4 g_Caustics2;      // x = mip bias (softness), y = 1 - 1/n (how much a tilted surface bends the light),
+                             // zw = xz offset per meter of depth back toward the sun (0 = straight)
+    float4 g_Caustics3;      // following the big waves (1 = physical, 0 = off): x = sway, y = light bands
 };
 
 Texture2D<float> g_ShadowMap : register(t0);               // sun-shadow: the sun's depth (orthographic)
@@ -87,13 +89,57 @@ void UnderwaterLightFade(float depth, out float3 sunFade, out float3 skyFade)
 // Depth: fades in over the first 0.1 m (the lenses have not gathered the light yet), then blurs and loses its contrast
 // toward the fade-out depth (the networks of large and small ripples overlap and wash out). The sunlight itself fading
 // with depth is the downwelling term, and the water color laid over it is the water pass: both separate.
-float CausticFactor(float3 p, float depth)
+// Slope (dh/dx, dh/dz) and curvature (d2h/dx2 + d2h/dz2) of the big (Gerstner) waves at xz, with the same distance
+// and patch-edge fades as the water mesh. The height part of each wave only (A sin): the Gerstner sideways motion
+// sharpens the crests but barely moves where the light gathers.
+void WaveSlopeCurvature(float2 xz, out float2 slope, out float curvature)
 {
+    slope = 0.0;
+    curvature = 0.0;
+    float viewDistance = length(xz - g_WaterCamera.xz);
+    float edgeFade = WaterEdgeFade(xz, float4(g_WaterTimeArea.yz, 0.0, 0.0));
+    [unroll]
+    for (int i = 0; i < WAVE_COUNT; ++i)
+    {
+        WaveParams wave = g_WaterWaves[i];
+        if (wave.amplitude <= 0.0 || wave.wavelength <= 0.0)
+        {
+            continue;
+        }
+        float amplitude = wave.amplitude * WaveVertexFade(wave.wavelength, viewDistance) * edgeFade;
+        float k = 6.2831853 / wave.wavelength;
+        float phase = dot(wave.direction, xz) * k - k * wave.speed * g_WaterTimeArea.x;
+        slope += wave.direction * (amplitude * k * cos(phase));
+        curvature -= amplitude * k * k * sin(phase) * dot(wave.direction, wave.direction);
+    }
+}
+
+// waveBand: the big waves' own light bands (1 = none), for the debug view.
+float CausticFactor(float3 p, float depth, out float waveBand)
+{
+    waveBand = 1.0;
     if (g_Caustics.x <= 0.0 || depth <= 0.0)
     {
         return 1.0;
     }
     float2 surfaceXZ = p.xz + g_Caustics2.zw * depth; // back along the bent sun ray to the surface (0 = straight up)
+    float fadeDepth = max(g_Caustics.w, 0.6);
+    float contrast = smoothstep(0.0, 0.1, depth) * (1.0 - smoothstep(0.5, fadeDepth, depth));
+    // Following the big waves, as a lens of focal power = curvature: a surface tilted by slope s sends the light
+    // sideways by depth x (1 - 1/n) x s on its way down (Snell, small angles; the same shift as the normal-offset
+    // refraction). So the light at this point came through the surface that much further back: the ripple network
+    // sways with the passing waves. And a crest (curvature < 0) squeezes the light into a narrower strip, a trough
+    // spreads it: brightness x (1 - lens x curvature), the linear part of 1 / (area ratio), which keeps the average
+    // at 1 (the curvature of a wave averages to 0). Bands grow with depth until the light would cross (the focus).
+    if (g_Caustics3.x > 0.0 || g_Caustics3.y > 0.0)
+    {
+        float2 slope;
+        float curvature;
+        WaveSlopeCurvature(surfaceXZ, slope, curvature);
+        float lens = depth * g_Caustics2.y;
+        surfaceXZ -= g_Caustics3.x * lens * slope;
+        waveBand = max(1.0 - g_Caustics3.y * contrast * lens * curvature, 0.0);
+    }
     float2 uv = surfaceXZ * g_Caustics.y;
     float t = g_Caustics.z;
     // Two scales of slow bending: the cells stretch, merge and split instead of only sliding.
@@ -101,12 +147,10 @@ float CausticFactor(float3 p, float depth)
                                 cos(uv.x * 1.9 - t * 0.8) + cos(uv.x * 0.6 - uv.y * 0.8 + t * 0.6))
                 + 0.035 * float2(sin(uv.x * 1.1 + uv.y * 5.3 + t * 1.7), cos(uv.x * 4.7 + uv.y * 0.9 - t * 1.5));
     uv += warp + float2(0.031, 0.017) * t;
-    float fadeDepth = max(g_Caustics.w, 0.6);
     float deep = saturate(depth / fadeDepth);
     float pattern = g_CausticMap.SampleBias(g_WrapSampler, uv, g_Caustics2.x + 2.5 * deep).r;
     float average = g_CausticMap.SampleLevel(g_WrapSampler, uv, 16.0).r; // the 1 x 1 mip: the whole pattern's mean
-    float contrast = smoothstep(0.0, 0.1, depth) * (1.0 - smoothstep(0.5, fadeDepth, depth));
-    return max(1.0 + g_Caustics.x * contrast * (pattern / max(average, 1e-3) - 1.0), 0.0);
+    return max((1.0 + g_Caustics.x * contrast * (pattern / max(average, 1e-3) - 1.0)) * waveBand, 0.0);
 }
 
 struct VSInput
@@ -235,22 +279,25 @@ float4 PSMain(PSInput input) : SV_TARGET
     // sun-shadow: the sun term alone is shadowed; the sky light (ambient) still reaches the shadow.
     float shadow = SunShadow(g_ShadowMap, g_ShadowSampler, g_Shadow, p, n, lightDirWS);
     // Under the water (depth looked up only when downwelling or caustics need it; 0 = dry).
-    float depth = (g_UnderwaterLight.w > 0.0 || g_Caustics.x > 0.0 || debugMode == 6) ? UnderwaterDepth(p) : 0.0;
+    float depth = (g_UnderwaterLight.w > 0.0 || g_Caustics.x > 0.0 || debugMode == 6 || debugMode == 7) ? UnderwaterDepth(p) : 0.0;
     // Downwelling: under the water both lights arrive weakened by the water above (1 = off / dry).
     float3 sunFade;
     float3 skyFade;
     UnderwaterLightFade(depth, sunFade, skyFade);
     // Caustics: the sunlight rearranged by the ripples (1 = off / dry). Part of the sun term, so the shadow and the
     // downwelling fade apply to it too.
-    float caustic = CausticFactor(p, depth);
+    float waveBand;
+    float caustic = CausticFactor(p, depth, waveBand);
     float3 lighting = g_AmbientColor.rgb * g_AmbientColor.a * skyFade
                     + g_LightColor.rgb * g_LightColor.a * sunFade * (diffuse * shadow * caustic);
 
     // 6 = caustic factor: mid gray = 1 (no change), brighter = light gathered, darker = light spread thinner
     // (gray x factor, white from 2). Dry, shadowed or turned away from the sun: the plain gray.
-    if (debugMode == 6)
+    // 7 = the big waves' light bands alone, same scale.
+    if (debugMode == 6 || debugMode == 7)
     {
-        float shown = dot(n, lightDirWS) > 0.0 ? lerp(1.0, caustic, shadow) : 1.0;
+        float factor = debugMode == 6 ? caustic : waveBand;
+        float shown = dot(n, lightDirWS) > 0.0 ? lerp(1.0, factor, shadow) : 1.0;
         return float4(SrgbToLinear(saturate(0.5 * shown).xxx), 1.0);
     }
 

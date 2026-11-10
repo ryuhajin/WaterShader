@@ -58,7 +58,8 @@ public:
     struct Caustics
     {
         DirectX::XMFLOAT4 params = {0.0f, 0.0f, 0.0f, 5.0f};  // x = strength, y = 1 / pattern size (1/m), z = pattern time, w = fade-out depth (m)
-        DirectX::XMFLOAT4 params2 = {0.0f, 0.0f, 0.0f, 0.0f}; // x = mip bias (softness), zw = xz offset per meter of depth toward the sun
+        DirectX::XMFLOAT4 params2 = {0.0f, 0.0f, 0.0f, 0.0f}; // x = mip bias (softness), y = 1 - 1/n, zw = xz offset per meter of depth toward the sun
+        DirectX::XMFLOAT4 params3 = {0.0f, 0.0f, 0.0f, 0.0f}; // following the big waves (1 = physical): x = sway, y = light bands
     };
     void SetCaustics(const Caustics& caustics, ID3D11ShaderResourceView* map, ID3D11SamplerState* sampler)
     {

@@ -207,6 +207,8 @@ private:
     float causticFlowSpeed_ = 1.0f;     // how fast the pattern bends and drifts (1 = default)
     float causticSharpness_ = 1.0f;     // 1 = the texture's full detail, 0 = three mip levels softer
     float causticFadeDepth_ = 5.0f;     // m: the pattern's contrast is gone at this depth (user decision 2026-11-10)
+    float causticWaveSway_ = 1.0f;      // the big waves bend the light sideways (1 = Snell, 0 = off)
+    float causticWaveBands_ = 1.0f;     // crests gather the light into bands, troughs spread it (1 = lens strength, 0 = off)
     int causticProjection_ = 0;         // 0 = along the bent sun ray, 1 = straight down (comparison)
     bool causticFreeze_ = false;        // hold the pattern still (check that it sticks to the floor)
     float causticFreezeTime_ = 0.0f;    // the clock the pattern was frozen at
