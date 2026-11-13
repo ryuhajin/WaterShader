@@ -1,6 +1,6 @@
 # Caustics — 10단계 물속 바닥의 빛 무늬
 
-> Branch: `feature/caustics` · Status: 구현 완료, 사용자 검증 대기 · Updated: 2026-11-10 · 기록: [NOTES.md](NOTES.md)
+> Branch: `feature/caustics` · Status: 완료 (사용자 승인 2026-11-14) · Updated: 2026-11-10 · 기록: [NOTES.md](NOTES.md)
 > waterfront 업그레이드 10단계. 앞 단계: [../sun-shadow/NOTES.md](../sun-shadow/NOTES.md), [../render-review/NOTES.md](../render-review/NOTES.md)
 
 ## 1. Goal / Visual Target
