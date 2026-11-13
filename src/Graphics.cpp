@@ -522,6 +522,21 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--shadow-test-box" && hasValue) { shadowTestBox_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--downwelling" && hasValue) { downwelling_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--f0-from-ior" && hasValue) { fresnelF0FromIor_ = std::wstring(argv[++i]) != L"off"; }
+                else if (arg == L"--caustics" && hasValue)   { causticsEnabled_ = std::wstring(argv[++i]) != L"off"; }
+                else if (arg == L"--caustics-strength" && hasValue) { causticStrength_ = static_cast<float>(_wtof(argv[++i])); }
+                else if (arg == L"--caustics-waves" && hasValue)
+                {
+                    // sway,bands (1 = physical, 0 = off)
+                    swscanf_s(argv[++i], L"%f,%f", &causticWaveSway_, &causticWaveBands_);
+                }
+                else if (arg == L"--caustics-fade" && hasValue) { causticFadeDepth_ = static_cast<float>(_wtof(argv[++i])); }
+                else if (arg == L"--caustics-projection" && hasValue) { causticProjection_ = std::wstring(argv[++i]) == L"down" ? 1 : 0; }
+                else if (arg == L"--caustics-freeze" && hasValue)
+                {
+                    // Freeze at the given clock (s): the same pattern whatever --capture-time says.
+                    causticFreeze_ = true;
+                    causticFreezeTime_ = static_cast<float>(_wtof(argv[++i]));
+                }
                 else if (arg == L"--capture-time" && hasValue) { captureTime_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--transmission" && hasValue) { transmissionMode_ = _wtoi(argv[++i]); }
                 else if (arg == L"--reflection" && hasValue) { surfaceReflection_ = std::wstring(argv[++i]) != L"off"; }
@@ -662,6 +677,16 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
             OutputDebugStringW((L"[FoamMap] FAIL -> flat gray: " + err + L"\n").c_str());
         }
         foamMaps_.push_back(std::move(texture));
+    }
+    // caustics: the baked pattern. Missing file -> flat gray: pattern = its own average, no caustics.
+    causticMap_ = std::make_unique<Texture>();
+    {
+        std::wstring err;
+        if (!causticMap_->Initialize(d3d_->GetDevice(), GetAssetPath(L"textures/caustics.dds").c_str(), &err))
+        {
+            causticMap_->InitializeFlat(d3d_->GetDevice(), 128, 128, 128, 255);
+            OutputDebugStringW((L"[Caustics] FAIL -> flat gray: " + err + L"\n").c_str());
+        }
     }
 
     model_ = std::make_unique<Model>();
@@ -1832,6 +1857,7 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
     }
     sceneShader_->SetWaterSurface(surface);
     sceneShader_->SetShadow(shadowFrame_, d3d_->GetShadowSRV(), d3d_->GetShadowSampler());
+    sceneShader_->SetCaustics(MakeCaustics(lightDir), causticMap_->GetSRV(), d3d_->GetWrapSampler());
     sceneShader_->Begin(context, view, projection, lightDir, lightColor, ambientColor, sceneDebugMode, writeNormal);
     // normal-gbuffer: the objects also write their world normal to a second target (MRT), only when the water reads
     // it, so the depth-reconstructed source keeps the cost of 6B.
@@ -1965,6 +1991,37 @@ void Graphics::RenderShadowPass(const DirectX::XMFLOAT4& lightDir)
     }
     d3d_->SetRasterizerDefault();
     d3d_->EndShadowPass();
+}
+
+// caustics: off without water (Show Water off, or no patch). The pattern sits where the sun ray came through the
+// surface: going back up from depth d along the ray bent at the flat surface (Snell: the sideways part of the
+// direction shrinks by 1 / n) moves d x (sideways / upward) toward the sun.
+SceneShader::Caustics Graphics::MakeCaustics(const DirectX::XMFLOAT4& lightDir) const
+{
+    SceneShader::Caustics caustics;
+    caustics.params.w = causticFadeDepth_;
+    if (!causticsEnabled_ || !showWater_ || scene_ == NoScene || causticStrength_ <= 0.0f)
+    {
+        return caustics; // strength 0 = off
+    }
+    const float time = causticFreeze_ ? causticFreezeTime_ : elapsedTime_;
+    caustics.params = DirectX::XMFLOAT4(causticStrength_, 1.0f / (std::max)(causticPatternSize_, 0.05f),
+                                        time * causticFlowSpeed_, causticFadeDepth_);
+    float offsetX = 0.0f;
+    float offsetZ = 0.0f;
+    const float n = (std::max)(water_.refractionIndex, 1.0f);
+    if (causticProjection_ == 0)
+    {
+        const float sideX = lightDir.x / n; // the bent ray's sideways part (unit direction)
+        const float sideZ = lightDir.z / n;
+        const float up = std::sqrt((std::max)(1.0f - sideX * sideX - sideZ * sideZ, 1e-4f));
+        offsetX = -sideX / up;
+        offsetZ = -sideZ / up;
+    }
+    caustics.params2 = DirectX::XMFLOAT4(3.0f * (1.0f - std::clamp(causticSharpness_, 0.0f, 1.0f)), 1.0f - 1.0f / n,
+                                         offsetX, offsetZ);
+    caustics.params3 = DirectX::XMFLOAT4((std::max)(causticWaveSway_, 0.0f), (std::max)(causticWaveBands_, 0.0f), 0.0f, 0.0f);
+    return caustics;
 }
 
 // The scene normal buffer is written when the water reads it: the stored source, or the debug views that show it.
@@ -2593,7 +2650,9 @@ void Graphics::DrawViewWindow()
             // checked against later, not the depth buffer itself.
             const char* sceneDebugLabels[] = { "Render", "Water depth (WP, m) - water hidden", "Water depth numeric (WP) - compare tool",
                 "Not measured marker (numeric views)", "World normal (answer key) - water hidden",
-                "Sun shadow (white = sun, gray = facing away) - water hidden" };
+                "Sun shadow (white = sun, gray = facing away) - water hidden",
+                "Caustics (gray = 1, bright = gathered, dark = spread) - water hidden",
+                "Caustic wave bands only (big waves, same scale) - water hidden" };
             if (ImGui::Combo("Scene Debug", &sceneDebug_, sceneDebugLabels, IM_ARRAYSIZE(sceneDebugLabels)))
             {
                 SwapDebugViews(sceneDebug_, parkedSceneDebug_, water_.debugMode, parkedWaterDebug_);
@@ -2835,6 +2894,18 @@ void Graphics::DrawLightWindow()
         }
     }
 
+    if (SectionHeader("Caustics"))
+    {
+        if (scene_ != NoScene)
+        {
+            DrawCausticsSettings();
+        }
+        else
+        {
+            ImGui::TextDisabled("Test scenes only: pick Water Lab / Waterfront.");
+        }
+    }
+
     if (SectionHeader("Sun Glint"))
     {
         ImGui::TextDisabled("The sun mirrored on the water");
@@ -2941,6 +3012,38 @@ void Graphics::DrawShadowSettings()
         ImGui::Image(reinterpret_cast<ImTextureID>(d3d_->GetShadowSRV()), ImVec2(256.0f, 256.0f));
         ImGui::TextDisabled("Red = depth from the sun (dark = nearer the sun).");
         ImGui::TreePop();
+    }
+    ImGui::EndDisabled();
+}
+
+// caustics: Light window > Caustics. The pattern is part of the sunlight, so shadows and the downwelling fade act on it.
+void Graphics::DrawCausticsSettings()
+{
+    ImGui::TextDisabled("The ripples gather sunlight into bright lines on the\nfloor and thin it out between them (light moved, not\nmade: the average stays). Part of the sun term.");
+    ImGui::Checkbox("Caustics##enabled", &causticsEnabled_);
+    ImGui::BeginDisabled(!causticsEnabled_);
+    ImGui::SliderFloat("Strength##caustics", &causticStrength_, 0.0f, 1.5f, "%.2f");
+    ImGui::SliderFloat("Pattern size (m)", &causticPatternSize_, 0.5f, 6.0f, "%.2f");
+    ImGui::TextDisabled("One repeat of the pattern; its large cells are 1/6 of it.");
+    ImGui::SliderFloat("Flow speed", &causticFlowSpeed_, 0.0f, 3.0f, "%.2f");
+    ImGui::SliderFloat("Sharpness##caustics", &causticSharpness_, 0.0f, 1.0f, "%.2f");
+    ImGui::SliderFloat("Fade-out depth (m)", &causticFadeDepth_, 0.6f, 12.0f, "%.1f");
+    ImGui::TextDisabled("Sharp from 0.1 m, contrast fades from 0.5 m and is\ngone here; it also blurs with depth. The light itself\nfading with depth is Underwater Light (downwelling).");
+    ImGui::SeparatorText("Follow the big waves");
+    ImGui::SliderFloat("Wave sway", &causticWaveSway_, 0.0f, 3.0f, "%.2f");
+    ImGui::TextDisabled("A tilted surface sends the light sideways:\ndepth x (1 - 1/n) x slope. 1 = Snell.");
+    ImGui::SliderFloat("Wave light bands", &causticWaveBands_, 0.0f, 3.0f, "%.2f");
+    ImGui::TextDisabled("Crests gather the light into a band, troughs spread it\n(a lens: grows with depth). 1 = lens strength.\nBoth need Lab Waves on (View window).");
+    const char* projectionLabels[] = { "Along the sun ray (bent at the surface)", "Straight down (comparison)" };
+    ImGui::Combo("Projection", &causticProjection_, projectionLabels, IM_ARRAYSIZE(projectionLabels));
+    if (ImGui::Checkbox("Freeze pattern", &causticFreeze_) && causticFreeze_)
+    {
+        causticFreezeTime_ = elapsedTime_;
+    }
+    ImGui::TextDisabled("Frozen: move the camera, the lines must stay on\nthe same spots of the floor.");
+    if (!showWater_)
+    {
+        ImGui::TextColored(kHighlightColor, "Show Water is off: no caustics.");
     }
     ImGui::EndDisabled();
 }

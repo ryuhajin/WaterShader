@@ -18,6 +18,7 @@ constexpr FoamBaker::Mask kMasks[] = {
     { 2, L"foam_bubbles.png" },
     { 3, L"foam_packed.png" },
     { 4, L"foam_streaks.png" },
+    { 5, L"caustics.png" }, // caustics step: the sunlight pattern under the water
 };
 
 std::wstring BakeShaderPath()

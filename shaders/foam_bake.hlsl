@@ -1,4 +1,5 @@
-// Contact foam masks, baked once into assets/textures (foam-masks), not run while the app draws.
+// Contact foam masks (foam-masks) and the caustic pattern (caustics), baked once into assets/textures, not run while
+// the app draws.
 // Every pattern is built on lattices that wrap around the texture (cell index modulo the cell count, noise
 // periods that are whole numbers of cells), so the right edge continues into the left one and the texture
 // repeats without a seam. Channels: R = foam (1 = foam forms here first), G = bubbles, B = breakup noise
@@ -127,6 +128,18 @@ float Breakup(float2 uv, uint salt)
     return saturate((sum / 0.9375 - 0.5) * 1.8 + 0.5);
 }
 
+// Caustics (caustics step): where the wave lenses gather the sun, bright thin curved lines; between them dimmer cells.
+// Cell borders of a Worley lattice, bent by a periodic domain warp (real caustic lines are curves, not straight
+// polygon edges). Line = exp(-(F2 - F1) / width): brightest exactly on the border, falling off fast, plus a weak wide
+// glow so the cells next to a line are a little lit.
+float CausticLines(float2 uv, int cells, float width, uint salt)
+{
+    float2 warp = float2(PeriodicValueNoise(uv, 4, salt + 40u), PeriodicValueNoise(uv, 4, salt + 41u)) - 0.5;
+    Worley w = PeriodicWorley(uv + warp * (0.8 / float(cells)), int2(cells, cells), salt);
+    float border = w.f2 - w.f1;
+    return exp(-border / width) + 0.18 * exp(-border / (width * 6.0));
+}
+
 [numthreads(8, 8, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID)
 {
@@ -156,6 +169,12 @@ void CSMain(uint3 id : SV_DispatchThreadID)
         bubbles = Bubbles(uv, int2(37, 37), 0.18, 0.40, 0.5, 5u);
         breakup = Breakup(uv, 9u);
         break;
+    case 5: // Caustics: a large and a finer network (gray: the same value in R, G, B)
+    {
+        float c = saturate(0.72 * CausticLines(uv, 6, 0.06, 12u) + 0.3 * CausticLines(uv, 11, 0.035, 13u));
+        g_Output[id.xy] = float4(c, c, c, 1.0);
+        return;
+    }
     default:
         break;
     }

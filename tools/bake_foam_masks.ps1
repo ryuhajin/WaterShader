@@ -1,6 +1,6 @@
-# Bakes the contact foam masks (foam-masks) and turns them into the textures the app loads.
+# Bakes the contact foam masks (foam-masks) and the caustic pattern (caustics) into the textures the app loads.
 #   1. WaterShader.exe --bake-foam-masks <assets/textures>: a compute shader (shaders/foam_bake.hlsl) writes
-#      foam_cells / foam_bubbles / foam_packed / foam_streaks .png (512 x 512, RGBA8, same seed = same bytes)
+#      foam_cells / foam_bubbles / foam_packed / foam_streaks / caustics .png (512 x 512, RGBA8, same seed = same bytes)
 #   2. texconv: each PNG -> .dds with a full mip chain, BC7 (what the app reads, like the normal maps)
 #   3. seam check: how much the last column / row differs from the first (the texture wrapping around),
 #      ranked among the neighbouring column / row pairs inside. A seam sticks out above every inside pair;
@@ -18,7 +18,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 if (-not $Exe) { $Exe = Join-Path $repo 'build\vs2022\Release\WaterShader.exe' }
 $textures = Join-Path $repo 'assets\textures'
 $texconv = Join-Path $textures 'texconv.exe'
-$names = 'foam_cells', 'foam_bubbles', 'foam_packed', 'foam_streaks'
+$names = 'foam_cells', 'foam_bubbles', 'foam_packed', 'foam_streaks', 'caustics'
 
 # 1. Bake (the app closes by itself once the PNGs are written).
 $process = Start-Process -FilePath $Exe -ArgumentList @('--bake-foam-masks', "`"$textures`"") -PassThru -Wait
@@ -30,7 +30,9 @@ Write-Output ("Baked with {0} (exit {1})" -f $Exe, $process.ExitCode)
 
 # 2. PNG -> DDS: BC7 with mips; --ignore-srgb keeps the stored values as they are (masks are data, not colors).
 foreach ($name in $names) {
-    & $texconv -nologo -y -m 0 -f BC7_UNORM --ignore-srgb -o $textures (Join-Path $textures "$name.png") | Out-Null
+    # caustics: one gray channel -> BC4 (single channel, sharper than BC7 for the thin lines)
+    $format = if ($name -eq 'caustics') { 'BC4_UNORM' } else { 'BC7_UNORM' }
+    & $texconv -nologo -y -m 0 -f $format --ignore-srgb -o $textures (Join-Path $textures "$name.png") | Out-Null
     if (-not (Test-Path (Join-Path $textures "$name.dds"))) { Write-Output "texconv failed for $name"; exit 1 }
 }
 
