@@ -3,7 +3,8 @@
 #   -B          set to check   (captured into a temporary --capture-root)
 #   -KeepDiffTo where to keep the images that differ: <name>.A.<ext> and <name>.B.<ext> side by side.
 #               Nothing is written when every image matches.
-# Pairs the .png / .jpg files with the same name. Prints one summary line for NOTES and returns
+# Pairs the .png / .jpg files with the same name (old test scene shot names count as the new ones,
+# tools/shot_names.ps1). Prints one summary line for NOTES and returns
 # exit code 0 when all match, 1 otherwise (missing files count as differences).
 #
 # Usage (PowerShell 5.1), CONVENTIONS.md "회귀·동일성 캡처":
@@ -17,20 +18,23 @@ param(
     [string]$KeepDiffTo = ''
 )
 
+. (Join-Path $PSScriptRoot 'shot_names.ps1')
+
 $images = { param($dir) Get-ChildItem -LiteralPath $dir -File | Where-Object { $_.Extension -in '.png', '.jpg' } }
 $filesA = @(& $images $A)
 $filesB = @{}
-foreach ($file in & $images $B) { $filesB[$file.Name] = $file }
+foreach ($file in & $images $B) { $filesB[(ConvertTo-CurrentShotName $file.Name)] = $file }
 
 $same = 0
 $diff = @()
 foreach ($fileA in $filesA) {
-    $fileB = $filesB[$fileA.Name]
+    $key = ConvertTo-CurrentShotName $fileA.Name
+    $fileB = $filesB[$key]
     if ($null -eq $fileB) {
         $diff += "$($fileA.Name) (missing in B)"
         continue
     }
-    $filesB.Remove($fileA.Name)
+    $filesB.Remove($key)
     $hashA = (Get-FileHash -LiteralPath $fileA.FullName -Algorithm SHA256).Hash
     $hashB = (Get-FileHash -LiteralPath $fileB.FullName -Algorithm SHA256).Hash
     if ($hashA -eq $hashB) {
