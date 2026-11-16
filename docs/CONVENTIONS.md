@@ -78,6 +78,26 @@ docs/
 - 단계마다: 개념 설명 → 구현 → 에이전트 검증 → 사용자 검증 자료(조작법, 정상/실패 징후) → 승인 → 기록.
 - 단계마다 같은 카메라·시간·노출의 OFF/ON 캡처를 남깁니다.
 
+### 테스트 장면 이름 (2026-11-17 변경)
+
+두 테스트 장면의 이름을 내용이 드러나게 바꿨습니다. 업그레이드 전체 이름 `waterfront`(폴더, `ws-capture/waterfront/captures/baseline`)와 완료된 기능 이름(`water-lab` 등)은 그대로입니다.
+
+| 옛 이름 | 새 이름 | 내용 |
+|---|---|---|
+| Water Lab | **Deep Stair** | 깊은 물 검증 장면 — 알려진 깊이(0.2/1/3/6m 받침대, 8m 바닥), 계단, 관통 기둥 |
+| Waterfront (그레이박스) | **Shallow Rail** | 얕은 물 목표 장면 — 승강장, 잠긴 철로(자갈 둑·침목·레일), 전주 |
+| Lab Waves, `--lab-waves` | Scene Waves, `--scene-waves` | 테스트 장면의 Gerstner 파도 |
+
+| 옛 샷 이름 | 새 샷 이름 |
+|---|---|
+| `lab_top` / `lab_stairs` / `lab_low` | `stair_top` / `stair_angle` / `stair_low` |
+| `lab_pillar` / `lab_pillar_near` | `stair_pillar` / `stair_pillar_near` |
+| `front_rails` | `rail_line` |
+
+- 2026-11-17 이전의 SPEC·NOTES와 `ws-capture` 캡처 파일명은 **옛 이름 그대로** 둡니다 (기록).
+- `--shot`, `--capture-shots`, `--lab-waves`는 옛 이름도 받습니다. 캡처는 항상 새 이름으로 저장됩니다.
+- `tools/compare_sets.ps1`, `tools/compare_depth.ps1`은 옛 이름 파일과 새 이름 파일을 같은 샷으로 짝짓습니다 (`tools/shot_names.ps1`, 코드의 `kShotAliases`와 같은 표).
+
 ## SPEC.md 작성 규칙
 
 모든 `docs/features/<name>/SPEC.md`는 다음 4개 섹션을 **반드시** 포함합니다:

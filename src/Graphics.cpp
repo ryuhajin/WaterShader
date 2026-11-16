@@ -22,6 +22,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <type_traits>
 
 namespace
@@ -125,37 +126,63 @@ constexpr CaptureShot kCaptureShots[] = {
     // Portfolio main image (ocean-hero): same spot as ocean_aerial but lower and flatter, so the far shore
     // and sky take the top ~1/5 and the water ~4/5, with the glint path right of centre.
     { "ocean_hero",    { -5.38f,  6.00f, -20.09f }, { 14.0f, 18.0f, 0.0f }, 44.0f, true  },
-    // water-lab test scenes (BuildWaterLab / BuildWaterfront): straight down, the stairs at an angle,
+    // Deep Stair test scene (water-lab, BuildDeepStair): straight down, the stairs at an angle,
     // just above the water toward the depth pads, close to the pillar through the surface.
-    { "lab_top",       {  0.00f, 20.00f,   0.00f }, { 89.9f,   0.0f, 0.0f }, 60.0f, true, 1 },
-    { "lab_stairs",    { -3.00f,  4.00f, -10.00f }, { 35.0f, 335.0f, 0.0f }, 60.0f, true, 1 },
-    { "lab_low",       {  0.00f,  0.40f, -10.00f }, {  3.0f,   0.0f, 0.0f }, 60.0f, true, 1 },
-    { "lab_pillar",    {  5.50f,  1.20f,  -6.50f }, { 23.5f, 320.0f, 0.0f }, 55.0f, true, 1 },
-    // Target scene graybox: standing on the flooded track, looking down the line.
-    { "front_rails",   {  0.00f,  1.70f,  -9.00f }, { 10.0f,   0.0f, 0.0f }, 60.0f, true, 2 },
+    { "stair_top",     {  0.00f, 20.00f,   0.00f }, { 89.9f,   0.0f, 0.0f }, 60.0f, true, 1 },
+    { "stair_angle",   { -3.00f,  4.00f, -10.00f }, { 35.0f, 335.0f, 0.0f }, 60.0f, true, 1 },
+    { "stair_low",     {  0.00f,  0.40f, -10.00f }, {  3.0f,   0.0f, 0.0f }, 60.0f, true, 1 },
+    { "stair_pillar",  {  5.50f,  1.20f,  -6.50f }, { 23.5f, 320.0f, 0.0f }, 55.0f, true, 1 },
+    // Shallow Rail graybox (BuildShallowRail): standing on the flooded track, looking down the line.
+    { "rail_line",     {  0.00f,  1.70f,  -9.00f }, { 10.0f,   0.0f, 0.0f }, 60.0f, true, 2 },
     // contact-foam: close to the pillar looking down, where Fresnel alone shows no waterline (surface-reflection
     // NOTES). The view ray through the frame center meets the water right in front of the pillar.
-    { "lab_pillar_near", { 3.00f,  2.20f,  -6.30f }, { 35.0f,   0.0f, 0.0f }, 60.0f, true, 1 },
+    { "stair_pillar_near", { 3.00f,  2.20f,  -6.30f }, { 35.0f,   0.0f, 0.0f }, 60.0f, true, 1 },
 };
-constexpr int kFirstLabShotIndex = 7; // UI: the lab shots start a new button row
+constexpr int kFirstTestShotIndex = 7; // UI: the test scene shots start a new button row
 
 // Water patches of the test scenes (half size, m) and how far in from their edge the waves die out
 // (wave-occlusion: the sideways motion would otherwise pull the edge in and open a gap).
-constexpr float kLabWaterHalfSize = 12.0f;
-constexpr float kFrontWaterHalfSize = 40.0f;
+constexpr float kStairWaterHalfSize = 12.0f;
+constexpr float kRailWaterHalfSize = 40.0f;
 constexpr float kWaveEdgeFade = 1.0f;
-// sun-shadow: the Water Lab test box circles above the open water (center, radius, height, one turn per period).
+// sun-shadow: the Deep Stair test box circles above the open water (center, radius, height, one turn per period).
 constexpr float kTestBoxSize = 1.0f;
 constexpr float kTestBoxCircleRadius = 3.0f;
 constexpr float kTestBoxBottomY = 0.5f;
 constexpr float kTestBoxPeriod = 20.0f; // s
 
-// Index of the fixed shot with this name (0 if there is none).
+// Shot names before the test scenes were renamed (2026-11-17: Water Lab -> Deep Stair, Waterfront -> Shallow
+// Rail). --shot / --capture-shots still take them; captures are saved under the new name.
+// tools/shot_names.ps1 holds the same table for the compare scripts.
+constexpr std::pair<const char*, const char*> kShotAliases[] = {
+    { "lab_top",         "stair_top" },
+    { "lab_stairs",      "stair_angle" },
+    { "lab_low",         "stair_low" },
+    { "lab_pillar",      "stair_pillar" },
+    { "lab_pillar_near", "stair_pillar_near" },
+    { "front_rails",     "rail_line" },
+};
+
+// The current name of a shot (an old name is mapped, anything else comes back unchanged).
+std::string CurrentShotName(const std::string& name)
+{
+    for (const auto& [oldName, newName] : kShotAliases)
+    {
+        if (name == oldName)
+        {
+            return newName;
+        }
+    }
+    return name;
+}
+
+// Index of the fixed shot with this name (0 if there is none). Old shot names are accepted.
 int FindCaptureShot(const char* name)
 {
+    const std::string current = CurrentShotName(name);
     for (int i = 0; i < static_cast<int>(std::size(kCaptureShots)); ++i)
     {
-        if (std::string(kCaptureShots[i].name) == name)
+        if (current == kCaptureShots[i].name)
         {
             return i;
         }
@@ -412,8 +439,8 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     //   --tonemap <none|reinhard|aces|aces-hue>  tone curve for this run
     //   --exposure <ev>        overrides every preset's exposure (operator comparisons)
     //   --far-waves <on|off>   pixel-shader wave slopes past the mesh wave fade (default on)
-    //   --water <on|off>       draw the water in the test scenes (lab_* / front_* shots, default on)
-    //   --lab-waves <on|off>   Gerstner waves in the test scenes (Surface window values, default on)
+    //   --water <on|off>       draw the water in the test scenes (stair_* / rail_* shots, default on)
+    //   --scene-waves <on|off> Gerstner waves in the test scenes (Surface window values, default on; old name --lab-waves)
     //   --water-occlusion <none|single|prepass>  test scenes: how overlapping waves hide each other (default prepass)
     //   --scene-debug <mode>   test scene debug view: 1 = depth below the water (the water is hidden)
     //   --transmission <mode>  test scene water: 0 = opaque (old), 1 = pass-through, 2 = attenuation, 3 = scattering (default)
@@ -476,7 +503,11 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--preset-file" && hasValue) { presetFileOverride_ = argv[++i]; }
                 else if (arg == L"--camera-file" && hasValue) { cameraFileOverride_ = argv[++i]; }
                 else if (arg == L"--capture-presets" && hasValue) { capturePresetFilter_ = SplitList(WideToUtf8(argv[++i])); }
-                else if (arg == L"--capture-shots" && hasValue)   { captureShotFilter_ = SplitList(WideToUtf8(argv[++i])); }
+                else if (arg == L"--capture-shots" && hasValue)
+                {
+                    captureShotFilter_ = SplitList(WideToUtf8(argv[++i]));
+                    for (std::string& shot : captureShotFilter_) { shot = CurrentShotName(shot); } // old shot names too
+                }
                 else if (arg == L"--capture-format" && hasValue)  { capturePng_ = std::wstring(argv[++i]) == L"png"; }
                 else if (arg == L"--render-size" && hasValue)
                 {
@@ -494,7 +525,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--align-ripples" && hasValue) { rippleAlignOverride_ = std::wstring(argv[++i]) == L"off" ? 0 : 1; }
                 else if (arg == L"--far-waves" && hasValue)  { farWaveNormals_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--water" && hasValue)      { showWater_ = std::wstring(argv[++i]) != L"off"; }
-                else if (arg == L"--lab-waves" && hasValue)  { labWaves_ = std::wstring(argv[++i]) != L"off"; }
+                else if ((arg == L"--scene-waves" || arg == L"--lab-waves") && hasValue) { sceneWaves_ = std::wstring(argv[++i]) != L"off"; }
                 else if (arg == L"--water-occlusion" && hasValue)
                 {
                     const std::wstring mode = argv[++i];
@@ -619,7 +650,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     int startShot = kDefaultShotIndex;
     for (int i = 0; i < static_cast<int>(std::size(kCaptureShots)); ++i)
     {
-        if (shotArg == Utf8ToWide(kCaptureShots[i].name))
+        if (Utf8ToWide(CurrentShotName(WideToUtf8(shotArg))) == Utf8ToWide(kCaptureShots[i].name))
         {
             startShot = i;
         }
@@ -706,17 +737,17 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
     // water-lab: finite water patches (growth ~0 = even spacing) and the unit shapes of the test scenes.
     unitBox_ = std::make_unique<Model>();
     unitCylinder_ = std::make_unique<Model>();
-    labWater_ = std::make_unique<Model>();
-    frontWater_ = std::make_unique<Model>();
+    stairWater_ = std::make_unique<Model>();
+    railWater_ = std::make_unique<Model>();
     if (!unitBox_->InitializeBox(d3d_->GetDevice())
         || !unitCylinder_->InitializeCylinder(d3d_->GetDevice(), 32)
-        || !labWater_->InitializeGrid(d3d_->GetDevice(), 192, kLabWaterHalfSize, 0.001f)
-        || !frontWater_->InitializeGrid(d3d_->GetDevice(), 256, kFrontWaterHalfSize, 0.001f))
+        || !stairWater_->InitializeGrid(d3d_->GetDevice(), 192, kStairWaterHalfSize, 0.001f)
+        || !railWater_->InitializeGrid(d3d_->GetDevice(), 256, kRailWaterHalfSize, 0.001f))
     {
         return false;
     }
-    labObjects_ = BuildWaterLab();
-    frontObjects_ = BuildWaterfront();
+    stairObjects_ = BuildDeepStair();
+    railObjects_ = BuildShallowRail();
 
     sceneShader_ = std::make_unique<SceneShader>();
     if (!sceneShader_->Initialize(d3d_->GetDevice()))
@@ -1517,7 +1548,7 @@ void Graphics::Shutdown()
         sceneShader_.reset();
     }
 
-    for (auto* mesh : { &unitBox_, &unitCylinder_, &labWater_, &frontWater_ })
+    for (auto* mesh : { &unitBox_, &unitCylinder_, &stairWater_, &railWater_ })
     {
         if (*mesh)
         {
@@ -1678,8 +1709,8 @@ void Graphics::Resize(unsigned int width, unsigned int height)
     }
 }
 
-// Water Lab: every object stands on the floor 8 m down and ends at a known height, water at y = 0.
-std::vector<Graphics::SceneObject> Graphics::BuildWaterLab()
+// Deep Stair: every object stands on the floor 8 m down and ends at a known height, water at y = 0.
+std::vector<Graphics::SceneObject> Graphics::BuildDeepStair()
 {
     using P = SceneShader::Pattern;
     constexpr float kFloorY = -8.0f;
@@ -1734,7 +1765,7 @@ std::vector<Graphics::SceneObject> Graphics::BuildWaterLab()
 
 // Graybox of the target scene: a flooded track (ballast bank, sleepers, rails a few cm under the water),
 // a platform with stairs into the water, and catenary poles. Track along +z, seabed 2.5 m down.
-std::vector<Graphics::SceneObject> Graphics::BuildWaterfront()
+std::vector<Graphics::SceneObject> Graphics::BuildShallowRail()
 {
     using P = SceneShader::Pattern;
     constexpr float kSeabedY = -2.5f;
@@ -1838,7 +1869,7 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
     for (int i = 0; i < ColorShader::kWaveCount; ++i)
     {
         const ColorShader::Wave& wave = water_.waves[i];
-        const float amplitude = labWaves_ ? wave.amplitude : 0.0f;
+        const float amplitude = sceneWaves_ ? wave.amplitude : 0.0f;
         surface.waves[i * 2] = DirectX::XMFLOAT4(wave.direction.x, wave.direction.y, amplitude, wave.wavelength);
         surface.waves[i * 2 + 1] = DirectX::XMFLOAT4(wave.speed, wave.steepness, 0.0f, 0.0f);
     }
@@ -1889,8 +1920,8 @@ void Graphics::RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMM
 
 std::vector<Graphics::SceneObject> Graphics::CurrentSceneObjects() const
 {
-    std::vector<SceneObject> objects = scene_ == WaterLab ? labObjects_ : frontObjects_;
-    if (scene_ == WaterLab && shadowTestBox_)
+    std::vector<SceneObject> objects = scene_ == DeepStair ? stairObjects_ : railObjects_;
+    if (scene_ == DeepStair && shadowTestBox_)
     {
         // sun-shadow: a box circling above the open water, so a shadow that follows its caster can be checked.
         const float angle = DirectX::XM_2PI * elapsedTime_ / kTestBoxPeriod;
@@ -1924,11 +1955,11 @@ void Graphics::RenderShadowPass(const DirectX::XMFLOAT4& lightDir)
         lo = XMFLOAT3((std::min)(lo.x, c.x - half.x), (std::min)(lo.y, c.y - half.y), (std::min)(lo.z, c.z - half.z));
         hi = XMFLOAT3((std::max)(hi.x, c.x + half.x), (std::max)(hi.y, c.y + half.y), (std::max)(hi.z, c.z + half.z));
     };
-    for (const SceneObject& object : scene_ == WaterLab ? labObjects_ : frontObjects_)
+    for (const SceneObject& object : scene_ == DeepStair ? stairObjects_ : railObjects_)
     {
         grow(object.center, XMFLOAT3(0.5f * object.size.x, 0.5f * object.size.y, 0.5f * object.size.z));
     }
-    if (scene_ == WaterLab)
+    if (scene_ == DeepStair)
     {
         const float reach = kTestBoxCircleRadius + kTestBoxSize; // past the corners of the box on its circle
         grow(XMFLOAT3(0.0f, kTestBoxBottomY + 0.5f * kTestBoxSize, 0.0f), XMFLOAT3(reach, 0.5f * kTestBoxSize, reach));
@@ -2032,7 +2063,7 @@ bool Graphics::UsesStoredNormal() const
 
 DirectX::XMFLOAT4 Graphics::SceneWaterArea() const
 {
-    const float halfSize = scene_ == WaterLab ? kLabWaterHalfSize : scene_ == Waterfront ? kFrontWaterHalfSize : 0.0f;
+    const float halfSize = scene_ == DeepStair ? kStairWaterHalfSize : scene_ == ShallowRail ? kRailWaterHalfSize : 0.0f;
     return DirectX::XMFLOAT4(halfSize, kWaveEdgeFade, 0.0f, 0.0f);
 }
 
@@ -2154,10 +2185,10 @@ bool Graphics::Render(float deltaTime)
         water_.rippleSlopeVarianceB = normalMapSlopeVariance_[normalMapB_];
         // A --render-size frame keeps the look of the 720p window it was set up in (ocean-hero NOTES).
         water_.lodScale = fixedRenderSize_ ? static_cast<float>(screenHeight_) / static_cast<float>(SCREEN_HEIGHT) : 1.0f;
-        Model* waterMesh = scene_ == WaterLab ? labWater_.get()
-                         : scene_ == Waterfront ? frontWater_.get()
+        Model* waterMesh = scene_ == DeepStair ? stairWater_.get()
+                         : scene_ == ShallowRail ? railWater_.get()
                          : oceanMode_ ? oceanGrid_.get() : model_.get();
-        // Test scenes: the Surface window waves, or flat at y = 0 (known depths) with Lab Waves off. Not saved in presets.
+        // Test scenes: the Surface window waves, or flat at y = 0 (known depths) with Scene Waves off. Not saved in presets.
         ColorShader::WaterParams waterDraw = water_;
         if (fresnelF0FromIor_)
         {
@@ -2165,7 +2196,7 @@ bool Graphics::Render(float deltaTime)
             const float n = (std::max)(water_.refractionIndex, 1.0f);
             waterDraw.fresnelF0 = ((n - 1.0f) / (n + 1.0f)) * ((n - 1.0f) / (n + 1.0f));
         }
-        if (scene_ != NoScene && !labWaves_)
+        if (scene_ != NoScene && !sceneWaves_)
         {
             for (auto& wave : waterDraw.waves)
             {
@@ -2555,7 +2586,7 @@ void Graphics::DrawViewWindow()
         ImGui::TextDisabled("Fixed shots (same as --capture)");
         for (int i = 0; i < static_cast<int>(std::size(kCaptureShots)); ++i)
         {
-            if (i > 0 && i != 3 && i != kFirstLabShotIndex)
+            if (i > 0 && i != 3 && i != kFirstTestShotIndex)
             {
                 ImGui::SameLine();
             }
@@ -2570,8 +2601,8 @@ void Graphics::DrawViewWindow()
             ImGui::PushID(i);
             const CameraView& slotView = cameraSlots_[i];
             const char* slotScene = !slotView.ocean ? " [bench]"
-                                  : slotView.scene == WaterLab ? " [lab]"
-                                  : slotView.scene == Waterfront ? " [front]" : " [ocean]";
+                                  : slotView.scene == DeepStair ? " [stair]"
+                                  : slotView.scene == ShallowRail ? " [rail]" : " [ocean]";
             ImGui::Text("Slot %d%s", i + 1, cameraSlotUsed_[i] ? slotScene : " (empty)");
             ImGui::SameLine(120.0f);
             if (ImGui::Button("Save"))
@@ -2615,9 +2646,9 @@ void Graphics::DrawViewWindow()
         ImGui::EndDisabled();
         if (!testScene)
         {
-            ImGui::TextDisabled("New needs a test scene (Water Lab / Waterfront).");
+            ImGui::TextDisabled("New needs a test scene (Deep Stair / Shallow Rail).");
         }
-        const char* sceneLabels[] = { "Bench plane", "Ocean grid (open water)", "Water Lab (test depths)", "Waterfront (graybox)" };
+        const char* sceneLabels[] = { "Bench plane", "Ocean grid (open water)", "Deep Stair (test depths)", "Shallow Rail (graybox)" };
         int sceneChoice = scene_ != NoScene ? 1 + scene_ : (oceanMode_ ? 1 : 0);
         if (ImGui::Combo("Scene", &sceneChoice, sceneLabels, IM_ARRAYSIZE(sceneLabels)))
         {
@@ -2627,7 +2658,7 @@ void Graphics::DrawViewWindow()
             // Picking a test scene here also picks the New water, the version the test scenes are built for.
             if (scene_ != NoScene)
             {
-                ApplyCameraShot(FindCaptureShot(scene_ == WaterLab ? "lab_stairs" : "front_rails"));
+                ApplyCameraShot(FindCaptureShot(scene_ == DeepStair ? "stair_angle" : "rail_line"));
                 if (transmissionMode_ == 0)
                 {
                     transmissionMode_ = lastNewTransmission_;
@@ -2639,8 +2670,8 @@ void Graphics::DrawViewWindow()
         {
             ImGui::Checkbox("Show Water", &showWater_);
             ImGui::SameLine();
-            ImGui::Checkbox("Lab Waves", &labWaves_);
-            if (scene_ == WaterLab)
+            ImGui::Checkbox("Scene Waves", &sceneWaves_);
+            if (scene_ == DeepStair)
             {
                 ImGui::Checkbox("Shadow test box", &shadowTestBox_);
                 ImGui::SameLine();
@@ -2667,7 +2698,7 @@ void Graphics::DrawViewWindow()
                     { ImVec4(0.35f, 0.90f, 0.35f, 1.0f), "0.5 - 2 m  (1 m pad)" },
                     { ImVec4(1.00f, 0.90f, 0.25f, 1.0f), "2 - 4.5 m  (3 m pad)" },
                     { ImVec4(1.00f, 0.55f, 0.20f, 1.0f), "4.5 - 7 m  (6 m pad)" },
-                    { ImVec4(0.75f, 0.40f, 0.95f, 1.0f), "7 m and deeper  (lab floor 8 m)" },
+                    { ImVec4(0.75f, 0.40f, 0.95f, 1.0f), "7 m and deeper  (stair floor 8 m)" },
                 };
                 for (const Band& band : bands)
                 {
@@ -2679,7 +2710,7 @@ void Graphics::DrawViewWindow()
             }
             ImGui::TextDisabled("The water version's settings: Water window (3).");
             ImGui::TextDisabled("1 unit = 1 m, water at y = 0, ocean presets.");
-            ImGui::TextDisabled("Lab Waves: the Surface window (4) waves; off = flat.");
+            ImGui::TextDisabled("Scene Waves: the Surface window (4) waves; off = flat.");
         }
         else if (oceanMode_)
         {
@@ -2890,7 +2921,7 @@ void Graphics::DrawLightWindow()
         }
         else
         {
-            ImGui::TextDisabled("Test scenes only: pick Water Lab / Waterfront.");
+            ImGui::TextDisabled("Test scenes only: pick Deep Stair / Shallow Rail.");
         }
     }
 
@@ -2902,7 +2933,7 @@ void Graphics::DrawLightWindow()
         }
         else
         {
-            ImGui::TextDisabled("Test scenes only: pick Water Lab / Waterfront.");
+            ImGui::TextDisabled("Test scenes only: pick Deep Stair / Shallow Rail.");
         }
     }
 
@@ -2934,7 +2965,7 @@ void Graphics::DrawLightWindow()
         }
         else
         {
-            ImGui::TextDisabled("New water only: pick Water Lab / Waterfront.");
+            ImGui::TextDisabled("New water only: pick Deep Stair / Shallow Rail.");
         }
     }
 
@@ -3033,7 +3064,7 @@ void Graphics::DrawCausticsSettings()
     ImGui::SliderFloat("Wave sway", &causticWaveSway_, 0.0f, 3.0f, "%.2f");
     ImGui::TextDisabled("A tilted surface sends the light sideways:\ndepth x (1 - 1/n) x slope. 1 = Snell.");
     ImGui::SliderFloat("Wave light bands", &causticWaveBands_, 0.0f, 3.0f, "%.2f");
-    ImGui::TextDisabled("Crests gather the light into a band, troughs spread it\n(a lens: grows with depth). 1 = lens strength.\nBoth need Lab Waves on (View window).");
+    ImGui::TextDisabled("Crests gather the light into a band, troughs spread it\n(a lens: grows with depth). 1 = lens strength.\nBoth need Scene Waves on (View window).");
     const char* projectionLabels[] = { "Along the sun ray (bent at the surface)", "Straight down (comparison)" };
     ImGui::Combo("Projection", &causticProjection_, projectionLabels, IM_ARRAYSIZE(projectionLabels));
     if (ImGui::Checkbox("Freeze pattern", &causticFreeze_) && causticFreeze_)
@@ -3352,9 +3383,9 @@ void Graphics::DrawSurfaceSettings()
     // Gerstner waves move the mesh vertices. The presets order them big -> small.
     if (SectionHeader("Waves (geometry)"))
     {
-        if (scene_ != NoScene && !labWaves_)
+        if (scene_ != NoScene && !sceneWaves_)
         {
-            ImGui::TextColored(kHighlightColor, "Test scene: flat while View > Lab Waves is off.");
+            ImGui::TextColored(kHighlightColor, "Test scene: flat while View > Scene Waves is off.");
         }
         ImGui::TextDisabled("Moving swells that shape the mesh. Arrow = travel\ndirection as seen from the camera (up = away).");
         ImGui::Checkbox("Far waves (lighting only past the mesh fade)", &farWaveNormals_);

@@ -7,13 +7,13 @@
 #   -Mode path  : -A = water depth  (--debug 12),                  -B = view path      (--debug 13)
 #                 the view path must never be shorter than the water depth (1 cm slack).
 #   -Mode transmit : -A = view path (--debug 13), -B = transmittance (--debug 14), -Extinction r,g,b (the capture's),
-#                 optional -C = water depth (--debug 12) for the mean transmittance per Water Lab depth.
+#                 optional -C = water depth (--debug 12) for the mean transmittance per Deep Stair depth.
 #                 every measured pixel must show exp(-extinction x path) per channel (rgb-attenuation).
 #   -Mode sum   : -A = attenuation (--transmission 2), -B = water color part (--debug 15), -C = scattering
 #                 (--transmission 3), -D = water depth (--debug 12) as the water mask; all with --tonemap none.
 #                 A + B = C in linear light on every water pixel (water-scatter).
 #   -Mode contrast : -A = water depth (--debug 12), -B = pass-through, -C = scattering, both --tonemap none.
-#                 checker contrast kept per Water Lab depth (water-scatter).
+#                 checker contrast kept per Deep Stair depth (water-scatter).
 #   -Mode mean  : -A = water depth (--debug 12) as the water mask, -B = a gray debug view (e.g. --debug 17).
 #                 mean / min / max of the gray value over the water pixels (surface-reflection).
 #   The sum mode also checks reflection part (--debug 18) + underwater part (--debug 19) = final.
@@ -25,7 +25,8 @@
 #
 # Usage (PowerShell 5.1):
 #   .\tools\compare_depth.ps1 -A <folder> -B <folder> [-Mode depth|path|transmit] [-Extinction r,g,b] [-C <folder>]
-# Pairs the PNG files with the same name in the folders.
+# Pairs the PNG files with the same name in the folders (old test scene shot names count as the new ones,
+# tools/shot_names.ps1).
 param(
     [Parameter(Mandatory = $true)][string]$A,
     [Parameter(Mandatory = $true)][string]$B,
@@ -121,7 +122,7 @@ public static class MeterImage
             }
         }
         double n = Math.Max(compared, 1);
-        // Path mode: the mean view path over the pixels that see each Water Lab depth (pad tops, lab floor).
+        // Path mode: the mean view path over the pixels that see each Deep Stair depth (pad tops, stair floor).
         string perDepth = "";
         if (mode == "path")
         {
@@ -172,7 +173,7 @@ public static class MeterImage
 
     // Transmit mode: every measured pixel of the view path set (A) must show exp(-k x path) in the transmittance
     // set (B), per channel, within 8-bit rounding (1.5 levels) plus what the path's own rounding allows.
-    // With the water depth set (C), also the mean transmittance over the pixels that see each Water Lab depth.
+    // With the water depth set (C), also the mean transmittance over the pixels that see each Deep Stair depth.
     public static string CompareTransmit(string pathA, string pathB, string pathC, double kr, double kg, double kb)
     {
         byte[] ma, mc = null; double[] va, vc = null; int w, h, w2, h2;
@@ -371,7 +372,7 @@ public static class MeterImage
             compared, failed, maxRatio, saturated, noSurface, bedAtNoSurface);
     }
 
-    // Contrast mode (water-scatter): per Water Lab depth (pixels selected by the water depth set A), the
+    // Contrast mode (water-scatter): per Deep Stair depth (pixels selected by the water depth set A), the
     // spread (standard deviation) of luminance in C over that in B (pass-through), both --tonemap none.
     // The water color adds the same amount to light and dark cells, so what is left of the checker contrast
     // follows the transmittance: near 1 in the shallows, near 0 deep down.
@@ -406,33 +407,34 @@ public static class MeterImage
 }
 '@
 
+. (Join-Path $PSScriptRoot 'shot_names.ps1')
 [MeterImage]::Offset = $Offset
 $files = Get-ChildItem -Path $A -Filter *.png | Sort-Object Name
 if (-not $files) { Write-Output "No PNG files in $A"; exit 1 }
 $k = @($Extinction -split ',' | ForEach-Object { [double]$_ })
 foreach ($file in $files) {
-    $other = Join-Path $B $file.Name
+    $other = Find-ShotFile $B $file.Name
     if (-not (Test-Path $other)) { Write-Output ("{0,-28} missing in B" -f $file.Name); continue }
     if ($Mode -eq 'sum') {
-        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareSum($file.FullName, $other, (Join-Path $C $file.Name), (Join-Path $D $file.Name)))
+        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareSum($file.FullName, $other, (Find-ShotFile $C $file.Name), (Find-ShotFile $D $file.Name)))
     }
     elseif ($Mode -eq 'mean') {
         Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::MeanOverWater($file.FullName, $other))
     }
     elseif ($Mode -eq 'foam') {
-        $normalFile = if ($D) { Join-Path $D $file.Name } else { $null }
-        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareFoam($file.FullName, $other, (Join-Path $C $file.Name), $normalFile, $Width))
+        $normalFile = if ($D) { Find-ShotFile $D $file.Name } else { $null }
+        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareFoam($file.FullName, $other, (Find-ShotFile $C $file.Name), $normalFile, $Width))
     }
     elseif ($Mode -eq 'normal') {
         $mapFile = $null
         if ($MapDir) { New-Item -ItemType Directory -Force $MapDir | Out-Null; $mapFile = Join-Path $MapDir $file.Name }
-        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareNormal($file.FullName, $other, (Join-Path $C $file.Name), $mapFile))
+        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareNormal($file.FullName, $other, (Find-ShotFile $C $file.Name), $mapFile))
     }
     elseif ($Mode -eq 'contrast') {
-        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareContrast($file.FullName, $other, (Join-Path $C $file.Name)))
+        Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareContrast($file.FullName, $other, (Find-ShotFile $C $file.Name)))
     }
     elseif ($Mode -eq 'transmit') {
-        $depthFile = if ($C) { Join-Path $C $file.Name } else { $null }
+        $depthFile = if ($C) { Find-ShotFile $C $file.Name } else { $null }
         if ($depthFile -and -not (Test-Path $depthFile)) { $depthFile = $null }
         Write-Output ("{0,-28} {1}" -f $file.Name, [MeterImage]::CompareTransmit($file.FullName, $other, $depthFile, $k[0], $k[1], $k[2]))
     }

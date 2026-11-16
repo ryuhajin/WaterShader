@@ -110,8 +110,8 @@ private:
     };
 
     // Opaque scenes under / around a finite water patch (water-lab). They use the ocean grid presets
-    // (same 1 unit = 1 m scale) with the Gerstner waves off unless "Lab Waves" is on.
-    enum TestScene { NoScene = 0, WaterLab = 1, Waterfront = 2 };
+    // (same 1 unit = 1 m scale) with the Gerstner waves off unless "Scene Waves" is on.
+    enum TestScene { NoScene = 0, DeepStair = 1, ShallowRail = 2 };
 
     struct SceneObject
     {
@@ -121,15 +121,15 @@ private:
         SceneShader::Material material;
     };
 
-    static std::vector<SceneObject> BuildWaterLab();    // known depths: pads, stairs, pillar, near-surface pads
-    static std::vector<SceneObject> BuildWaterfront();  // graybox of the target scene
+    static std::vector<SceneObject> BuildDeepStair();    // known depths: pads, stairs, pillar, near-surface pads
+    static std::vector<SceneObject> BuildShallowRail();  // graybox of the target scene
     bool IsNumericView() const; // meters-as-color views: no sky, no lit pixels (depth-reconstruct)
     // Scene Debug <-> water Debug Mode take turns in the test scenes (the other is parked, then restored).
     static void SwapDebugViews(int& changed, int& changedParked, int& other, int& otherParked);
     void RenderTestScene(const DirectX::XMMATRIX& view, const DirectX::XMMATRIX& projection,
                          const DirectX::XMFLOAT4& lightDir, const DirectX::XMFLOAT4& lightColor,
                          const DirectX::XMFLOAT4& ambientColor);
-    // sun-shadow: the objects of the current test scene (plus the moving test box in the Water Lab, when on).
+    // sun-shadow: the objects of the current test scene (plus the moving test box in the Deep Stair, when on).
     std::vector<SceneObject> CurrentSceneObjects() const;
     // Fits the sun's orthographic box around the scene and draws the objects' depth into the shadow map.
     // Fills shadowFrame_ (off: params.x = 0, nothing drawn).
@@ -168,14 +168,14 @@ private:
     // water-lab: unit shapes, the finite water patch per scene, the opaque shader and the scene layouts.
     std::unique_ptr<Model> unitBox_;
     std::unique_ptr<Model> unitCylinder_;
-    std::unique_ptr<Model> labWater_;
-    std::unique_ptr<Model> frontWater_;
+    std::unique_ptr<Model> stairWater_;
+    std::unique_ptr<Model> railWater_;
     std::unique_ptr<SceneShader> sceneShader_;
-    std::vector<SceneObject> labObjects_;
-    std::vector<SceneObject> frontObjects_;
+    std::vector<SceneObject> stairObjects_;
+    std::vector<SceneObject> railObjects_;
     int scene_ = NoScene;
     bool showWater_ = true;
-    bool labWaves_ = true; // test scenes: Gerstner waves from the Surface window (wave-occlusion: on by default)
+    bool sceneWaves_ = true; // test scenes: Gerstner waves from the Surface window (wave-occlusion: on by default)
     int sceneDebug_ = 0; // 0 render, 1 depth below the water (the water is not drawn)
     int parkedSceneDebug_ = 0; // Scene Debug view put aside while a water Debug Mode is on (SwapDebugViews)
     int parkedWaterDebug_ = 0; // water Debug Mode put aside while a Scene Debug view is on
@@ -196,7 +196,7 @@ private:
     float shadowSlopeBias_ = 1.0f;      // texels x tan(angle to the sun)
     float shadowNormalOffset_ = 1.0f;   // texels along the surface normal
     float shadowSunSizeDeg_ = 2.0f;     // PCSS: angular diameter of the sun (the real sun is 0.53 deg)
-    bool shadowTestBox_ = false;        // Water Lab: a box circling above the water (its shadow should follow)
+    bool shadowTestBox_ = false;        // Deep Stair: a box circling above the water (its shadow should follow)
     ShadowFrame shadowFrame_{};         // this frame's shadow inputs for the receivers
     float shadowBoxWidth_ = 0.0f;       // m: side of the sun's box this frame (texel = width / 1024)
     float captureTime_ = 12.0f;         // --capture-time: the fixed clock of captured frames (s)

@@ -5,14 +5,14 @@
 // reconstruction (PixelShader.hlsl: water depth / view path from the depth buffer), so the two show the
 // same colors and the same numbers for the same meters.
 
-// Bands picked so the Water Lab pads (0.2 / 1 / 3 / 6 m) and the 8 m floor each land in their own color.
+// Bands picked so the Deep Stair pads (0.2 / 1 / 3 / 6 m) and the 8 m floor each land in their own color.
 float3 DepthBandColor(float depth)
 {
     if (depth < 0.5) return float3(0.30, 0.95, 1.00); // ~0.2 m
     if (depth < 2.0) return float3(0.35, 0.90, 0.35); // ~1 m
     if (depth < 4.5) return float3(1.00, 0.90, 0.25); // ~3 m
     if (depth < 7.0) return float3(1.00, 0.55, 0.20); // ~6 m
-    return float3(0.75, 0.40, 0.95);                  // deeper (lab floor 8 m)
+    return float3(0.75, 0.40, 0.95);                  // deeper (stair floor 8 m)
 }
 
 // Shown where no surface is behind the water (sky): the max optical distance stands in for it.
@@ -31,7 +31,7 @@ float MeterContour(float meters)
 
 // Meters as a display color for exact comparison (tools/compare_depth.ps1, PNG captures):
 //   R = fraction of (meters + 0.5) (1/255 m ~ 4 mm), G = whole part x 4 / 255, B = marker. Range 0..63.49 m.
-// The half-meter shift: the Water Lab depths are whole meters (1 / 3 / 6 / 8 m), which would sit right where
+// The half-meter shift: the Deep Stair depths are whole meters (1 / 3 / 6 / 8 m), which would sit right where
 // R wraps from 0.99 to 0.00, so the ~0.5 mm reconstruction noise flipped a flat floor between the two ends.
 // Shifted, those depths sit in the middle of the ramp and read as one even color.
 // Markers sit on exact 8-bit levels so they survive the round trip to the PNG unchanged.
