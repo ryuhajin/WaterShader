@@ -656,6 +656,9 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     }
     // 30 = leading edge (white = water as usual, black = faded into the surface behind).
     if (sceneDebugMode == 30) { return DebugOut(foamLead.xxx); }
+    // 32 = the whole falloff before the noise: band x leading edge. Rises from the contact line over the leading share,
+    // peaks, then falls to the width (the reference's two falloffs together).
+    if (sceneDebugMode == 32) { return DebugOut((foamBand * foamLead).xxx); }
     // Foam floats on the surface: it covers the reflection and the water below alike, lit like the water color.
     float3 foamColor = g_FoamColor.rgb * incomingLight;
 

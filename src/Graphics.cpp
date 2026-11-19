@@ -2791,7 +2791,8 @@ void Graphics::DrawViewWindow()
             "Wave height lookup error (white = 1 mm)", "Refraction offset (pixels)",
             "Refraction result (green ok, cyan reduced, red foreground leak, blue off screen)", "Refracted ray miss (white = 10 cm)",
             "Sun shadow at the water surface (white = sun)", "Contact foam leading edge (black = faded into the surface)",
-            "Contact foam band before the noise (closeness x slope, edge bias included)" };
+            "Contact foam band before the noise (closeness x slope, edge bias included)",
+            "Contact foam falloff before the noise (band x leading edge)" };
         if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
         {
             SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);

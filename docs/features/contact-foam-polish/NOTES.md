@@ -29,7 +29,7 @@
 | 파일 | 내용 |
 |---|---|
 | `shaders/Common.hlsli` | `g_FoamParams3` (바이어스, leading, ride, 측정) |
-| `shaders/PixelShader.hlsl` | `foamDepth` 선택, 바이어스, 무늬 좌표, leading edge(최종 합성 두 곳), Debug **30** = lead, Debug **31** = 노이즈 전 띠 값(바이어스가 바꾸는 경사) |
+| `shaders/PixelShader.hlsl` | `foamDepth` 선택, 바이어스, 무늬 좌표, leading edge(최종 합성 두 곳), Debug **30** = lead, Debug **31** = 노이즈 전 띠 값(바이어스가 바꾸는 경사), Debug **32** = 띠 값 × leading(전체 falloff) |
 | `src/ColorShader.*` | WaterParams 4개, cbuffer |
 | `src/Graphics.*` | Water 창 Contact Foam에 슬라이더 2, 체크박스, 측정 목록. 프리셋 키 `foamEdgeBias`·`foamLeadingEdge`·`foamRidesWaves`(없으면 기본값). CLI `--foam-bias`, `--foam-leading`, `--foam-ride on\|off`, `--foam-measure vertical\|view` |
 
@@ -58,7 +58,7 @@
 
 ### 데브로그용 받침대 비교
 
-데브로그 04의 기존 받침대 샷과 같은 카메라로, 바이어스와 leading edge를 하나씩 바꿔 찍었다. 각 변형마다 화면, 거품 양(Debug 20), leading 값(Debug 30) 세 가지를 남겼다. 위치는 `ws-capture/contact-foam-polish/captures/devlog_pads/`이고, 시트와 설명은 README에 있다.
+레퍼런스 글의 순서(문제 → simple falloff → leading edge falloff)대로, 데브로그 04 받침대 샷과 같은 카메라와 기둥 카메라로 찍었다. 화면, 띠 값(Debug 31), 전체 falloff(Debug 32), leading 값(Debug 30), 수심-세기 곡선 그래프를 남겼다. 위치는 `ws-capture/contact-foam-polish/captures/falloff_steps/`이다(2026-11-20, 옛 디버그 캡처는 휴지통으로 보내고 다시 찍음).
 
 ## 5. 남는 한계
 
