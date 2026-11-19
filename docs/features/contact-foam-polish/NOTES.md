@@ -29,7 +29,7 @@
 | 파일 | 내용 |
 |---|---|
 | `shaders/Common.hlsli` | `g_FoamParams3` (바이어스, leading, ride, 측정) |
-| `shaders/PixelShader.hlsl` | `foamDepth` 선택, 바이어스, 무늬 좌표, leading edge(최종 합성 두 곳), Debug **30** = lead |
+| `shaders/PixelShader.hlsl` | `foamDepth` 선택, 바이어스, 무늬 좌표, leading edge(최종 합성 두 곳), Debug **30** = lead, Debug **31** = 노이즈 전 띠 값(바이어스가 바꾸는 경사) |
 | `src/ColorShader.*` | WaterParams 4개, cbuffer |
 | `src/Graphics.*` | Water 창 Contact Foam에 슬라이더 2, 체크박스, 측정 목록. 프리셋 키 `foamEdgeBias`·`foamLeadingEdge`·`foamRidesWaves`(없으면 기본값). CLI `--foam-bias`, `--foam-leading`, `--foam-ride on\|off`, `--foam-measure vertical\|view` |
 

@@ -602,6 +602,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     }
     float foamAmount = 0.0;
     float foamSlopeMask = 1.0; // contact-foam-polish: the leading edge follows the same slope filter as the band
+    float foamBand = 0.0;      // the band before the noise threshold (debug 31)
     [branch] if (foamCandidate)
     {
         float closeness = 1.0 - saturate(foamDepth / foamWidth);
@@ -619,6 +620,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         float2 foamUv = (foamXZ - drift) / max(g_FoamParams.z, 1e-3);
         float softness = clamp(g_FoamParams.y, 1e-3, 0.5);
         float band = closeness * slopeMask;
+        foamBand = band;
         if (g_FoamMapParams.x < 0.5)
         {
             // The old cloud texture (contact-foam), read and used as before.
@@ -641,6 +643,9 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     }
     // 20 = foam amount (white = foam).
     if (sceneDebugMode == 20) { return DebugOut(foamAmount.xxx); }
+    // 31 = band before the noise threshold (closeness x slope mask, edge bias included): the ramp the noise cuts into
+    // foam. White = always foam (touching), black = never (past the width or a flat surface).
+    if (sceneDebugMode == 31) { return DebugOut(foamBand.xxx); }
     // Leading edge (reference: alpha x leading): right at the contact line the water and its foam fade into the surface
     // they touch, over the first share of the band width. Softens the hard line where the water meets the object.
     float foamLead = 1.0;

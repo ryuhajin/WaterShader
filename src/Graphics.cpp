@@ -2790,7 +2790,8 @@ void Graphics::DrawViewWindow()
             "Stored scene normal (G-buffer, color)", "Normal difference: depth vs stored (0-30 deg)",
             "Wave height lookup error (white = 1 mm)", "Refraction offset (pixels)",
             "Refraction result (green ok, cyan reduced, red foreground leak, blue off screen)", "Refracted ray miss (white = 10 cm)",
-            "Sun shadow at the water surface (white = sun)", "Contact foam leading edge (black = faded into the surface)" };
+            "Sun shadow at the water surface (white = sun)", "Contact foam leading edge (black = faded into the surface)",
+            "Contact foam band before the noise (closeness x slope, edge bias included)" };
         if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
         {
             SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
