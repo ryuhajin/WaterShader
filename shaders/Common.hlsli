@@ -50,6 +50,8 @@ cbuffer PerFrameCB : register(b0)
                                // z = frame-edge margin (pixels; 32 normal offset, 64 physical), w = mode (0 normal offset, 1 physical)
     float4 g_RefractionParams2; // normal offset: x = water depth over which it fades in from the shore (m), y = wobble depth (m)
     ShadowInputs g_Shadow;      // test scenes (sun-shadow): the sun shadow map, read at the water surface
+    float4 g_FoamParams3;       // contact-foam-polish: x = edge bias (0 = off), y = leading edge (share of the width, 0 = off),
+                                // z = foam pattern rides the waves (0 / 1), w = depth measure (0 water depth, 1 view path)
 };
 
 struct VSInput

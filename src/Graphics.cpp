@@ -273,6 +273,9 @@ void ForEachExtraField(Preset& preset, Fn&& fn)
     fn("foamMap", preset.water.foamMap);
     fn("foamBubbles", preset.water.foamBubbles);
     fn("foamErosion", preset.water.foamErosion);
+    fn("foamEdgeBias", preset.water.foamEdgeBias);
+    fn("foamLeadingEdge", preset.water.foamLeadingEdge);
+    fn("foamRidesWaves", preset.water.foamRidesWaves);
     fn("refractionMode", preset.water.refractionMode);
     fn("refractionDistortion", preset.water.refractionDistortion);
     fn("refractionShoreFade", preset.water.refractionShoreFade);
@@ -585,6 +588,10 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--ramp-by" && hasValue) { rampByOverride_ = std::wstring(argv[++i]) == L"path" ? 1 : 0; }
                 else if (arg == L"--foam" && hasValue)       { foamStrengthOverride_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--foam-slope" && hasValue) { foamSlopeOverride_ = static_cast<float>(_wtof(argv[++i])); }
+                else if (arg == L"--foam-bias" && hasValue)  { foamBiasOverride_ = static_cast<float>(_wtof(argv[++i])); }
+                else if (arg == L"--foam-leading" && hasValue) { foamLeadingOverride_ = static_cast<float>(_wtof(argv[++i])); }
+                else if (arg == L"--foam-ride" && hasValue)  { foamRideOverride_ = std::wstring(argv[++i]) != L"off" ? 1 : 0; }
+                else if (arg == L"--foam-measure" && hasValue) { foamMeasure_ = std::wstring(argv[++i]) == L"view" ? 1 : 0; }
                 else if (arg == L"--refraction" && hasValue) { refractionOverride_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--refraction-mode" && hasValue) { refractionModeOverride_ = std::wstring(argv[++i]) == L"physical" ? 1 : 0; }
                 else if (arg == L"--normal-source" && hasValue) { normalSource_ = std::wstring(argv[++i]) == L"stored" ? 1 : 0; }
@@ -894,6 +901,18 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     if (foamSlopeOverride_ >= 0.0f)
     {
         water_.foamSlopeFilter = foamSlopeOverride_;
+    }
+    if (foamBiasOverride_ >= 0.0f)
+    {
+        water_.foamEdgeBias = foamBiasOverride_;
+    }
+    if (foamLeadingOverride_ >= 0.0f)
+    {
+        water_.foamLeadingEdge = foamLeadingOverride_;
+    }
+    if (foamRideOverride_ >= 0)
+    {
+        water_.foamRidesWaves = foamRideOverride_ != 0;
     }
     if (refractionOverride_ >= 0.0f)
     {
@@ -2213,6 +2232,7 @@ bool Graphics::Render(float deltaTime)
             waterDraw.transmissionMode = transmissionMode_;
             waterDraw.surfaceReflection = surfaceReflection_;
             waterDraw.normalSource = normalSource_;
+            waterDraw.foamMeasure = foamMeasure_; // contact-foam-polish: comparison, not saved in presets
             waterDraw.waterArea = SceneWaterArea();
             waterDraw.shadow = shadowFrame_;
             waterDraw.shadowSRV = d3d_->GetShadowSRV();
@@ -2770,7 +2790,7 @@ void Graphics::DrawViewWindow()
             "Stored scene normal (G-buffer, color)", "Normal difference: depth vs stored (0-30 deg)",
             "Wave height lookup error (white = 1 mm)", "Refraction offset (pixels)",
             "Refraction result (green ok, cyan reduced, red foreground leak, blue off screen)", "Refracted ray miss (white = 10 cm)",
-            "Sun shadow at the water surface (white = sun)" };
+            "Sun shadow at the water surface (white = sun)", "Contact foam leading edge (black = faded into the surface)" };
         if (ImGui::Combo("Debug Mode", &water_.debugMode, debugLabels, IM_ARRAYSIZE(debugLabels)) && scene_ != NoScene)
         {
             SwapDebugViews(water_.debugMode, parkedWaterDebug_, sceneDebug_, parkedSceneDebug_);
@@ -3219,6 +3239,15 @@ void Graphics::DrawNewWaterSettings()
         ImGui::Combo("Normal source", &normalSource_, normalSources, IM_ARRAYSIZE(normalSources));
         LabeledSlider("Steepness: foam starts", &water_.foamSteepStart, 0.0f, 1.0f, "%.2f");
         LabeledSlider("Steepness: foam full", &water_.foamSteepFull, 0.0f, 1.0f, "%.2f");
+        // contact-foam-polish: the reference's touches (fire-face.com/water). All 0 / off = the band as before.
+        LabeledSlider("Edge bias (thicker, harder band)", &water_.foamEdgeBias, 0.0f, 1.0f, "%.2f");
+        LabeledSlider("Leading edge (soft contact line)", &water_.foamLeadingEdge, 0.0f, 0.5f, "%.2f");
+        ImGui::TextDisabled("Share of the width where water and foam fade\ninto the surface they touch.");
+        ImGui::Checkbox("Foam rides the waves", &water_.foamRidesWaves);
+        const char* measures[] = { "Water depth below the surface (default)", "View path in the water (reference)" };
+        ImGui::Combo("Depth measure", &foamMeasure_, measures, IM_ARRAYSIZE(measures));
+        ImGui::TextDisabled(foamMeasure_ == 0 ? "Same width from every camera."
+                                              : "Changes with the camera angle (comparison).");
         // foam-masks: the mask that breaks up the band, picked like the normal map textures.
         ImGui::TextUnformatted("Foam texture");
         ImGui::SetNextItemWidth(-FLT_MIN);

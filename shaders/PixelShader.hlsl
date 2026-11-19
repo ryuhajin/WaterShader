@@ -572,8 +572,12 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // a 0.2 m pad), so the slope filter keeps the band on steep surfaces, with the normal estimated from the
     // depth buffer. Not in pass-through, which has to stay the frame without the water. Surfaces more than 1 cm above
     // the water right over them (bared by a trough) get none; the waterline itself (depth ~0, either sign) keeps it.
+    // contact-foam-polish: the distance the band is measured in. 0 = the water depth of the surface behind (vertical, the
+    // same from every camera); 1 = how far the view travels in the water before it hits that surface (the reference's
+    // scene depth - water depth: changes with the camera angle). Comparison only.
+    float foamDepth = g_FoamParams3.w > 0.5 ? viewPath : waterDepth;
     float foamWidth = max(g_FoamParams.x, 1e-3);
-    bool foamCandidate = transmissionMode >= 2 && g_FoamParams.w > 0.0 && hasReceiver && waterDepth > -0.01 && waterDepth < foamWidth;
+    bool foamCandidate = transmissionMode >= 2 && g_FoamParams.w > 0.0 && hasReceiver && waterDepth > -0.01 && foamDepth < foamWidth;
     // Normal source (normal-gbuffer): estimated from the depth buffer, or the one the opaque pass stored next to the
     // color (one read instead of four depth reads, four reconstructions and a cross product).
     bool storedNormal = g_SceneParams.w > 0.5;
@@ -599,12 +603,18 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float foamAmount = 0.0;
     [branch] if (foamCandidate)
     {
-        float closeness = 1.0 - saturate(waterDepth / foamWidth);
+        float closeness = 1.0 - saturate(foamDepth / foamWidth);
+        // Edge bias (reference: falloff bias): pushes the ramp toward full strength, so the band fills in and stops hard
+        // at the width (a thicker, more cartoon edge). 0 = the ramp as before.
+        closeness = saturate(closeness + g_FoamParams3.x);
         float slopeMask = lerp(1.0, smoothstep(g_FoamParams2.y, g_FoamParams2.z, steepness), g_FoamParams2.x);
         // The noise drifts downwind on the water surface; its threshold sits inside [softness, 1 - softness],
         // so closeness 0 never shows foam and closeness 1 always does, whatever the noise.
         float2 drift = g_Waves[0].direction * (g_WaterParams.x * g_FoamParams2.w);
-        float2 foamUv = (input.worldPos.xz - drift) / max(g_FoamParams.z, 1e-3);
+        // Rides the waves (reference: surface UVs tied to the vertices): the pattern is laid on the water where it rests,
+        // before the Gerstner waves push it sideways, so it sways back and forth with them instead of standing still.
+        float2 foamXZ = g_FoamParams3.z > 0.5 ? mul(float4(input.restPosLocal, 1.0), g_World).xz : input.worldPos.xz;
+        float2 foamUv = (foamXZ - drift) / max(g_FoamParams.z, 1e-3);
         float softness = clamp(g_FoamParams.y, 1e-3, 0.5);
         float band = closeness * slopeMask;
         if (g_FoamMapParams.x < 0.5)
@@ -629,12 +639,25 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     }
     // 20 = foam amount (white = foam).
     if (sceneDebugMode == 20) { return DebugOut(foamAmount.xxx); }
+    // Leading edge (reference: alpha x leading): right at the contact line the water and its foam fade into the surface
+    // they touch, over the first share of the band width. Softens the hard line where the water meets the object.
+    float foamLead = 1.0;
+    if (foamCandidate && g_FoamParams3.y > 0.0)
+    {
+        foamLead = saturate(foamDepth / (foamWidth * g_FoamParams3.y));
+    }
+    // 30 = leading edge (white = water as usual, black = faded into the surface behind).
+    if (sceneDebugMode == 30) { return DebugOut(foamLead.xxx); }
     // Foam floats on the surface: it covers the reflection and the water below alike, lit like the water color.
     float3 foamColor = g_FoamColor.rgb * incomingLight;
 
     // Surface reflection off: the water below alone, as if the surface reflected nothing (foam still on top).
     bool surfaceReflection = g_SceneParams.z > 0.5;
-    if (transmissionMode != 0 && !surfaceReflection) { return float4(lerp(underwaterColor, foamColor, foamAmount), 1.0); }
+    if (transmissionMode != 0 && !surfaceReflection)
+    {
+        float3 color = lerp(underwaterColor, foamColor, foamAmount);
+        return float4(foamLead < 1.0 ? lerp(sceneColor, color, foamLead) : color, 1.0);
+    }
 #endif
 
     // Debug visualizations (g_DebugParams.x)
@@ -713,6 +736,10 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         if (sceneDebugMode == 18) { return float4(reflectionPart, 1.0); }
         if (sceneDebugMode == 19) { return float4(underwaterPart, 1.0); }
         finalColor = lerp(reflectionPart + underwaterPart, foamColor, foamAmount);
+        if (foamLead < 1.0)
+        {
+            finalColor = lerp(sceneColor, finalColor, foamLead);
+        }
     }
 #endif
 

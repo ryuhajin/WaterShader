@@ -1,6 +1,6 @@
 # Contact Foam Polish — 6B++ 접촉 거품 다듬기
 
-> Branch: `feature/contact-foam-polish` · Status: in progress · Updated: 2026-11-19
+> Branch: `feature/contact-foam-polish` · Status: 구현 완료, 사용자 검증 대기 · Updated: 2026-11-20 · 기록: [NOTES.md](NOTES.md)
 > 6B(접촉 거품) 보강. 원래 설계: [../contact-foam/SPEC.md](../contact-foam/SPEC.md), 무늬: [../foam-masks/SPEC.md](../foam-masks/SPEC.md)
 
 ## 1. Goal

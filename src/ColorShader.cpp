@@ -73,6 +73,7 @@ struct PerFrameCB
     DirectX::XMFLOAT4 refractionParams;    // x = strength of the mode (0 = straight), y = index of refraction, z = frame-edge margin (px), w = mode
     DirectX::XMFLOAT4 refractionParams2;   // normal offset: x = shore fade depth (m), y = wobble depth (m)
     ShadowFrame shadow;                    // sun-shadow: the sun shadow map, read at the water surface (test scenes)
+    DirectX::XMFLOAT4 foamParams3;         // contact-foam-polish: x = edge bias, y = leading edge, z = rides the waves, w = depth measure
 };
 static_assert(sizeof(WaveParams) == 32, "WaveParams must match the 2-register HLSL layout");
 static_assert(sizeof(PerFrameCB) % 16 == 0, "Constant buffer size must be a multiple of 16 bytes");
@@ -474,6 +475,8 @@ void ColorShader::RenderShader(
             water.refractionIndex, physicalRefraction ? 64.0f : 32.0f, physicalRefraction ? 1.0f : 0.0f);
         data->refractionParams2 = DirectX::XMFLOAT4(water.refractionShoreFade, water.refractionWobbleDepth, 0.0f, 0.0f);
         data->shadow = water.shadow;
+        data->foamParams3 = DirectX::XMFLOAT4(water.foamEdgeBias, water.foamLeadingEdge, water.foamRidesWaves ? 1.0f : 0.0f,
+                                              static_cast<float>(water.foamMeasure));
         deviceContext->Unmap(perFrameCB_.Get(), 0);
     }
 

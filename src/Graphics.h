@@ -250,6 +250,11 @@ private:
     DirectX::XMFLOAT4 scatterOverride_ = {0.0f, 0.0f, 0.0f, 0.0f};
     float foamStrengthOverride_ = -1.0f;    // --foam <strength> (contact-foam), negative = presets decide
     float foamSlopeOverride_ = -1.0f;       // --foam-slope <0..1>: slope filter
+    // contact-foam-polish overrides (negative = presets decide) and the depth measure (comparison, not saved).
+    float foamBiasOverride_ = -1.0f;        // --foam-bias <0..1>
+    float foamLeadingOverride_ = -1.0f;     // --foam-leading <0..1>
+    int foamRideOverride_ = -1;             // --foam-ride on|off
+    int foamMeasure_ = 0;                   // --foam-measure vertical|view: 0 water depth, 1 view path
     float refractionOverride_ = -1.0f;      // --refraction <strength> (refraction, both modes), negative = presets decide
     int refractionModeOverride_ = -1;       // --refraction-mode normal|physical: 0 / 1
     float exposureOverrideEv_ = 0.0f;
