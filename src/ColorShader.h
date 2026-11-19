@@ -75,6 +75,12 @@ public:
         float foamSteepStart  = 0.35f;  // steepness (1 - |normal.y|) where foam starts ...
         float foamSteepFull   = 0.70f;  // ... and where it is full
         DirectX::XMFLOAT3 foamColor = {0.95f, 0.97f, 1.0f}; // sRGB picker value
+        // contact-foam-polish (reference: fire-face.com/water). 0 / off = the band as before (presets without the keys
+        // load these defaults).
+        float foamEdgeBias = 0.2f;     // closeness + bias: a thicker, harder band that stops at the width (0 = off)
+        float foamLeadingEdge = 0.15f; // share of the width over which the water and foam fade out at the contact line (0 = off)
+        bool foamRidesWaves = true;    // the foam pattern is laid on the water before the waves move it (it sways along)
+        int foamMeasure = 0;           // set every frame, not saved: 0 = water depth below the surface, 1 = view path in the water
         // foam-masks: which mask (kFoamMaps in Graphics.cpp, default 3 = cells + bubbles + breakup) and how much of its
         // bubbles (G) and breakup (B) to use.
         int foamMap = 3;
