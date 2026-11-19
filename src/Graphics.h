@@ -256,6 +256,7 @@ private:
     int foamRideOverride_ = -1;             // --foam-ride on|off
     int foamMeasure_ = 0;                   // --foam-measure vertical|view: 0 water depth, 1 view path
     float refractionOverride_ = -1.0f;      // --refraction <strength> (refraction, both modes), negative = presets decide
+    float normalStrengthOverride_ = -1.0f;  // --normal-strength <v>: ripple (normal map) strength, 0 = flat; negative = presets decide
     int refractionModeOverride_ = -1;       // --refraction-mode normal|physical: 0 / 1
     float exposureOverrideEv_ = 0.0f;
     TonemapShader::Operator tonemapOperator_ = TonemapShader::AcesHuePreserving;

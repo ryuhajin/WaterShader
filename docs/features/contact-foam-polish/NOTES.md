@@ -31,7 +31,7 @@
 | `shaders/Common.hlsli` | `g_FoamParams3` (바이어스, leading, ride, 측정) |
 | `shaders/PixelShader.hlsl` | `foamDepth` 선택, 바이어스, 무늬 좌표, leading edge(최종 합성 두 곳), Debug **30** = lead, Debug **31** = 노이즈 전 띠 값(바이어스가 바꾸는 경사), Debug **32** = 띠 값 × leading(전체 falloff) |
 | `src/ColorShader.*` | WaterParams 4개, cbuffer |
-| `src/Graphics.*` | Water 창 Contact Foam에 슬라이더 2, 체크박스, 측정 목록. 프리셋 키 `foamEdgeBias`·`foamLeadingEdge`·`foamRidesWaves`(없으면 기본값). CLI `--foam-bias`, `--foam-leading`, `--foam-ride on\|off`, `--foam-measure vertical\|view` |
+| `src/Graphics.*` | Water 창 Contact Foam에 슬라이더 2, 체크박스, 측정 목록. 프리셋 키 `foamEdgeBias`·`foamLeadingEdge`·`foamRidesWaves`(없으면 기본값). CLI `--foam-bias`, `--foam-leading`, `--foam-ride on|off`, `--foam-measure vertical|view`, `--normal-strength`(잔물결 세기, 캡처용) |\|off`, `--foam-measure vertical\|view` |
 
 - 폼 마스크(05)와 옛 구름 노이즈는 둘 다 `band`를 쓰므로 그대로 함께 동작한다(`after_current`).
 - 코스틱은 바닥 셰이더에 있어서 무관하다.

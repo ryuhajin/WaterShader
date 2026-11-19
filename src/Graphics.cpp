@@ -593,6 +593,7 @@ bool Graphics::Initialize(HWND hwnd, int screenWidth, int screenHeight)
                 else if (arg == L"--foam-ride" && hasValue)  { foamRideOverride_ = std::wstring(argv[++i]) != L"off" ? 1 : 0; }
                 else if (arg == L"--foam-measure" && hasValue) { foamMeasure_ = std::wstring(argv[++i]) == L"view" ? 1 : 0; }
                 else if (arg == L"--refraction" && hasValue) { refractionOverride_ = static_cast<float>(_wtof(argv[++i])); }
+                else if (arg == L"--normal-strength" && hasValue) { normalStrengthOverride_ = static_cast<float>(_wtof(argv[++i])); }
                 else if (arg == L"--refraction-mode" && hasValue) { refractionModeOverride_ = std::wstring(argv[++i]) == L"physical" ? 1 : 0; }
                 else if (arg == L"--normal-source" && hasValue) { normalSource_ = std::wstring(argv[++i]) == L"stored" ? 1 : 0; }
                 else if (arg == L"--scatter" && hasValue)
@@ -913,6 +914,10 @@ void Graphics::ApplyPresetValues(const ShaderPreset& preset)
     if (foamRideOverride_ >= 0)
     {
         water_.foamRidesWaves = foamRideOverride_ != 0;
+    }
+    if (normalStrengthOverride_ >= 0.0f)
+    {
+        water_.normalStrength = normalStrengthOverride_;
     }
     if (refractionOverride_ >= 0.0f)
     {
