@@ -601,6 +601,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         return DebugOut(hasReceiver ? (angle / 30.0).xxx : float3(0.0, 0.0, 0.0));
     }
     float foamAmount = 0.0;
+    float foamSlopeMask = 1.0; // contact-foam-polish: the leading edge follows the same slope filter as the band
     [branch] if (foamCandidate)
     {
         float closeness = 1.0 - saturate(foamDepth / foamWidth);
@@ -608,6 +609,7 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         // at the width (a thicker, more cartoon edge). 0 = the ramp as before.
         closeness = saturate(closeness + g_FoamParams3.x);
         float slopeMask = lerp(1.0, smoothstep(g_FoamParams2.y, g_FoamParams2.z, steepness), g_FoamParams2.x);
+        foamSlopeMask = slopeMask;
         // The noise drifts downwind on the water surface; its threshold sits inside [softness, 1 - softness],
         // so closeness 0 never shows foam and closeness 1 always does, whatever the noise.
         float2 drift = g_Waves[0].direction * (g_WaterParams.x * g_FoamParams2.w);
@@ -644,7 +646,8 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float foamLead = 1.0;
     if (foamCandidate && g_FoamParams3.y > 0.0)
     {
-        foamLead = saturate(foamDepth / (foamWidth * g_FoamParams3.y));
+        // Only where the band itself may be (steep surfaces with the slope filter on): a flat shallow top keeps its water.
+        foamLead = lerp(1.0, saturate(foamDepth / (foamWidth * g_FoamParams3.y)), foamSlopeMask);
     }
     // 30 = leading edge (white = water as usual, black = faded into the surface behind).
     if (sceneDebugMode == 30) { return DebugOut(foamLead.xxx); }
