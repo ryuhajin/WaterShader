@@ -654,8 +654,9 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         // Only where the band itself may be (steep surfaces with the slope filter on): a flat shallow top keeps its water.
         foamLead = lerp(1.0, saturate(foamDepth / (foamWidth * g_FoamParams3.y)), foamSlopeMask);
     }
-    // 30 = leading edge (white = water as usual, black = faded into the surface behind).
-    if (sceneDebugMode == 30) { return DebugOut(foamLead.xxx); }
+    // 30 = leading edge, shown as how much fades (white = water and foam faded into the surface at the contact line,
+    // black = water as usual), so it reads like the band views (contact white, open water black).
+    if (sceneDebugMode == 30) { return DebugOut((1.0 - foamLead).xxx); }
     // 32 = the whole falloff before the noise: band x leading edge. Rises from the contact line over the leading share,
     // peaks, then falls to the width (the reference's two falloffs together).
     if (sceneDebugMode == 32) { return DebugOut((foamBand * foamLead).xxx); }

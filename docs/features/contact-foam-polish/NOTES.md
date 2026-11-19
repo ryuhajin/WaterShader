@@ -29,7 +29,7 @@
 | 파일 | 내용 |
 |---|---|
 | `shaders/Common.hlsli` | `g_FoamParams3` (바이어스, leading, ride, 측정) |
-| `shaders/PixelShader.hlsl` | `foamDepth` 선택, 바이어스, 무늬 좌표, leading edge(최종 합성 두 곳), Debug **30** = lead, Debug **31** = 노이즈 전 띠 값(바이어스가 바꾸는 경사), Debug **32** = 띠 값 × leading(전체 falloff) |
+| `shaders/PixelShader.hlsl` | `foamDepth` 선택, 바이어스, 무늬 좌표, leading edge(최종 합성 두 곳), Debug **30** = 1 − lead(접점에서 사라지는 양, 흰색 = 사라짐), Debug **31** = 노이즈 전 띠 값(바이어스가 바꾸는 경사), Debug **32** = 띠 값 × leading(전체 falloff) |
 | `src/ColorShader.*` | WaterParams 4개, cbuffer |
 | `src/Graphics.*` | Water 창 Contact Foam에 슬라이더 2, 체크박스, 측정 목록. 프리셋 키 `foamEdgeBias`·`foamLeadingEdge`·`foamRidesWaves`(없으면 기본값). CLI `--foam-bias`, `--foam-leading`, `--foam-ride on|off`, `--foam-measure vertical|view`, `--normal-strength`(잔물결 세기, 캡처용) |\|off`, `--foam-measure vertical\|view` |
 
@@ -75,7 +75,7 @@
 |---|---|---|
 | 1 | 카메라 stair_pillar_near, Edge bias 0 ↔ 0.2 ↔ 0.6 | 띠가 꽉 차고 아래 끝이 단단해짐 |
 | 2 | Leading edge 0 ↔ 0.15 ↔ 0.4 | 기둥과 물이 만나는 선이 부드러운 경사로 |
-| 3 | Debug Mode **Contact foam leading edge** (30) | 접점에만 검은 띠 |
+| 3 | Debug Mode **Contact foam leading edge** (30) | 접점에만 흰 띠, 수면은 검정 |
 | 4 | Foam rides the waves 끔 ↔ 켬, 실행 중 관찰 | 켜면 무늬가 파도를 따라 앞뒤로 출렁임 |
 | 5 | Depth measure 두 가지, 카메라를 낮췄다 올렸다 | 시선 경로는 카메라 각도에 따라 띠가 변하고, 수직 수심은 그대로 |
 | 6 | 받침대 모서리, 기둥 둘레를 돌아보기 | 모서리 바깥 수면과 기둥 옆·뒤는 여전히 비어 있음 (남는 한계) |
